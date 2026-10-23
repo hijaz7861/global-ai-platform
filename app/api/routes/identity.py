@@ -1,10 +1,13 @@
 """Registration and token issuance endpoints."""
-from datetime import datetime, timezone
+import hashlib
+import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,10 +22,13 @@ from app.core.security import (
     verify_password,
 )
 from app.db import get_db
-from app.models import TokenRevocation, User
-from app.schemas import LoginRequest, RegisterRequest, TokenResponse
+from app.models import PasswordResetToken, TokenRevocation, User, utc_now
+from app.schemas import LoginRequest, PasswordResetConfirm, PasswordResetRequest, RegisterRequest, TokenResponse
+from app.services.email import send_password_reset_email
 
 router = APIRouter(prefix="/auth", tags=["identity"])
+logger = logging.getLogger(__name__)
+_RESET_ACCEPTED = {"message": "If the account exists, reset instructions will be sent."}
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -49,7 +55,7 @@ def login(payload: LoginRequest, db: Annotated[Session, Depends(get_db)]) -> Tok
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password",
                             headers={"WWW-Authenticate": "Bearer"})
-    token = create_access_token(user.id)
+    token = create_access_token(user.id, auth_version=user.auth_version)
     return TokenResponse(
         access_token=token,
         expires_in=settings.access_token_expire_minutes * 60,
@@ -86,5 +92,50 @@ def logout(
         entity_id=token_id,
         details={"status": "revoked"},
     )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/password-reset/request", status_code=status.HTTP_202_ACCEPTED)
+def request_password_reset(payload: PasswordResetRequest, db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
+    """Return an identical response for known and unknown accounts."""
+    user = db.scalar(select(User).where(User.email == str(payload.email), User.is_active.is_(True)))
+    if user is None:
+        return _RESET_ACCEPTED
+    now = utc_now()
+    db.execute(update(PasswordResetToken).where(PasswordResetToken.user_id == user.id, PasswordResetToken.used_at.is_(None)).values(used_at=now))
+    raw_token = secrets.token_urlsafe(32)
+    record = PasswordResetToken(user_id=user.id, token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(), expires_at=now + timedelta(minutes=settings.password_reset_token_expire_minutes))
+    db.add(record)
+    db.commit()
+    try:
+        send_password_reset_email(user.email, raw_token)
+    except Exception:
+        logger.warning("Password reset email delivery failed; check SMTP configuration and service health")
+        db.execute(update(PasswordResetToken).where(PasswordResetToken.id == record.id, PasswordResetToken.used_at.is_(None)).values(used_at=utc_now()))
+        db.commit()
+    return _RESET_ACCEPTED
+
+
+@router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
+def confirm_password_reset(payload: PasswordResetConfirm, db: Annotated[Session, Depends(get_db)]) -> Response:
+    """Consume a reset token atomically and invalidate previously issued access tokens."""
+    now = utc_now()
+    digest = hashlib.sha256(payload.token.encode("utf-8")).hexdigest()
+    record = db.scalar(select(PasswordResetToken).where(PasswordResetToken.token_hash == digest))
+    if record is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    consumed = db.execute(update(PasswordResetToken).where(PasswordResetToken.id == record.id, PasswordResetToken.used_at.is_(None), PasswordResetToken.expires_at > now).values(used_at=now))
+    if consumed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    user = db.scalar(select(User).where(User.id == record.user_id, User.is_active.is_(True)))
+    if user is None:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    user.password_hash = hash_password(payload.new_password)
+    user.auth_version += 1
+    db.execute(update(PasswordResetToken).where(PasswordResetToken.user_id == user.id, PasswordResetToken.id != record.id, PasswordResetToken.used_at.is_(None)).values(used_at=now))
+    record_audit_event(db, actor_user_id=user.id, organization_id=None, action="auth.password_reset", entity_type="user", entity_id=user.id, details={"status": "completed"})
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
