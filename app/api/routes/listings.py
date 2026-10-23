@@ -1,15 +1,15 @@
-"""Tenant-scoped catalog listings and public active listings."""
+"""Tenant-scoped catalog listings and inventory adjustments."""
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_membership
 from app.audit import record_audit_event
 from app.db import get_db
 from app.models import Listing, Membership
-from app.schemas import ListingCreate, ListingResponse
+from app.schemas import InventoryAdjustmentRequest, ListingCreate, ListingResponse
 
 router = APIRouter(tags=["catalog"])
 
@@ -65,6 +65,55 @@ def list_organization_listings(
         .order_by(Listing.created_at.desc())
     ).all()
     return [ListingResponse.model_validate(item) for item in listings]
+
+
+@router.post(
+    "/organizations/{organization_id}/listings/{listing_id}/inventory-adjustments",
+    response_model=ListingResponse,
+)
+def adjust_inventory(
+    listing_id: str,
+    payload: InventoryAdjustmentRequest,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ListingResponse:
+    if membership.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Owner or admin role required")
+    listing = db.scalar(
+        select(Listing).where(
+            Listing.id == listing_id,
+            Listing.organization_id == membership.organization_id,
+        )
+    )
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+
+    result = db.execute(
+        update(Listing)
+        .where(
+            Listing.id == listing.id,
+            Listing.organization_id == membership.organization_id,
+            Listing.inventory_quantity + payload.delta >= 0,
+        )
+        .values(inventory_quantity=Listing.inventory_quantity + payload.delta)
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Inventory cannot be reduced below zero")
+
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="inventory.adjusted",
+        entity_type="listing",
+        entity_id=listing.id,
+        details={"quantity": payload.delta, "status": "adjusted"},
+    )
+    db.commit()
+    db.refresh(listing)
+    return ListingResponse.model_validate(listing)
 
 
 @router.post(
