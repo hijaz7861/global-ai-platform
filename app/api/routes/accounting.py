@@ -5,7 +5,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from app.schemas import (
     JournalEntryCreate,
     JournalEntryResponse,
     JournalLineResponse,
+    TrialBalanceLineResponse,
 )
 
 router = APIRouter(tags=["accounting"])
@@ -222,3 +223,66 @@ def list_journal_entries(
         .order_by(JournalEntry.created_at.desc(), JournalEntry.id.desc())
     ).all()
     return [_entry_response(entry) for entry in entries]
+
+
+
+@router.get(
+    "/organizations/{organization_id}/trial-balance",
+    response_model=list[TrialBalanceLineResponse],
+)
+def get_trial_balance(
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[TrialBalanceLineResponse]:
+    """Derive balances from posted journal lines; no mutable balance cache is stored."""
+    if membership.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Owner or admin role required")
+
+    totals = (
+        select(
+            JournalLine.account_id.label("account_id"),
+            func.sum(JournalLine.debit_minor).label("debit_total_minor"),
+            func.sum(JournalLine.credit_minor).label("credit_total_minor"),
+        )
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(JournalEntry.organization_id == membership.organization_id)
+        .group_by(JournalLine.account_id)
+        .subquery()
+    )
+    rows = db.execute(
+        select(
+            Account.id,
+            Account.code,
+            Account.name,
+            Account.account_type,
+            Account.currency,
+            func.coalesce(totals.c.debit_total_minor, 0),
+            func.coalesce(totals.c.credit_total_minor, 0),
+        )
+        .outerjoin(totals, totals.c.account_id == Account.id)
+        .where(Account.organization_id == membership.organization_id)
+        .order_by(Account.currency, Account.code)
+    ).all()
+
+    result: list[TrialBalanceLineResponse] = []
+    for account_id, code, name, account_type, currency, debit, credit in rows:
+        debit_total = int(debit)
+        credit_total = int(credit)
+        normal_balance = (
+            debit_total - credit_total
+            if account_type in {"asset", "expense"}
+            else credit_total - debit_total
+        )
+        result.append(
+            TrialBalanceLineResponse(
+                account_id=account_id,
+                code=code,
+                name=name,
+                account_type=account_type,
+                currency=currency,
+                debit_total_minor=debit_total,
+                credit_total_minor=credit_total,
+                normal_balance_minor=normal_balance,
+            )
+        )
+    return result
