@@ -1,4 +1,5 @@
-"""Seller views and inventory adjustment permission tests."""
+"""
+import pytestSeller views and inventory adjustment permission tests."""
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
