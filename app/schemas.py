@@ -1,4 +1,4 @@
-"""Request and response schemas for identity, commerce, orders, and accounting."""
+"""Request and response schemas for identity, commerce, AI, and accounting."""
 from datetime import datetime
 from typing import Literal
 
@@ -136,6 +136,28 @@ class SellerOrderResponse(BaseModel):
     created_at: datetime
     subtotal_minor: int
     items: list[SellerOrderItemResponse]
+
+
+class ChatRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=8000)
+    max_output_tokens: int = Field(default=256, ge=1, le=2048)
+
+    @field_validator("prompt")
+    @classmethod
+    def require_nonblank_prompt(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Prompt must not be blank")
+        return normalized
+
+
+class ChatResponse(BaseModel):
+    request_id: str
+    provider: str
+    model: str
+    content: str
+    input_tokens: int
+    output_tokens: int
 
 
 class AccountCreate(BaseModel):
