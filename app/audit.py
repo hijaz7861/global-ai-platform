@@ -5,7 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.models import AuditEvent
 
-_ALLOWED_DETAIL_KEYS = {"status", "quantity", "price_minor", "currency", "role"}
+_ALLOWED_DETAIL_KEYS = {
+    "status", "quantity", "price_minor", "total_minor", "currency", "role"
+}
 
 
 def record_audit_event(
