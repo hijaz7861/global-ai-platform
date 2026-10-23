@@ -129,7 +129,7 @@ def test_orders_are_private_to_the_buyer(client):
     assert response.status_code == 404
 
 
-def test_cancellation_releases_stock_exactly_once(client):
+def test_cancellation_releases_stock_exactly_once_and_is_audited(client):
     listing_id, seller_token, org_id = make_active_listing(client, quantity=4)
     buyer_token = register_login(client, "buyer@example.com")
     created = create_order(client, listing_id, buyer_token, "order-key-0005", 3)
@@ -147,6 +147,15 @@ def test_cancellation_releases_stock_exactly_once(client):
     assert repeated.status_code == 200, repeated.text
     assert repeated.json()["status"] == "cancelled"
     assert listing_stock(client, org_id, seller_token) == 4
+
+    audit = client.get(
+        f"/api/v1/organizations/{org_id}/audit-events",
+        headers={"Authorization": f"Bearer {seller_token}"},
+    )
+    assert audit.status_code == 200, audit.text
+    actions = {event["action"] for event in audit.json()}
+    assert "order.created" in actions
+    assert "order.cancelled" in actions
 
 
 def test_non_owner_cannot_cancel_order(client):
