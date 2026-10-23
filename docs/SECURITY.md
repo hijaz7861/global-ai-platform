@@ -1,11 +1,33 @@
-# Security baseline
+# Security Baseline
 
-- Never commit credentials or real customer data.
-- Use least-privilege permissions.
-- Enforce authorization on the server, not only in the UI.
-- Scope every tenant-owned record to its tenant.
-- Audit sensitive administrative and financial actions.
-- Validate inputs and limit request sizes.
-- Add rate limiting, backups, dependency scanning and security tests
-  before public deployment.
-- Require explicit approval for production deployment and paid services.
+## Implemented controls in the draft foundation
+- Passwords are hashed using Argon2 via pwdlib; plaintext passwords are never stored.
+- Signed bearer-token login is disabled unless `SECRET_KEY` is at least 32 characters.
+- Organization and listing reads are scoped to authenticated membership.
+- Orders are visible only to their buyer.
+- Order creation uses conditional inventory updates, per-user idempotency keys, and a transaction.
+- Audit records are written in the same transaction as selected organization, listing, and order operations.
+- Audit detail values are allowlisted; request bodies, passwords, tokens, and secret values are not copied into event details.
+- `.gitignore` excludes local environment files, virtual environments, caches, and build artifacts.
+- CI checks compilation, database migrations, and tests on Python 3.11–3.13.
+
+## Current limitations
+- The API has no email verification, password reset, MFA, token revocation/refresh, rate limiting, account lockout, or invitation flow.
+- Audit records are application-level records; immutability against a database administrator, external log export, retention controls, and tamper-evidence are not implemented.
+- Tenant isolation is demonstrated only on the organization, catalog, audit, and buyer-order routes. Every future tenant-owned query must enforce its own authorization boundary.
+- No payment provider or real payment processing is connected.
+- PostgreSQL-specific concurrency, production secrets management, backups, and incident response have not been verified.
+
+## Required before production
+- Complete threat modeling and an independent security review.
+- Add rate limiting, account recovery, MFA, token revocation, and secure session lifecycle.
+- Verify tenant scoping for every new endpoint and add cross-tenant regression tests.
+- Protect audit retention and export logs to a separate access-controlled destination.
+- Keep secrets in a secret manager; never commit real credentials.
+- Add dependency/security scanning, backup/restore exercises, and incident procedures.
+- Restrict connector scopes and outbound network access; apply timeouts and budgets.
+- Require explicit human approval for high-risk financial or irreversible actions.
+- Use sandbox payment credentials for integration tests.
+- Require explicit owner approval before paid services or production deployment.
+
+Never call a system secure solely because these requirements are documented.
