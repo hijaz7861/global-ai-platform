@@ -111,10 +111,6 @@ def test_member_removal_is_audited_and_owner_cannot_be_removed(client):
     )
     assert removed.status_code == 204
 
-    owner_id = client.get(
-        "/api/v1/organizations",
-        headers={"Authorization": f"Bearer {owner_token}"},
-    ).json()[0]["id"]
     memberships = client.get(
         f"/api/v1/organizations/{org_id}/memberships",
         headers={"Authorization": f"Bearer {owner_token}"},
