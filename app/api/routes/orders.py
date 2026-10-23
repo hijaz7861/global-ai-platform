@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.db import get_db
 from app.models import Listing, Order, OrderItem, User
 from app.schemas import OrderCreate, OrderItemResponse, OrderResponse
@@ -35,6 +36,26 @@ def _response(order: Order) -> OrderResponse:
     )
 
 
+def _existing_idempotent_order(
+    db: Session, user_id: str, idempotency_key: str, payload: OrderCreate
+) -> OrderResponse | None:
+    existing = db.scalar(
+        select(Order).where(Order.user_id == user_id, Order.idempotency_key == idempotency_key)
+    )
+    if existing is None:
+        return None
+    if (
+        len(existing.items) != 1
+        or existing.items[0].listing_id != payload.listing_id
+        or existing.items[0].quantity != payload.quantity
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency-Key was already used for a different order request",
+        )
+    return _response(existing)
+
+
 @router.post("", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 def create_order(
     payload: OrderCreate,
@@ -42,11 +63,9 @@ def create_order(
     db: Annotated[Session, Depends(get_db)],
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)],
 ) -> OrderResponse:
-    existing = db.scalar(
-        select(Order).where(Order.user_id == user.id, Order.idempotency_key == idempotency_key)
-    )
+    existing = _existing_idempotent_order(db, user.id, idempotency_key, payload)
     if existing is not None:
-        return _response(existing)
+        return existing
 
     listing = db.scalar(
         select(Listing).where(Listing.id == payload.listing_id, Listing.status == "active")
@@ -94,11 +113,9 @@ def create_order(
         db.commit()
     except IntegrityError:
         db.rollback()
-        existing = db.scalar(
-            select(Order).where(Order.user_id == user.id, Order.idempotency_key == idempotency_key)
-        )
+        existing = _existing_idempotent_order(db, user.id, idempotency_key, payload)
         if existing is not None:
-            return _response(existing)
+            return existing
         raise HTTPException(status_code=409, detail="Order could not be created") from None
     db.refresh(order)
     return _response(order)
