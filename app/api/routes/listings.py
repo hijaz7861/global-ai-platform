@@ -1,0 +1,91 @@
+"""Tenant-scoped catalog listings and public active listings."""
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.api.deps import require_membership
+from app.db import get_db
+from app.models import Listing, Membership
+from app.schemas import ListingCreate, ListingResponse
+
+router = APIRouter(tags=["catalog"])
+
+
+@router.post(
+    "/organizations/{organization_id}/listings",
+    response_model=ListingResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_listing(
+    payload: ListingCreate,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ListingResponse:
+    listing = Listing(
+        organization_id=membership.organization_id,
+        title=payload.title.strip(),
+        description=payload.description.strip(),
+        price_minor=payload.price_minor,
+        currency=payload.currency,
+        status="draft",
+    )
+    db.add(listing)
+    db.commit()
+    db.refresh(listing)
+    return ListingResponse.model_validate(listing)
+
+
+@router.get("/organizations/{organization_id}/listings", response_model=list[ListingResponse])
+def list_organization_listings(
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[ListingResponse]:
+    listings = db.scalars(
+        select(Listing)
+        .where(Listing.organization_id == membership.organization_id)
+        .order_by(Listing.created_at.desc())
+    ).all()
+    return [ListingResponse.model_validate(item) for item in listings]
+
+
+@router.post(
+    "/organizations/{organization_id}/listings/{listing_id}/publish",
+    response_model=ListingResponse,
+)
+def publish_listing(
+    listing_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ListingResponse:
+    if membership.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Owner or admin role required")
+    listing = db.scalar(
+        select(Listing).where(
+            Listing.id == listing_id,
+            Listing.organization_id == membership.organization_id,
+        )
+    )
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    listing.status = "active"
+    db.commit()
+    db.refresh(listing)
+    return ListingResponse.model_validate(listing)
+
+
+@router.get("/listings", response_model=list[ListingResponse])
+def browse_active_listings(
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[ListingResponse]:
+    listings = db.scalars(
+        select(Listing)
+        .where(Listing.status == "active")
+        .order_by(Listing.created_at.desc(), Listing.id)
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return [ListingResponse.model_validate(item) for item in listings]
