@@ -1,4 +1,4 @@
-"""Request and response schemas for identity, organizations, and catalog."""
+"""Request and response schemas for identity, organizations, catalog, and orders."""
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -55,6 +55,7 @@ class ListingCreate(BaseModel):
     description: str = Field(default="", max_length=5000)
     price_minor: int = Field(gt=0, le=9_000_000_000_000_000)
     currency: str = Field(min_length=3, max_length=3)
+    inventory_quantity: int = Field(default=0, ge=0, le=2_000_000_000)
 
     @field_validator("title")
     @classmethod
@@ -81,6 +82,29 @@ class ListingResponse(BaseModel):
     price_minor: int
     currency: str
     status: str
+    inventory_quantity: int
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class OrderCreate(BaseModel):
+    listing_id: str = Field(min_length=1, max_length=36)
+    quantity: int = Field(gt=0, le=1000)
+
+
+class OrderItemResponse(BaseModel):
+    listing_id: str
+    title: str
+    quantity: int
+    unit_price_minor: int
+    line_total_minor: int
+
+
+class OrderResponse(BaseModel):
+    id: str
+    status: str
+    total_minor: int
+    currency: str
+    created_at: datetime
+    items: list[OrderItemResponse]
