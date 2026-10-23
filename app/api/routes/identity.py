@@ -125,7 +125,7 @@ def confirm_password_reset(payload: PasswordResetConfirm, db: Annotated[Session,
     record = db.scalar(select(PasswordResetToken).where(PasswordResetToken.token_hash == digest))
     if record is None:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
-    consumed = db.execute(update(PasswordResetToken).where(PasswordResetToken.id == record.id, PasswordResetToken.used_at.is_(None), PasswordResetToken.expires_at > now).values(used_at=now))
+    consumed = db.execute(update(PasswordResetToken).where(PasswordResetToken.id == record.id, PasswordResetToken.used_at.is_(None), PasswordResetToken.expires_at > now).values(used_at=now).execution_options(synchronize_session=False))
     if consumed.rowcount != 1:
         db.rollback()
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
