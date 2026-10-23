@@ -110,3 +110,31 @@ def test_invalid_price_and_currency_are_rejected(client):
         json={"title": "Invalid", "description": "", "price_minor": 0, "currency": "PKR"},
     )
     assert response.status_code == 422
+
+def test_public_marketplace_search_and_price_filters(client):
+    token, org_id = account(client, "searchseller@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    items = [
+        {"title": "Organic cotton shirt", "description": "Soft fabric", "price_minor": 1800, "currency": "PKR"},
+        {"title": "Notebook set", "description": "Recycled paper", "price_minor": 450, "currency": "PKR"},
+        {"title": "Organic tea", "description": "Loose leaf", "price_minor": 1200, "currency": "USD"},
+    ]
+    for item in items:
+        created = client.post(f"/api/v1/organizations/{org_id}/listings", headers=headers, json=item)
+        assert created.status_code == 201, created.text
+        published = client.post(
+            f"/api/v1/organizations/{org_id}/listings/{created.json()['id']}/publish",
+            headers=headers,
+        )
+        assert published.status_code == 200, published.text
+
+    filtered = client.get(
+        "/api/v1/listings",
+        params={"q": "organic", "currency": "pkr", "min_price_minor": 1000, "max_price_minor": 2000},
+    )
+    assert filtered.status_code == 200, filtered.text
+    assert len(filtered.json()) == 1
+    assert filtered.json()[0]["title"] == "Organic cotton shirt"
+
+    invalid_range = client.get("/api/v1/listings", params={"min_price_minor": 2000, "max_price_minor": 1000})
+    assert invalid_range.status_code == 422
