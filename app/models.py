@@ -2,7 +2,16 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -62,6 +71,7 @@ class Listing(Base):
     __table_args__ = (
         CheckConstraint("price_minor > 0", name="ck_listings_price_positive"),
         CheckConstraint("length(currency) = 3", name="ck_listings_currency_length"),
+        Index("ix_listings_status_created", "status", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -73,7 +83,7 @@ class Listing(Base):
     # Store money in minor units (e.g. paisa), never floating-point currency values.
     price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
-    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     organization: Mapped[Organization] = relationship(back_populates="listings")
