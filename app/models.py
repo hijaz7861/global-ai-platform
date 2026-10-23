@@ -1,4 +1,4 @@
-"""Identity, organization, commerce, audit, and accounting data models."""
+"""Identity, commerce, audit, accounting, and security data models."""
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -235,3 +235,13 @@ class JournalLine(Base):
 
     entry: Mapped[JournalEntry] = relationship(back_populates="lines")
     account: Mapped[Account] = relationship(back_populates="lines")
+
+
+class TokenRevocation(Base):
+    __tablename__ = "token_revocations"
+    __table_args__ = (Index("ix_token_revocations_expires_at", "expires_at"),)
+
+    jti: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
