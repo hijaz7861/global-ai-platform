@@ -1,4 +1,5 @@
 """Authentication and tenant membership dependencies."""
+from datetime import datetime, timezone
 from typing import Annotated
 
 import jwt
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import decode_access_token
 from app.db import get_db
-from app.models import Membership, User
+from app.models import Membership, TokenRevocation, User
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -24,8 +25,17 @@ def get_current_user(
     try:
         payload = decode_access_token(credentials.credentials)
         user_id = payload.get("sub")
-        if not isinstance(user_id, str) or not user_id:
-            raise ValueError("Invalid token subject")
+        token_id = payload.get("jti")
+        if not isinstance(user_id, str) or not user_id or not isinstance(token_id, str) or not token_id:
+            raise ValueError("Invalid token claims")
+        revoked = db.scalar(
+            select(TokenRevocation.jti).where(
+                TokenRevocation.jti == token_id,
+                TokenRevocation.expires_at > datetime.now(timezone.utc),
+            )
+        )
+        if revoked is not None:
+            raise jwt.InvalidTokenError("Revoked token")
     except (jwt.InvalidTokenError, RuntimeError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired access token",
                             headers={"WWW-Authenticate": "Bearer"}) from None
