@@ -3,7 +3,7 @@
 ## Implemented in the draft foundation branch
 - FastAPI application, root service identity, and versioned process health endpoint.
 - Registration with normalized, validated email and Argon2 password hashing.
-- Short-lived signed bearer tokens; login fails closed unless a 32-character signing key is configured.
+- Short-lived signed bearer tokens with server-side logout revocation; login fails closed unless a 32-character signing key is configured.
 - User, organization, membership, catalog listing, inventory, order, order-item, audit-event, account, journal-entry, and journal-line models.
 - Alembic migrations for identity/tenancy, catalog, inventory/orders, audit events, and double-entry ledger.
 - Tenant-scoped catalog and order flows, stock reservations/cancellation, owner/admin inventory adjustments, seller order summaries.
@@ -19,7 +19,7 @@
 CI passed the catalog, order, seller-view, audit, and ledger slices on Python 3.11–3.13. The AI adapter and route tests passed on Python 3.11–3.13 before Ruff was added. The latest workflow must finish successfully to verify linting and the complete current branch. No production deployment has occurred.
 
 ## Important remaining gaps
-- Email verification, password reset, MFA, token revocation/refresh, and rate limiting.
+- Email verification, password reset, MFA, refresh-token rotation, expired-revocation cleanup, and rate limiting.
 - Membership invitations and role administration.
 - Audit tamper-evidence, retention controls, and external log export.
 - Journal reversals, period closing, balances/reports, reconciliation, payments, refunds, tax, and seller settlement.
