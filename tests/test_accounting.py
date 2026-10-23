@@ -1,5 +1,5 @@
-"""
-import pytestAccounting tests for balance rules, tenant isolation, and idempotency."""
+"""Accounting tests for balance rules, tenant isolation, and idempotency."""
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
