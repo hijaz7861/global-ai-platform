@@ -86,6 +86,16 @@ def test_balanced_journal_posts_and_is_idempotent(client):
     assert len(client.get(
         f"/api/v1/organizations/{org_id}/journal-entries", headers=headers
     ).json()) == 1
+    trial = client.get(
+        f"/api/v1/organizations/{org_id}/trial-balance", headers=headers
+    )
+    assert trial.status_code == 200, trial.text
+    by_code = {row["code"]: row for row in trial.json()}
+    assert by_code["1000"]["normal_balance_minor"] == 2500
+    assert by_code["4000"]["normal_balance_minor"] == 2500
+    assert sum(row["debit_total_minor"] for row in trial.json()) == sum(
+        row["credit_total_minor"] for row in trial.json()
+    )
 
 
 def test_unbalanced_journal_is_rejected(client):
