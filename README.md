@@ -7,7 +7,7 @@ A private, modular project for building a global business platform incrementally
 - FastAPI application with OpenAPI docs.
 - Versioned process health endpoint: `GET /api/v1/health`.
 - Registration with Argon2 password hashing and signed bearer-token login.
-- Organization creation and membership-filtered organization access.
+- Organization creation, membership-filtered access, and owner/admin member management.
 - Tenant-scoped catalog listings with owner/admin publication.
 - Owner/admin inventory adjustment with nonnegative stock checks and audit events.
 - Order creation with conditional stock reservation and per-buyer idempotency.
