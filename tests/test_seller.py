@@ -54,12 +54,13 @@ def seller_setup(client: TestClient, email: str = "seller@example.com") -> tuple
               "currency": "PKR", "inventory_quantity": 2},
     )
     assert listing.status_code == 201, listing.text
+    listing_id = listing.json()["id"]
     published = client.post(
-        f"/api/v1/organizations/{org_id}/listings/{listing.json()['id']}/publish",
+        f"/api/v1/organizations/{org_id}/listings/{listing_id}/publish",
         headers=headers,
     )
     assert published.status_code == 200, published.text
-    return token, org_id, listing.json()["id"]
+    return token, org_id, listing_id
 
 
 def test_seller_order_view_is_organization_scoped(client):
@@ -82,10 +83,37 @@ def test_seller_order_view_is_organization_scoped(client):
 
 
 def test_non_member_cannot_view_seller_orders(client):
-    seller_token, org_id, _ = seller_setup(client)
+    _, org_id, _ = seller_setup(client)
     outsider = register_login(client, "outsider@example.com")
     response = client.get(
         f"/api/v1/organizations/{org_id}/orders",
         headers={"Authorization": f"Bearer {outsider}"},
     )
     assert response.status_code == 404
+
+
+def test_inventory_adjustment_is_atomic_and_audited(client):
+    token, org_id, listing_id = seller_setup(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    response = client.post(
+        f"/api/v1/organizations/{org_id}/listings/{listing_id}/inventory-adjustments",
+        headers=headers,
+        json={"delta": 3},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["inventory_quantity"] == 5
+
+    rejected = client.post(
+        f"/api/v1/organizations/{org_id}/listings/{listing_id}/inventory-adjustments",
+        headers=headers,
+        json={"delta": -6},
+    )
+    assert rejected.status_code == 409
+    listing = client.get(
+        f"/api/v1/organizations/{org_id}/listings", headers=headers
+    ).json()[0]
+    assert listing["inventory_quantity"] == 5
+
+    events = client.get(f"/api/v1/organizations/{org_id}/audit-events", headers=headers)
+    assert events.status_code == 200
+    assert "inventory.adjusted" in {event["action"] for event in events.json()}
