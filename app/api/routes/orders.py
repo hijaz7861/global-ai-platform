@@ -1,4 +1,4 @@
-"""Authenticated order creation with stock checks and idempotency."""
+"""Authenticated order creation with stock checks, idempotency, and cancellation."""
 from typing import Annotated
 from uuid import uuid4
 
@@ -8,7 +8,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.config import settings
 from app.db import get_db
 from app.models import Listing, Order, OrderItem, User
 from app.schemas import OrderCreate, OrderItemResponse, OrderResponse
@@ -141,4 +140,35 @@ def get_my_order(
     order = db.scalar(select(Order).where(Order.id == order_id, Order.user_id == user.id))
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
+    return _response(order)
+
+
+@router.post("/{order_id}/cancel", response_model=OrderResponse)
+def cancel_my_order(
+    order_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> OrderResponse:
+    order = db.scalar(
+        select(Order)
+        .where(Order.id == order_id, Order.user_id == user.id)
+        .with_for_update()
+    )
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status == "cancelled":
+        return _response(order)
+    if order.status != "pending_payment":
+        raise HTTPException(status_code=409, detail="Order can no longer be cancelled")
+
+    for item in order.items:
+        db.execute(
+            update(Listing)
+            .where(Listing.id == item.listing_id)
+            .values(inventory_quantity=Listing.inventory_quantity + item.quantity)
+            .execution_options(synchronize_session=False)
+        )
+    order.status = "cancelled"
+    db.commit()
+    db.refresh(order)
     return _response(order)
