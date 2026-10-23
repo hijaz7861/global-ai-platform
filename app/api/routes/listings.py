@@ -29,6 +29,7 @@ def create_listing(
         description=payload.description.strip(),
         price_minor=payload.price_minor,
         currency=payload.currency,
+        inventory_quantity=payload.inventory_quantity,
         status="draft",
     )
     db.add(listing)
