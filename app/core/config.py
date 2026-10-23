@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./global_ai_platform.db"
     secret_key: str | None = None
     access_token_expire_minutes: int = Field(default=30, ge=5, le=1440)
+    password_reset_token_expire_minutes: int = Field(default=30, ge=5, le=120)
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_email: str | None = None
+    smtp_starttls: bool = True
     ai_live_calls_enabled: bool = False
     ai_api_key: str | None = None
     ai_base_url: str | None = None
