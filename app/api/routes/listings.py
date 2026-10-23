@@ -155,12 +155,30 @@ def browse_active_listings(
     db: Annotated[Session, Depends(get_db)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
+    q: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    currency: Annotated[str | None, Query(pattern=r"^[A-Za-z]{3}$")] = None,
+    min_price_minor: Annotated[int | None, Query(ge=0, le=9_000_000_000_000_000)] = None,
+    max_price_minor: Annotated[int | None, Query(ge=0, le=9_000_000_000_000_000)] = None,
 ) -> list[ListingResponse]:
-    listings = db.scalars(
-        select(Listing)
-        .where(Listing.status == "active")
-        .order_by(Listing.created_at.desc(), Listing.id)
-        .limit(limit)
-        .offset(offset)
+    """Browse only published listings with bounded filters and stable pagination."""
+    if min_price_minor is not None and max_price_minor is not None and min_price_minor > max_price_minor:
+        raise HTTPException(status_code=422, detail="Minimum price must not exceed maximum price")
+    statement = select(Listing).where(Listing.status == "active")
+    if q is not None:
+        search_term = q.strip()
+        if not search_term:
+            raise HTTPException(status_code=422, detail="Search query must not be blank")
+        statement = statement.where(
+            Listing.title.ilike(f"%{search_term}%")
+            | Listing.description.ilike(f"%{search_term}%")
+        )
+    if currency is not None:
+        statement = statement.where(Listing.currency == currency.upper())
+    if min_price_minor is not None:
+        statement = statement.where(Listing.price_minor >= min_price_minor)
+    if max_price_minor is not None:
+        statement = statement.where(Listing.price_minor <= max_price_minor)
+    results = db.scalars(
+        statement.order_by(Listing.created_at.desc(), Listing.id).limit(limit).offset(offset)
     ).all()
-    return [ListingResponse.model_validate(item) for item in listings]
+    return [ListingResponse.model_validate(item) for item in results]
