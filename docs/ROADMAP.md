@@ -3,9 +3,9 @@
 1. **Foundation — in draft:** FastAPI API, health contract, CI, database migration workflow.
 2. **Identity and initial tenancy — implemented, hardening remains:** users, password hashing, bearer tokens, organizations, memberships, tenant-scoped access.
 3. **Catalog MVP — initial slice implemented:** listings, draft/active publication, public active browse, minor-unit pricing.
-4. **Order/inventory MVP — initial slice implemented:** single-listing orders, conditional stock reservation, per-buyer idempotency, buyer-scoped reads, unpaid-order cancellation and stock release.
+4. **Order/inventory MVP — initial slice implemented:** single-listing orders, conditional stock reservation, per-buyer idempotency, buyer-scoped reads, unpaid-order cancellation, stock release, owner/admin inventory adjustments, seller-scoped order summaries.
 5. **Accounting ledger — initial slice implemented:** tenant-scoped chart of accounts, balanced journal posting, currency/account checks, idempotency, and audit events.
-6. **Commerce hardening — next:** multi-item carts, inventory adjustment permissions, seller order views, order expiry, database concurrency tests.
+6. **Commerce hardening — next:** multi-item carts, inventory adjustment history, order expiry, database concurrency tests.
 7. **Financial hardening:** reversals, period controls, account balances/reports, reconciliation, approvals, and payment sandbox.
 8. **Supplier operations:** onboarding, verification, quotes, procurement and fulfilment.
 9. **Logistics and fulfilment:** shipping quotes, tracking, returns and disputes.
