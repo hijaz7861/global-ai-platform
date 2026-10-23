@@ -1,0 +1,127 @@
+"""Authenticated order creation with stock checks and idempotency."""
+from typing import Annotated
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_current_user
+from app.db import get_db
+from app.models import Listing, Order, OrderItem, User
+from app.schemas import OrderCreate, OrderItemResponse, OrderResponse
+
+router = APIRouter(prefix="/orders", tags=["orders"])
+
+
+def _response(order: Order) -> OrderResponse:
+    return OrderResponse(
+        id=order.id,
+        status=order.status,
+        total_minor=order.total_minor,
+        currency=order.currency,
+        created_at=order.created_at,
+        items=[
+            OrderItemResponse(
+                listing_id=item.listing_id,
+                title=item.title_snapshot,
+                quantity=item.quantity,
+                unit_price_minor=item.unit_price_minor,
+                line_total_minor=item.quantity * item.unit_price_minor,
+            )
+            for item in order.items
+        ],
+    )
+
+
+@router.post("", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
+def create_order(
+    payload: OrderCreate,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)],
+) -> OrderResponse:
+    existing = db.scalar(
+        select(Order).where(Order.user_id == user.id, Order.idempotency_key == idempotency_key)
+    )
+    if existing is not None:
+        return _response(existing)
+
+    listing = db.scalar(
+        select(Listing).where(Listing.id == payload.listing_id, Listing.status == "active")
+    )
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Active listing not found")
+
+    # Conditional update makes stock reservation atomic across concurrent requests.
+    stock_update = db.execute(
+        update(Listing)
+        .where(
+            Listing.id == listing.id,
+            Listing.status == "active",
+            Listing.inventory_quantity >= payload.quantity,
+        )
+        .values(inventory_quantity=Listing.inventory_quantity - payload.quantity)
+        .execution_options(synchronize_session=False)
+    )
+    if stock_update.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Insufficient inventory")
+
+    order = Order(
+        id=str(uuid4()),
+        user_id=user.id,
+        idempotency_key=idempotency_key,
+        status="pending_payment",
+        total_minor=listing.price_minor * payload.quantity,
+        currency=listing.currency,
+    )
+    db.add(order)
+    db.flush()
+    db.add(
+        OrderItem(
+            id=str(uuid4()),
+            order_id=order.id,
+            listing_id=listing.id,
+            listing_organization_id=listing.organization_id,
+            title_snapshot=listing.title,
+            quantity=payload.quantity,
+            unit_price_minor=listing.price_minor,
+        )
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(
+            select(Order).where(Order.user_id == user.id, Order.idempotency_key == idempotency_key)
+        )
+        if existing is not None:
+            return _response(existing)
+        raise HTTPException(status_code=409, detail="Order could not be created") from None
+    db.refresh(order)
+    return _response(order)
+
+
+@router.get("", response_model=list[OrderResponse])
+def list_my_orders(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[OrderResponse]:
+    orders = db.scalars(
+        select(Order).where(Order.user_id == user.id).order_by(Order.created_at.desc())
+    ).all()
+    return [_response(order) for order in orders]
+
+
+@router.get("/{order_id}", response_model=OrderResponse)
+def get_my_order(
+    order_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> OrderResponse:
+    order = db.scalar(select(Order).where(Order.id == order_id, Order.user_id == user.id))
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return _response(order)
