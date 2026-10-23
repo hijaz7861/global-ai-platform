@@ -121,6 +121,23 @@ class OrderResponse(BaseModel):
     items: list[OrderItemResponse]
 
 
+class SellerOrderItemResponse(BaseModel):
+    listing_id: str
+    title: str
+    quantity: int
+    unit_price_minor: int
+    line_total_minor: int
+
+
+class SellerOrderResponse(BaseModel):
+    id: str
+    status: str
+    currency: str
+    created_at: datetime
+    subtotal_minor: int
+    items: list[SellerOrderItemResponse]
+
+
 class AccountCreate(BaseModel):
     code: str = Field(min_length=1, max_length=32)
     name: str = Field(min_length=2, max_length=200)
