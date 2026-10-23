@@ -12,7 +12,7 @@ A private, modular project for building a global business platform incrementally
 - Owner/admin inventory adjustment with nonnegative stock checks and audit events.
 - Order creation with conditional stock reservation and per-buyer idempotency.
 - Buyer-only order reads, seller-scoped order summaries, and unpaid-order cancellation with one-time stock release.
-- Owner/admin chart of accounts and balanced, idempotent journal posting.
+- Owner/admin chart of accounts, balanced idempotent journal posting, and a derived trial balance.
 - Transaction-bound allowlisted audit events for organization, catalog, order, and ledger operations.
 - Guarded OpenAI-compatible AI chat adapter; external calls are disabled by default, require explicit opt-in, a positive request limit, and PostgreSQL.
 - Orders remain `pending_payment`; no payment is charged or processed.
