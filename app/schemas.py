@@ -274,3 +274,17 @@ class TrialBalanceLineResponse(BaseModel):
     debit_total_minor: int
     credit_total_minor: int
     normal_balance_minor: int
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def normalize_reset_email(cls, value: EmailStr) -> str:
+        return str(value).strip().lower()
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
+    new_password: str = Field(min_length=12, max_length=128)
