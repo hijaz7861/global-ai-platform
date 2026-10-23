@@ -1,6 +1,6 @@
 # Global AI-Powered Business Ecosystem
 
-A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, database migrations, automated tests, and CI. It is not yet a complete business ecosystem.
+A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, a double-entry ledger foundation, database migrations, automated tests, and CI. It is not yet a complete business ecosystem.
 
 ## Current foundation
 
@@ -13,8 +13,10 @@ A private, modular project for building a global business platform incrementally
 - Integer minor-unit pricing to avoid floating-point money errors.
 - Order creation with conditional stock reservation and per-buyer idempotency.
 - Buyer-only order reads and cancellation of unpaid orders with one-time stock release.
+- Owner/admin chart of accounts and balanced, idempotent journal posting.
+- Transaction-bound allowlisted audit events for organization, catalog, order, and ledger operations.
 - Orders remain `pending_payment`; no payment is charged or processed.
-- SQLAlchemy models and Alembic migrations for identity, tenants, listings, inventory, and orders.
+- SQLAlchemy models and Alembic migrations for identity, tenants, listings, inventory, orders, audit, and journal entries.
 - GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks.
 - Optional Docker packaging that applies migrations before starting the API.
 
@@ -68,6 +70,6 @@ Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/healt
 
 ## Roadmap and limitations
 
-See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Catalog](docs/CATALOG.md), [Orders](docs/ORDERS.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
+See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Catalog](docs/CATALOG.md), [Orders](docs/ORDERS.md), [Accounting](docs/ACCOUNTING.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
 
-Email verification, password reset, MFA, rate limiting, invitations, role administration, payment processing, refunds, seller settlement, accounting, AI orchestration, and external connectors remain future work. Do not expose this foundation publicly as a production service.
+Email verification, password reset, MFA, rate limiting, invitations, role administration, payment processing, reversals, full financial reporting, supplier/logistics workflows, AI orchestration, and external connectors remain future work. Do not expose this foundation publicly as a production service.
