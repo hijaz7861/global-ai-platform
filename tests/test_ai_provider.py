@@ -1,12 +1,13 @@
 """Tests for the provider adapter at the external HTTP boundary."""
+import asyncio
+
 import httpx
 import pytest
 
 from app.ai.providers import OpenAICompatibleProvider, ProviderError
 
 
-@pytest.mark.asyncio
-async def test_openai_compatible_provider_sends_bounded_non_streaming_request():
+def test_openai_compatible_provider_sends_bounded_non_streaming_request():
     captured = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -27,7 +28,7 @@ async def test_openai_compatible_provider_sends_bounded_non_streaming_request():
         model="test-model",
         transport=httpx.MockTransport(handler),
     )
-    result = await provider.complete("hello", 32)
+    result = asyncio.run(provider.complete("hello", 32))
     assert captured["url"] == "https://provider.example/v1/chat/completions"
     assert captured["authorization"] == "Bearer test-secret"
     assert '"max_tokens":32' in captured["body"]
@@ -37,8 +38,7 @@ async def test_openai_compatible_provider_sends_bounded_non_streaming_request():
     assert result["output_tokens"] == 7
 
 
-@pytest.mark.asyncio
-async def test_provider_does_not_expose_error_response_body():
+def test_provider_does_not_expose_error_response_body():
     provider = OpenAICompatibleProvider(
         api_key="test-secret",
         base_url="https://provider.example/v1",
@@ -48,7 +48,7 @@ async def test_provider_does_not_expose_error_response_body():
         ),
     )
     with pytest.raises(ProviderError) as error:
-        await provider.complete("hello", 16)
+        asyncio.run(provider.complete("hello", 16))
     assert "sensitive provider error body" not in str(error.value)
 
 
