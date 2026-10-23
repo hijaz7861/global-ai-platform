@@ -1,7 +1,7 @@
-"""Order lifecycle smoke tests for idempotency and stock protection."""
+"""Order lifecycle tests for idempotency and stock protection."""
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -9,7 +9,6 @@ from app import models  # noqa: F401
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import Listing
 
 
 @pytest.fixture
@@ -40,13 +39,14 @@ def client(monkeypatch):
 
 def register_login(client: TestClient, email: str) -> str:
     password = "correct-horse-battery-12"
-    assert client.post("/api/v1/auth/register", json={"email": email, "password": password}).status_code == 201
+    response = client.post("/api/v1/auth/register", json={"email": email, "password": password})
+    assert response.status_code == 201, response.text
     response = client.post("/api/v1/auth/token", json={"email": email, "password": password})
     assert response.status_code == 200, response.text
     return response.json()["access_token"]
 
 
-def make_active_listing(client: TestClient, quantity: int = 3) -> tuple[str, str]:
+def make_active_listing(client: TestClient, quantity: int = 3) -> tuple[str, str, str]:
     token = register_login(client, "seller@example.com")
     headers = {"Authorization": f"Bearer {token}"}
     org = client.post("/api/v1/organizations", headers=headers, json={"name": "Seller Org"})
@@ -64,11 +64,11 @@ def make_active_listing(client: TestClient, quantity: int = 3) -> tuple[str, str
         f"/api/v1/organizations/{org_id}/listings/{listing_id}/publish", headers=headers
     )
     assert published.status_code == 200, published.text
-    return listing_id, token
+    return listing_id, token, org_id
 
 
 def test_order_reserves_stock_and_is_idempotent(client):
-    listing_id, _ = make_active_listing(client, quantity=3)
+    listing_id, seller_token, org_id = make_active_listing(client, quantity=3)
     buyer_token = register_login(client, "buyer@example.com")
     headers = {"Authorization": f"Bearer {buyer_token}", "Idempotency-Key": "order-key-0001"}
     payload = {"listing_id": listing_id, "quantity": 2}
@@ -81,20 +81,27 @@ def test_order_reserves_stock_and_is_idempotent(client):
     assert repeated.status_code == 201, repeated.text
     assert repeated.json()["id"] == first.json()["id"]
 
-    with client.app.state.__dict__.get("_unused", None) if False else _noop():
-        pass
+    seller_headers = {"Authorization": f"Bearer {seller_token}"}
+    stock = client.get(
+        f"/api/v1/organizations/{org_id}/listings", headers=seller_headers
+    ).json()[0]["inventory_quantity"]
+    assert stock == 1
 
 
-class _noop:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
-        return False
+def test_idempotency_key_cannot_be_reused_for_different_order(client):
+    listing_id, _, _ = make_active_listing(client, quantity=3)
+    buyer_token = register_login(client, "buyer@example.com")
+    headers = {"Authorization": f"Bearer {buyer_token}", "Idempotency-Key": "order-key-0004"}
+    first = client.post("/api/v1/orders", headers=headers,
+                        json={"listing_id": listing_id, "quantity": 1})
+    assert first.status_code == 201, first.text
+    second = client.post("/api/v1/orders", headers=headers,
+                         json={"listing_id": listing_id, "quantity": 2})
+    assert second.status_code == 409
 
 
 def test_order_rejects_insufficient_stock(client):
-    listing_id, _ = make_active_listing(client, quantity=1)
+    listing_id, _, _ = make_active_listing(client, quantity=1)
     buyer_token = register_login(client, "buyer@example.com")
     response = client.post(
         "/api/v1/orders",
@@ -105,7 +112,7 @@ def test_order_rejects_insufficient_stock(client):
 
 
 def test_orders_are_private_to_the_buyer(client):
-    listing_id, _ = make_active_listing(client, quantity=2)
+    listing_id, _, _ = make_active_listing(client, quantity=2)
     buyer_token = register_login(client, "buyer@example.com")
     created = client.post(
         "/api/v1/orders",
