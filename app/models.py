@@ -1,4 +1,4 @@
-"""Identity, organization, membership, and catalog data models."""
+"""Identity, organization, membership, catalog, and order data models."""
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     UniqueConstraint,
 )
@@ -33,6 +34,7 @@ class User(Base):
     memberships: Mapped[list["Membership"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    orders: Mapped[list["Order"]] = relationship(back_populates="user")
 
 
 class Organization(Base):
@@ -71,6 +73,7 @@ class Listing(Base):
     __table_args__ = (
         CheckConstraint("price_minor > 0", name="ck_listings_price_positive"),
         CheckConstraint("length(currency) = 3", name="ck_listings_currency_length"),
+        CheckConstraint("inventory_quantity >= 0", name="ck_listings_inventory_nonnegative"),
         Index("ix_listings_status_created", "status", "created_at"),
     )
 
@@ -84,6 +87,48 @@ class Listing(Base):
     price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    inventory_quantity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     organization: Mapped[Organization] = relationship(back_populates="listings")
+
+
+class Order(Base):
+    __tablename__ = "orders"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_orders_user_idempotency"),
+        CheckConstraint("total_minor > 0", name="ck_orders_total_positive"),
+        Index("ix_orders_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending_payment", nullable=False)
+    total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    user: Mapped[User] = relationship(back_populates="orders")
+    items: Mapped[list["OrderItem"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan", order_by="OrderItem.id"
+    )
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_order_items_quantity_positive"),
+        CheckConstraint("unit_price_minor > 0", name="ck_order_items_price_positive"),
+        Index("ix_order_items_order_id", "order_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id", ondelete="RESTRICT"), nullable=False)
+    listing_organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    title_snapshot: Mapped[str] = mapped_column(String(200), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit_price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    order: Mapped[Order] = relationship(back_populates="items")
