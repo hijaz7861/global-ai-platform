@@ -5,6 +5,7 @@
 - `GET /api/v1/organizations/{organization_id}/accounts`: member-scoped account list.
 - `POST /api/v1/organizations/{organization_id}/journal-entries`: owner/admin posts a balanced journal entry. Requires `Idempotency-Key` (8–128 characters).
 - `GET /api/v1/organizations/{organization_id}/journal-entries`: owner/admin lists posted entries.
+- `GET /api/v1/organizations/{organization_id}/trial-balance`: derives debit totals, credit totals, and normal balances from posted journal lines.
 
 ## Invariants
 - Each journal line has either a positive debit or a positive credit, never both or neither.
@@ -16,6 +17,6 @@
 - Posting and its audit event share one database transaction.
 
 ## Limits
-This is a ledger foundation, not a complete accounting system. It does not calculate account balances or financial statements, provide a default chart of accounts, handle period closing, tax, multi-currency exchange, payment reconciliation, supplier settlement, approval workflows, or reversals. No payment provider is connected and no external money is moved.
+This is a ledger foundation, not a complete accounting system. It derives a basic trial balance but does not provide full financial statements, provide a default chart of accounts, handle period closing, tax, multi-currency exchange, payment reconciliation, supplier settlement, approval workflows, or reversals. No payment provider is connected and no external money is moved.
 
 Before production, add financial-domain review, reconciliation and reversal workflows, immutable/tamper-evident audit export, period controls, PostgreSQL concurrency tests, and independent accounting validation.
