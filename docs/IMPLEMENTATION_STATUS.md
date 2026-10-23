@@ -8,7 +8,7 @@
 - Alembic migrations for identity/tenancy, catalog, inventory/orders, audit events, and double-entry ledger.
 - Tenant-scoped catalog and order flows, stock reservations/cancellation, owner/admin inventory adjustments, seller order summaries.
 - Transaction-bound allowlisted audit events for organization, catalog, inventory, order, account, and journal operations.
-- Owner/admin chart of accounts and balanced journal posting with account/tenant/currency checks, integer minor-unit amounts, idempotency, and no update/delete API.
+- Owner/admin chart of accounts, balanced journal posting with account/tenant/currency checks, integer minor-unit amounts, idempotency, derived trial balance, and no update/delete API.
 - Guarded OpenAI-compatible provider adapter with no retries, bounded timeouts, secret-safe errors, and live calls disabled by default.
 - Live AI endpoint requires owner/admin, explicit opt-in, positive rolling 24-hour request limit, configured credentials/model/URL, and PostgreSQL row locking.
 - Integration tests cover identity, tenant boundaries, catalog, stock, idempotency, cancellation, audit records, seller views, ledger invariants, and AI provider behavior.
