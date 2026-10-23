@@ -8,7 +8,16 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.security import create_access_token, hash_password, signing_key_is_configured, verify_password
+from app.api.deps import bearer_scheme, get_current_user
+from app.audit import record_audit_event
+from app.core.config import settings
+from app.core.security import (
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    signing_key_is_configured,
+    verify_password,
+)
 from app.db import get_db
 from app.models import TokenRevocation, User
 from app.schemas import LoginRequest, RegisterRequest, TokenResponse
@@ -41,7 +50,6 @@ def login(payload: LoginRequest, db: Annotated[Session, Depends(get_db)]) -> Tok
         raise HTTPException(status_code=401, detail="Invalid email or password",
                             headers={"WWW-Authenticate": "Bearer"})
     token = create_access_token(user.id)
-    from app.core.config import settings
     return TokenResponse(
         access_token=token,
         expires_in=settings.access_token_expire_minutes * 60,
