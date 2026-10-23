@@ -4,7 +4,7 @@
 2. **Identity and initial tenancy — implemented, hardening remains:** users, password hashing, bearer tokens, organizations, owner/admin membership management, tenant-scoped access.
 3. **Catalog MVP — initial slice implemented:** listings, draft/active publication, public active browse, minor-unit pricing.
 4. **Order/inventory MVP — initial slice implemented:** single-listing orders, conditional stock reservation, per-buyer idempotency, buyer-scoped reads, unpaid-order cancellation, stock release, owner/admin inventory adjustments, seller-scoped order summaries.
-5. **Accounting ledger — initial slice implemented:** tenant-scoped chart of accounts, balanced journal posting, currency/account checks, idempotency, and audit events.
+5. **Accounting ledger — initial slice implemented:** tenant-scoped chart of accounts, balanced journal posting, derived trial balance, currency/account checks, idempotency, and audit events.
 6. **AI adapter — guarded initial slice:** OpenAI-compatible endpoint adapter, output caps, timeout, audit events, opt-in and request quota. Multi-provider routing and agents remain future work.
 7. **Commerce hardening — next:** multi-item carts, inventory adjustment history, order expiry, database concurrency tests.
 8. **Financial hardening:** reversals, period controls, account balances/reports, reconciliation, approvals, and payment sandbox.
