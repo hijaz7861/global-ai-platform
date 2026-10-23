@@ -1,16 +1,16 @@
 # Global AI-Powered Business Ecosystem
 
-A private, modular project for building a global business platform incrementally. This repository currently contains a runnable API foundation and a documented roadmap; it is not yet a complete business ecosystem.
+A private, modular project for building a global business platform incrementally. The foundation includes a FastAPI API, identity endpoints, organization membership checks, a database migration, automated tests, and CI. It is not yet a complete business ecosystem.
 
 ## Current foundation
 
 - FastAPI application with OpenAPI docs.
 - Versioned process health endpoint: `GET /api/v1/health`.
-- Service identity endpoint: `GET /`.
-- Environment-backed settings.
-- HTTP contract tests with pytest.
+- Registration with password hashing and bearer-token login.
+- Organization creation and membership-filtered organization access.
+- SQLAlchemy models and Alembic migration for users, organizations, and memberships.
 - GitHub Actions CI on Python 3.11, 3.12, and 3.13.
-- Optional Docker packaging.
+- Optional Docker packaging that applies migrations before starting the API.
 
 ## Run locally
 
@@ -20,12 +20,19 @@ Python 3.11 or newer is required.
 python -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
-python -m compileall -q app tests
+cp .env.example .env
+```
+
+Set a unique random `SECRET_KEY` in `.env` before using login. Then run:
+
+```bash
+python -m alembic upgrade head
+python -m compileall -q app tests migrations
 python -m pytest -q
 uvicorn app.main:app --reload
 ```
 
-Then open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/health`.
+Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/health`.
 
 ## Core product requirements
 
@@ -56,6 +63,8 @@ Then open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/
 
 ## Roadmap
 
-See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
+See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
 
-Authentication, tenant isolation, database persistence, billing, marketplace workflows, AI orchestration, and third-party connectors are not implemented yet. Do not expose the current unauthenticated API publicly as a production service.
+## Current limitations
+
+Email verification, password reset, MFA, rate limiting, role administration, PostgreSQL deployment configuration, commerce workflows, accounting, AI orchestration, and external connectors remain future work. Do not expose this unauthenticated foundation publicly as a production service.
