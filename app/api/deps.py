@@ -26,7 +26,9 @@ def get_current_user(
         payload = decode_access_token(credentials.credentials)
         user_id = payload.get("sub")
         token_id = payload.get("jti")
-        if not isinstance(user_id, str) or not user_id or not isinstance(token_id, str) or not token_id:
+        auth_version = payload.get("ver", 0)
+        if (not isinstance(user_id, str) or not user_id or not isinstance(token_id, str) or not token_id
+                or not isinstance(auth_version, int) or isinstance(auth_version, bool):
             raise ValueError("Invalid token claims")
         revoked = db.scalar(
             select(TokenRevocation.jti).where(
@@ -40,7 +42,7 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid or expired access token",
                             headers={"WWW-Authenticate": "Bearer"}) from None
     user = db.scalar(select(User).where(User.id == user_id, User.is_active.is_(True)))
-    if user is None:
+    if user is None or user.auth_version != auth_version:
         raise HTTPException(status_code=401, detail="Invalid or inactive account",
                             headers={"WWW-Authenticate": "Bearer"})
     return user
