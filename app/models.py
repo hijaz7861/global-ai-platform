@@ -258,3 +258,28 @@ class PasswordResetToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class SupplierProfile(Base):
+    """Tenant-owned supplier onboarding profile with an explicit review state."""
+    __tablename__ = "supplier_profiles"
+    __table_args__ = (
+        UniqueConstraint("organization_id", name="uq_supplier_profiles_organization"),
+        CheckConstraint("status IN ('draft','submitted','approved','rejected')", name="ck_supplier_profiles_status"),
+        CheckConstraint("length(country_code) = 2", name="ck_supplier_profiles_country_code"),
+        Index("ix_supplier_profiles_status_created", "status", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    legal_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    business_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    country_code: Mapped[str] = mapped_column(String(2), nullable=False)
+    contact_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    website_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    description: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    reviewer_notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from_email: str | None = None
     smtp_starttls: bool = True
+    platform_admin_emails: str = ""
     ai_live_calls_enabled: bool = False
     ai_api_key: str | None = None
     ai_base_url: str | None = None

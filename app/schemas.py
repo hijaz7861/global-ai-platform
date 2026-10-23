@@ -288,3 +288,77 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirm(BaseModel):
     token: str = Field(min_length=20, max_length=256)
     new_password: str = Field(min_length=12, max_length=128)
+
+
+class SupplierProfileCreate(BaseModel):
+    legal_name: str = Field(min_length=2, max_length=200)
+    business_type: Literal["manufacturer", "distributor", "wholesaler", "retailer", "service_provider", "other"]
+    country_code: str = Field(min_length=2, max_length=2)
+    contact_email: EmailStr
+    website_url: str | None = Field(default=None, max_length=2048)
+    description: str = Field(default="", max_length=2000)
+
+    @field_validator("legal_name")
+    @classmethod
+    def normalize_legal_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Legal name must contain at least two non-space characters")
+        return value
+
+    @field_validator("country_code")
+    @classmethod
+    def normalize_country_code(cls, value: str) -> str:
+        value = value.strip().upper()
+        if len(value) != 2 or not value.isascii() or not value.isalpha():
+            raise ValueError("Country code must be a two-letter ASCII code")
+        return value
+
+    @field_validator("contact_email")
+    @classmethod
+    def normalize_contact_email(cls, value: EmailStr) -> str:
+        return str(value).strip().lower()
+
+    @field_validator("website_url")
+    @classmethod
+    def validate_website_url(cls, value: str | None) -> str | None:
+        if value is not None:
+            value = value.strip()
+            if not value.startswith(("https://", "http://")):
+                raise ValueError("Website URL must use HTTP or HTTPS")
+        return value
+
+
+class SupplierProfileResponse(BaseModel):
+    id: str
+    organization_id: str
+    legal_name: str
+    business_type: str
+    country_code: str
+    contact_email: EmailStr
+    website_url: str | None
+    description: str
+    status: str
+    reviewer_notes: str | None
+    created_by_user_id: str
+    reviewed_by_user_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SupplierReviewRequest(BaseModel):
+    decision: Literal["approved", "rejected"]
+    notes: str = Field(default="", max_length=2000)
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_review_notes(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def require_rejection_reason(self):
+        if self.decision == "rejected" and len(self.notes) < 3:
+            raise ValueError("A rejection reason of at least three characters is required")
+        return self
