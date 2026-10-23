@@ -1,7 +1,7 @@
 """Tenant-scoped chart of accounts and immutable balanced journal posting."""
 import hashlib
 import json
-from typing import Annotated, Any
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -65,6 +65,16 @@ def create_account(
         is_active=True,
     )
     db.add(account)
+    db.flush()
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="account.created",
+        entity_type="account",
+        entity_id=account.id,
+        details={"currency": account.currency, "status": "active"},
+    )
     try:
         db.commit()
     except IntegrityError:
