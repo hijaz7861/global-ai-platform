@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_membership
+from app.api.deps import require_membership
 from app.audit import record_audit_event
 from app.db import get_db
 from app.models import Membership, User
