@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "global-ai-platform"
-version = "0.1.0"
+version = "0.2.0"
 description = "Secure, modular foundation for a global AI-powered business ecosystem"
 requires-python = ">=3.11"
 dependencies = [
@@ -12,6 +12,9 @@ dependencies = [
   "uvicorn[standard]>=0.30,<1.0",
   "pydantic-settings>=2.5,<3.0",
   "python-dotenv>=1.0,<2.0",
+  "SQLAlchemy>=2.0,<3.0",
+  "pwdlib[argon2]>=0.2,<1.0",
+  "PyJWT>=2.9,<3.0",
 ]
 
 [project.optional-dependencies]
