@@ -263,3 +263,14 @@ class JournalEntryResponse(BaseModel):
     status: str
     created_at: datetime
     lines: list[JournalLineResponse]
+
+
+class TrialBalanceLineResponse(BaseModel):
+    account_id: str
+    code: str
+    name: str
+    account_type: str
+    currency: str
+    debit_total_minor: int
+    credit_total_minor: int
+    normal_balance_minor: int
