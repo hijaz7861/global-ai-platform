@@ -2,6 +2,7 @@
 from fastapi import APIRouter
 
 from app.api.routes.accounting import router as accounting_router
+from app.api.routes.ai import router as ai_router
 from app.api.routes.audit import router as audit_router
 from app.api.routes.health import router as health_router
 from app.api.routes.identity import router as identity_router
@@ -19,3 +20,4 @@ api_router.include_router(orders_router)
 api_router.include_router(audit_router)
 api_router.include_router(accounting_router)
 api_router.include_router(seller_router)
+api_router.include_router(ai_router)
