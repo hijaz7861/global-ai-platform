@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.audit import record_audit_event
 from app.db import get_db
 from app.models import Listing, Order, OrderItem, User
 from app.schemas import OrderCreate, OrderItemResponse, OrderResponse
@@ -72,7 +73,6 @@ def create_order(
     if listing is None:
         raise HTTPException(status_code=404, detail="Active listing not found")
 
-    # Conditional update makes stock reservation atomic across concurrent requests.
     stock_update = db.execute(
         update(Listing)
         .where(
@@ -107,6 +107,20 @@ def create_order(
             quantity=payload.quantity,
             unit_price_minor=listing.price_minor,
         )
+    )
+    record_audit_event(
+        db,
+        actor_user_id=user.id,
+        organization_id=listing.organization_id,
+        action="order.created",
+        entity_type="order",
+        entity_id=order.id,
+        details={
+            "quantity": payload.quantity,
+            "price_minor": order.total_minor,
+            "currency": order.currency,
+            "status": order.status,
+        },
     )
     try:
         db.commit()
@@ -161,6 +175,7 @@ def cancel_my_order(
     if order.status != "pending_payment":
         raise HTTPException(status_code=409, detail="Order can no longer be cancelled")
 
+    organization_id = order.items[0].listing_organization_id if order.items else None
     for item in order.items:
         db.execute(
             update(Listing)
@@ -169,6 +184,15 @@ def cancel_my_order(
             .execution_options(synchronize_session=False)
         )
     order.status = "cancelled"
+    record_audit_event(
+        db,
+        actor_user_id=user.id,
+        organization_id=organization_id,
+        action="order.cancelled",
+        entity_type="order",
+        entity_id=order.id,
+        details={"status": order.status},
+    )
     db.commit()
     db.refresh(order)
     return _response(order)
