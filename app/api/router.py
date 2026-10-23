@@ -1,6 +1,7 @@
 """Versioned API router."""
 from fastapi import APIRouter
 
+from app.api.routes.audit import router as audit_router
 from app.api.routes.health import router as health_router
 from app.api.routes.identity import router as identity_router
 from app.api.routes.listings import router as listings_router
@@ -13,3 +14,4 @@ api_router.include_router(identity_router)
 api_router.include_router(organizations_router)
 api_router.include_router(listings_router)
 api_router.include_router(orders_router)
+api_router.include_router(audit_router)
