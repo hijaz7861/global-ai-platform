@@ -30,7 +30,7 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install ruff
       - name: Lint
-        run: ruff check app tests migrations
+        run: ruff check --select E4,E7,E9,F app tests migrations
       - name: Compile source
         run: python -m compileall -q app tests migrations
       - name: Verify database migration
