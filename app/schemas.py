@@ -1,28 +1,25 @@
 """Request and response schemas for identity and organizations."""
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=320)
+    email: EmailStr
     password: str = Field(min_length=12, max_length=128)
 
     @field_validator("email")
     @classmethod
-    def normalize_email(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if normalized.count("@") != 1 or "." not in normalized.rsplit("@", 1)[-1]:
-            raise ValueError("A valid email address is required")
-        return normalized
+    def normalize_email(cls, value: EmailStr) -> str:
+        return str(value).strip().lower()
 
 
 class LoginRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=320)
+    email: EmailStr
     password: str = Field(min_length=1, max_length=128)
 
     @field_validator("email")
     @classmethod
-    def normalize_email(cls, value: str) -> str:
-        return value.strip().lower()
+    def normalize_email(cls, value: EmailStr) -> str:
+        return str(value).strip().lower()
 
 
 class TokenResponse(BaseModel):
@@ -33,6 +30,14 @@ class TokenResponse(BaseModel):
 
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=2, max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def require_nonblank_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Organization name must contain at least two non-space characters")
+        return normalized
 
 
 class OrganizationResponse(BaseModel):
