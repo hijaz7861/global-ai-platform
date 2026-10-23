@@ -4,7 +4,6 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -36,7 +35,10 @@ async def chat(
             status_code=422,
             detail=f"max_output_tokens cannot exceed configured limit ({settings.ai_max_output_tokens})",
         )
-    if not settings.ai_api_key or not settings.ai_base_url or not settings.ai_model:
+    if not all(
+        value and value.strip()
+        for value in (settings.ai_api_key, settings.ai_base_url, settings.ai_model)
+    ):
         raise HTTPException(status_code=503, detail="AI provider configuration is incomplete")
     if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
         raise HTTPException(
@@ -76,15 +78,27 @@ async def chat(
     )
     db.commit()
 
-    provider = OpenAICompatibleProvider(
-        api_key=settings.ai_api_key,
-        base_url=settings.ai_base_url,
-        model=settings.ai_model,
-        timeout_seconds=settings.ai_timeout_seconds,
-    )
     try:
+        provider = OpenAICompatibleProvider(
+            api_key=settings.ai_api_key or "",
+            base_url=settings.ai_base_url or "",
+            model=settings.ai_model or "",
+            timeout_seconds=settings.ai_timeout_seconds,
+        )
         result = await provider.complete(payload.prompt, payload.max_output_tokens)
-    except (ProviderError, ValueError) as exc:
+    except ValueError:
+        record_audit_event(
+            db,
+            actor_user_id=membership.user_id,
+            organization_id=membership.organization_id,
+            action="ai.request.failed",
+            entity_type="ai_request",
+            entity_id=request_id,
+            details={"status": "configuration_error"},
+        )
+        db.commit()
+        raise HTTPException(status_code=503, detail="AI provider configuration is invalid") from None
+    except ProviderError as exc:
         record_audit_event(
             db,
             actor_user_id=membership.user_id,
