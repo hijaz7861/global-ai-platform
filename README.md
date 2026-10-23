@@ -8,8 +8,9 @@ A private, modular project for building a global business platform incrementally
 - Versioned process health endpoint: `GET /api/v1/health`.
 - Registration with Argon2 password hashing, signed bearer-token login, and server-side logout revocation.
 - Email-based password reset with hashed, expiring, single-use tokens; successful reset invalidates existing sessions.
+- Email-based password reset with hashed, expiring, single-use tokens; successful reset invalidates existing sessions.
 - Organization creation, membership-filtered access, and owner/admin member management.
-- Tenant-scoped catalog listings with owner/admin publication.
+- Tenant-scoped catalog listings with owner/admin publication, plus public search, currency and price filters, and bounded pagination.
 - Owner/admin inventory adjustment with nonnegative stock checks and audit events.
 - Order creation with conditional stock reservation and per-buyer idempotency.
 - Buyer-only order reads, seller-scoped order summaries, and unpaid-order cancellation with one-time stock release.
@@ -36,7 +37,7 @@ python -m pytest -q
 uvicorn app.main:app --reload
 ```
 
-Set a unique random `SECRET_KEY` of at least 32 characters in `.env` before using login. Configure `SMTP_HOST`, `SMTP_FROM_EMAIL`, and SMTP credentials to deliver password-reset email; reset requests use the same response for known and unknown accounts. Live AI calls stay disabled unless deliberately enabled in configuration. For PostgreSQL deployments, use `DATABASE_URL=postgresql+psycopg://...` and install `python -m pip install 'psycopg[binary]>=3.2,<4'`.
+Set a unique random `SECRET_KEY` of at least 32 characters in `.env` before using login. Configure `SMTP_HOST`, `SMTP_FROM_EMAIL`, and SMTP credentials to deliver password-reset email; reset requests use the same response for known and unknown accounts. Configure `SMTP_HOST`, `SMTP_FROM_EMAIL`, and SMTP credentials to deliver password-reset email; reset requests use the same response for known and unknown accounts. Live AI calls stay disabled unless deliberately enabled in configuration. For PostgreSQL deployments, use `DATABASE_URL=postgresql+psycopg://...` and install `python -m pip install 'psycopg[binary]>=3.2,<4'`.
 
 Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/health`.
 
