@@ -1,0 +1,46 @@
+"""Registration and token issuance endpoints."""
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.core.security import create_access_token, hash_password, verify_password
+from app.db import get_db
+from app.models import User
+from app.schemas import LoginRequest, RegisterRequest, TokenResponse
+
+router = APIRouter(prefix="/auth", tags=["identity"])
+
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+def register(payload: RegisterRequest, db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
+    existing = db.scalar(select(User).where(User.email == payload.email))
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="An account with this email already exists")
+    user = User(email=payload.email, password_hash=hash_password(payload.password))
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An account with this email already exists") from None
+    db.refresh(user)
+    return {"id": user.id, "email": user.email, "status": "created"}
+
+
+@router.post("/token", response_model=TokenResponse)
+def login(payload: LoginRequest, db: Annotated[Session, Depends(get_db)]) -> TokenResponse:
+    if not settings.secret_key:
+        raise HTTPException(status_code=503, detail="Authentication signing key is not configured")
+    user = db.scalar(select(User).where(User.email == payload.email))
+    if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password",
+                            headers={"WWW-Authenticate": "Bearer"})
+    token = create_access_token(user.id)
+    return TokenResponse(
+        access_token=token,
+        expires_in=settings.access_token_expire_minutes * 60,
+    )
