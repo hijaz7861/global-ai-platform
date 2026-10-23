@@ -1,4 +1,5 @@
 """Owner/admin access to tenant-scoped audit events."""
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,12 +22,15 @@ class AuditEventResponse(BaseModel):
     entity_type: str
     entity_id: str
     details: dict[str, Any]
-    created_at: Any
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
 
-@router.get("/organizations/{organization_id}/audit-events", response_model=list[AuditEventResponse])
+@router.get(
+    "/organizations/{organization_id}/audit-events",
+    response_model=list[AuditEventResponse],
+)
 def list_organization_audit_events(
     membership: Annotated[Membership, Depends(require_membership)],
     db: Annotated[Session, Depends(get_db)],
