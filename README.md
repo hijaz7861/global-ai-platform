@@ -8,9 +8,9 @@ A private, modular project for building a global business platform incrementally
 - Versioned process health endpoint: `GET /api/v1/health`.
 - Registration with Argon2 password hashing, signed bearer-token login, and server-side logout revocation.
 - Email-based password reset with hashed, expiring, single-use tokens; successful reset invalidates existing sessions.
-- Email-based password reset with hashed, expiring, single-use tokens; successful reset invalidates existing sessions.
 - Organization creation, membership-filtered access, and owner/admin member management.
 - Tenant-scoped catalog listings with owner/admin publication, plus public search, currency and price filters, and bounded pagination.
+- Organization-scoped supplier onboarding with draft/submitted/approved/rejected states and platform-admin review.
 - Owner/admin inventory adjustment with nonnegative stock checks and audit events.
 - Order creation with conditional stock reservation and per-buyer idempotency.
 - Buyer-only order reads, seller-scoped order summaries, and unpaid-order cancellation with one-time stock release.
@@ -18,7 +18,7 @@ A private, modular project for building a global business platform incrementally
 - Transaction-bound allowlisted audit events for organization, catalog, order, and ledger operations.
 - Guarded OpenAI-compatible AI chat adapter; external calls are disabled by default, require explicit opt-in, a positive request limit, and PostgreSQL.
 - Orders remain `pending_payment`; no payment is charged or processed.
-- SQLAlchemy models and Alembic migrations for identity, tenants, catalog, inventory, orders, audit, and journal entries, token revocation, and password reset.
+- SQLAlchemy models and Alembic migrations for identity, tenants, catalog, inventory, orders, audit, and journal entries, token revocation, password reset, and supplier profiles.
 - GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks.
 - Optional Docker packaging that applies migrations before starting the API.
 
@@ -37,7 +37,7 @@ python -m pytest -q
 uvicorn app.main:app --reload
 ```
 
-Set a unique random `SECRET_KEY` of at least 32 characters in `.env` before using login. Configure `SMTP_HOST`, `SMTP_FROM_EMAIL`, and SMTP credentials to deliver password-reset email; reset requests use the same response for known and unknown accounts. Configure `SMTP_HOST`, `SMTP_FROM_EMAIL`, and SMTP credentials to deliver password-reset email; reset requests use the same response for known and unknown accounts. Live AI calls stay disabled unless deliberately enabled in configuration. For PostgreSQL deployments, use `DATABASE_URL=postgresql+psycopg://...` and install `python -m pip install 'psycopg[binary]>=3.2,<4'`.
+Set a unique random `SECRET_KEY` of at least 32 characters in `.env` before using login. Configure `SMTP_HOST`, `SMTP_FROM_EMAIL`, and SMTP credentials to deliver password-reset email; reset requests use the same response for known and unknown accounts. Set `PLATFORM_ADMIN_EMAILS` to a comma-separated allowlist for supplier review; leave it empty to disable platform-admin review access. Live AI calls stay disabled unless deliberately enabled in configuration. For PostgreSQL deployments, use `DATABASE_URL=postgresql+psycopg://...` and install `python -m pip install 'psycopg[binary]>=3.2,<4'`.
 
 Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/health`.
 
@@ -71,4 +71,4 @@ Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/healt
 
 See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Catalog](docs/CATALOG.md), [Orders](docs/ORDERS.md), [Accounting](docs/ACCOUNTING.md), [AI Orchestration](docs/AI_ORCHESTRATION.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
 
-Email verification, MFA, rate limiting, invitations, role administration, payment processing, ledger reversals, full financial reporting, provider routing/fallback, native provider integrations, agent tools, external connectors, suppliers, logistics, rentals, real estate, workforce, and education remain future work. Do not expose this foundation publicly as a production service.
+Email verification, MFA, rate limiting, invitations, role administration, payment processing, ledger reversals, full financial reporting, provider routing/fallback, native provider integrations, agent tools, external connectors, supplier procurement/quotes, logistics, rentals, real estate, workforce, and education remain future work. Do not expose this foundation publicly as a production service.

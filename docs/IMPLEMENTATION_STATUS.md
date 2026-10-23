@@ -1,36 +1,38 @@
 # Implementation Status
 
 ## Implemented in the draft foundation branch
-- FastAPI application, root service identity, and versioned process health endpoint.
-- Registration with normalized, validated email and Argon2 password hashing.
-- Short-lived signed bearer tokens with server-side logout revocation; login fails closed unless a 32-character signing key is configured.
-- User, organization, membership, catalog listing, inventory, order, order-item, audit-event, account, journal-entry, and journal-line models.
-- Alembic migrations for identity/tenancy, catalog, inventory/orders, audit events, and double-entry ledger.
-- Tenant-scoped catalog and order flows, stock reservations/cancellation, owner/admin inventory adjustments, seller order summaries.
-- Transaction-bound allowlisted audit events for organization, catalog, inventory, order, account, and journal operations.
-- Owner/admin chart of accounts, balanced journal posting with account/tenant/currency checks, integer minor-unit amounts, idempotency, derived trial balance, and no update/delete API.
-- Guarded OpenAI-compatible provider adapter with no retries, bounded timeouts, secret-safe errors, and live calls disabled by default.
-- Live AI endpoint requires owner/admin, explicit opt-in, positive rolling 24-hour request limit, configured credentials/model/URL, and PostgreSQL row locking.
-- Integration tests cover identity, tenant boundaries, catalog, stock, idempotency, cancellation, audit records, seller views, ledger invariants, and AI provider behavior.
-- GitHub Actions CI checks Ruff, compilation, Alembic migration consistency, and pytest on Python 3.11–3.13.
-- Docker packaging applies migrations before starting the API.
+- FastAPI application, OpenAPI, root service identity, and versioned health endpoint.
+- Registration with normalized email, Argon2 password hashing, signed bearer tokens, server-side logout revocation, and fail-closed signing-key validation.
+- Password recovery with random one-time tokens, SHA-256 digests at rest, expiry, atomic single-use consumption, generic request responses, configurable SMTP delivery, and invalidation of existing sessions.
+- Organization creation and membership/role controls with tenant-scoped access and audit events.
+- Tenant-owned catalog listings, draft/active publication, bounded public search with currency/price filters and pagination, inventory adjustment, atomic stock reservation, idempotent orders, buyer-scoped reads, cancellation and seller-scoped summaries.
+- Supplier profile onboarding per organization, draft/submitted/approved/rejected workflow, rejection reason validation, resubmission after rejection, and platform-admin review guarded by a configured email allowlist.
+- Tenant-scoped chart of accounts, balanced idempotent double-entry journal posting, and derived trial balance using integer minor units.
+- Transaction-bound allowlisted audit events for implemented sensitive operations.
+- Guarded OpenAI-compatible adapter with bounded output/timeouts, safe errors, no automatic retries, rolling request quota, PostgreSQL locking requirement, and live calls disabled by default.
+- Alembic migrations through supplier profiles and password-reset tokens.
+- GitHub Actions CI for Ruff, compile checks, Alembic migration consistency, and pytest across Python 3.11–3.13.
+- Optional Docker packaging that applies migrations before starting the API.
 
 ## Verification status
-CI passed the catalog, order, seller-view, audit, and ledger slices on Python 3.11–3.13. The AI adapter and route tests passed on Python 3.11–3.13 before Ruff was added. The latest workflow must finish successfully to verify linting and the complete current branch. No production deployment has occurred.
+The latest code workflow passed lint, compilation, migration consistency, and tests on Python 3.11, 3.12, and 3.13 for the supplier-onboarding commit. The following documentation/config-example update is being checked separately. No production deployment, live payment processing, or live paid AI request has occurred.
 
 ## Important remaining gaps
-- Email verification, password reset, MFA, refresh-token rotation, expired-revocation cleanup, and rate limiting.
-- Membership invitations and role administration.
+- Email ownership verification, MFA, refresh-token rotation, login/reset rate limiting, account lockout, and expired-token cleanup.
+- Membership invitations and broader role administration.
 - Audit tamper-evidence, retention controls, and external log export.
-- Journal reversals, period closing, balances/reports, reconciliation, payments, refunds, tax, and seller settlement.
-- Multi-line carts, inventory adjustment history, shipping, tax, and product variants.
-- Provider-specific native APIs, multi-provider routing/fallback, pricing-aware monetary budgets, AI tool calls and autonomous agent workflows.
-- OAuth connectors, webhooks, supplier/logistics workflows, rentals, real estate, workforce, and education.
-- PostgreSQL service integration tests, security review, monitoring, backups, and staged deployment.
+- Journal reversals, period closing, full financial statements, reconciliation, payments, refunds, tax, and seller settlement.
+- Multi-line carts, inventory adjustment history, order expiry, shipping, tax, and product variants.
+- Multi-provider AI routing/fallback, provider-specific native APIs, monetary budgets, tool calls, and autonomous agent workflows.
+- Supplier quotes/procurement/fulfilment, logistics, rentals, real estate, workforce, education, OAuth connectors, and webhooks.
+- PostgreSQL concurrency/service integration tests, independent security review, monitoring, backup/restore exercises, and staged deployment.
 
 ## Next engineering gates
-1. Confirm CI passes on the latest branch commit.
-2. Add token lifecycle controls and rate limiting.
-3. Add ledger reversals/reporting and financial approval workflow.
-4. Add supplier onboarding and fulfilment.
-5. Expand AI routing only after provider-specific integration tests and hard spending controls are ready.
+1. Add shared rate limiting and account-security controls.
+2. Add journal reversals and period controls.
+3. Add supplier procurement and quote workflows.
+4. Expand provider routing and bounded agent orchestration.
+5. Add connector OAuth/webhook lifecycle.
+6. Add integration tests and operational readiness gates.
+
+CI passing is not equivalent to production readiness. Production deployment and paid services require explicit owner approval.

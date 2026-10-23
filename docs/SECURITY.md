@@ -6,6 +6,7 @@
 - Password reset uses random one-time tokens, stores only SHA-256 digests, expires tokens, and consumes them atomically.
 - Password-reset requests return a generic response to reduce account enumeration; delivery uses configurable SMTP and does not log reset tokens.
 - A successful password reset increments the user's authentication version and invalidates previously issued bearer tokens.
+- Supplier profile reads are organization-membership scoped; changes require owner/admin membership, while review requires an authenticated account in the explicit `PLATFORM_ADMIN_EMAILS` allowlist.
 - Organization and listing reads are scoped to authenticated membership.
 - Orders are visible only to their buyer.
 - Order creation uses conditional inventory updates, per-user idempotency keys, and a transaction.
@@ -17,7 +18,7 @@
 ## Current limitations
 - The API has no email verification, MFA, refresh-token rotation, rate limiting, account lockout, or invitation flow. Password-reset email delivery requires operator-provided SMTP configuration.
 - Audit records are application-level records; immutability against a database administrator, external log export, retention controls, and tamper-evidence are not implemented.
-- Tenant isolation is demonstrated only on the organization, catalog, audit, and buyer-order routes. Every future tenant-owned query must enforce its own authorization boundary.
+- Tenant isolation is demonstrated on organization, catalog, supplier-profile, accounting, audit, and buyer-order routes; every new tenant-owned query must enforce its own authorization boundary. Every future tenant-owned query must enforce its own authorization boundary.
 - No payment provider or real payment processing is connected.
 - PostgreSQL-specific concurrency, production secrets management, backups, and incident response have not been verified.
 
