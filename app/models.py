@@ -1,4 +1,4 @@
-"""Identity, organization, membership, catalog, order, and audit data models."""
+"""Identity, organization, commerce, audit, and accounting data models."""
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -154,3 +154,84 @@ class AuditEvent(Base):
     entity_id: Mapped[str] = mapped_column(String(100), nullable=False)
     details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class Account(Base):
+    __tablename__ = "accounts"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "code", "currency", name="uq_accounts_org_code_currency"),
+        CheckConstraint("length(currency) = 3", name="ck_accounts_currency_length"),
+        CheckConstraint(
+            "account_type IN ('asset','liability','equity','revenue','expense')",
+            name="ck_accounts_type",
+        ),
+        Index("ix_accounts_org_active", "organization_id", "is_active"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    account_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    lines: Mapped[list["JournalLine"]] = relationship(back_populates="account")
+
+
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_journal_org_idempotency"),
+        CheckConstraint("total_minor > 0", name="ck_journal_total_positive"),
+        CheckConstraint("status = 'posted'", name="ck_journal_posted_only"),
+        Index("ix_journal_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="posted", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    lines: Mapped[list["JournalLine"]] = relationship(
+        back_populates="entry", cascade="all, delete-orphan", order_by="JournalLine.id"
+    )
+
+
+class JournalLine(Base):
+    __tablename__ = "journal_lines"
+    __table_args__ = (
+        CheckConstraint("debit_minor >= 0 AND credit_minor >= 0", name="ck_journal_lines_nonnegative"),
+        CheckConstraint(
+            "(debit_minor > 0 AND credit_minor = 0) OR (credit_minor > 0 AND debit_minor = 0)",
+            name="ck_journal_lines_one_side",
+        ),
+        Index("ix_journal_lines_entry", "journal_entry_id"),
+        Index("ix_journal_lines_account", "account_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    journal_entry_id: Mapped[str] = mapped_column(
+        ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=False
+    )
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    debit_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    credit_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+
+    entry: Mapped[JournalEntry] = relationship(back_populates="lines")
+    account: Mapped[Account] = relationship(back_populates="lines")
