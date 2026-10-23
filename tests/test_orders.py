@@ -1,4 +1,4 @@
-"""Order lifecycle tests for idempotency and stock protection."""
+"""Order lifecycle tests for idempotency, stock protection, and cancellation."""
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -67,6 +67,23 @@ def make_active_listing(client: TestClient, quantity: int = 3) -> tuple[str, str
     return listing_id, token, org_id
 
 
+def create_order(client: TestClient, listing_id: str, buyer_token: str, key: str, quantity: int = 1):
+    return client.post(
+        "/api/v1/orders",
+        headers={"Authorization": f"Bearer {buyer_token}", "Idempotency-Key": key},
+        json={"listing_id": listing_id, "quantity": quantity},
+    )
+
+
+def listing_stock(client: TestClient, org_id: str, seller_token: str) -> int:
+    response = client.get(
+        f"/api/v1/organizations/{org_id}/listings",
+        headers={"Authorization": f"Bearer {seller_token}"},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()[0]["inventory_quantity"]
+
+
 def test_order_reserves_stock_and_is_idempotent(client):
     listing_id, seller_token, org_id = make_active_listing(client, quantity=3)
     buyer_token = register_login(client, "buyer@example.com")
@@ -80,49 +97,66 @@ def test_order_reserves_stock_and_is_idempotent(client):
     repeated = client.post("/api/v1/orders", headers=headers, json=payload)
     assert repeated.status_code == 201, repeated.text
     assert repeated.json()["id"] == first.json()["id"]
-
-    seller_headers = {"Authorization": f"Bearer {seller_token}"}
-    stock = client.get(
-        f"/api/v1/organizations/{org_id}/listings", headers=seller_headers
-    ).json()[0]["inventory_quantity"]
-    assert stock == 1
+    assert listing_stock(client, org_id, seller_token) == 1
 
 
 def test_idempotency_key_cannot_be_reused_for_different_order(client):
     listing_id, _, _ = make_active_listing(client, quantity=3)
     buyer_token = register_login(client, "buyer@example.com")
-    headers = {"Authorization": f"Bearer {buyer_token}", "Idempotency-Key": "order-key-0004"}
-    first = client.post("/api/v1/orders", headers=headers,
-                        json={"listing_id": listing_id, "quantity": 1})
+    first = create_order(client, listing_id, buyer_token, "order-key-0004", 1)
     assert first.status_code == 201, first.text
-    second = client.post("/api/v1/orders", headers=headers,
-                         json={"listing_id": listing_id, "quantity": 2})
+    second = create_order(client, listing_id, buyer_token, "order-key-0004", 2)
     assert second.status_code == 409
 
 
 def test_order_rejects_insufficient_stock(client):
     listing_id, _, _ = make_active_listing(client, quantity=1)
     buyer_token = register_login(client, "buyer@example.com")
-    response = client.post(
-        "/api/v1/orders",
-        headers={"Authorization": f"Bearer {buyer_token}", "Idempotency-Key": "order-key-0002"},
-        json={"listing_id": listing_id, "quantity": 2},
-    )
+    response = create_order(client, listing_id, buyer_token, "order-key-0002", 2)
     assert response.status_code == 409
 
 
 def test_orders_are_private_to_the_buyer(client):
     listing_id, _, _ = make_active_listing(client, quantity=2)
     buyer_token = register_login(client, "buyer@example.com")
-    created = client.post(
-        "/api/v1/orders",
-        headers={"Authorization": f"Bearer {buyer_token}", "Idempotency-Key": "order-key-0003"},
-        json={"listing_id": listing_id, "quantity": 1},
-    )
+    created = create_order(client, listing_id, buyer_token, "order-key-0003", 1)
     assert created.status_code == 201, created.text
     other_token = register_login(client, "other@example.com")
     response = client.get(
         f"/api/v1/orders/{created.json()['id']}",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+    assert response.status_code == 404
+
+
+def test_cancellation_releases_stock_exactly_once(client):
+    listing_id, seller_token, org_id = make_active_listing(client, quantity=4)
+    buyer_token = register_login(client, "buyer@example.com")
+    created = create_order(client, listing_id, buyer_token, "order-key-0005", 3)
+    assert created.status_code == 201, created.text
+    order_id = created.json()["id"]
+    assert listing_stock(client, org_id, seller_token) == 1
+
+    headers = {"Authorization": f"Bearer {buyer_token}"}
+    cancelled = client.post(f"/api/v1/orders/{order_id}/cancel", headers=headers)
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "cancelled"
+    assert listing_stock(client, org_id, seller_token) == 4
+
+    repeated = client.post(f"/api/v1/orders/{order_id}/cancel", headers=headers)
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["status"] == "cancelled"
+    assert listing_stock(client, org_id, seller_token) == 4
+
+
+def test_non_owner_cannot_cancel_order(client):
+    listing_id, _, _ = make_active_listing(client, quantity=2)
+    buyer_token = register_login(client, "buyer@example.com")
+    created = create_order(client, listing_id, buyer_token, "order-key-0006", 1)
+    assert created.status_code == 201, created.text
+    other_token = register_login(client, "other@example.com")
+    response = client.post(
+        f"/api/v1/orders/{created.json()['id']}/cancel",
         headers={"Authorization": f"Bearer {other_token}"},
     )
     assert response.status_code == 404
