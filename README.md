@@ -1,15 +1,18 @@
 # Global AI-Powered Business Ecosystem
 
-A private, modular project for building a global business platform incrementally. The foundation includes a FastAPI API, identity endpoints, organization membership checks, a database migration, automated tests, and CI. It is not yet a complete business ecosystem.
+A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a minimal tenant-scoped catalog, database migrations, automated tests, and CI. It is not yet a complete business ecosystem.
 
 ## Current foundation
 
 - FastAPI application with OpenAPI docs.
 - Versioned process health endpoint: `GET /api/v1/health`.
-- Registration with password hashing and bearer-token login.
+- Registration with Argon2 password hashing and signed bearer-token login.
 - Organization creation and membership-filtered organization access.
-- SQLAlchemy models and Alembic migration for users, organizations, and memberships.
-- GitHub Actions CI on Python 3.11, 3.12, and 3.13.
+- Tenant-scoped catalog listings with draft-to-active publication by organization owners/admins.
+- Public browsing returns active listings only.
+- Integer minor-unit pricing to avoid floating-point money errors.
+- SQLAlchemy models and Alembic migrations for identity, tenants, and listings.
+- GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks.
 - Optional Docker packaging that applies migrations before starting the API.
 
 ## Run locally
@@ -23,7 +26,7 @@ python -m pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Set a unique random `SECRET_KEY` in `.env` before using login. Then run:
+Set a unique random `SECRET_KEY` of at least 32 characters in `.env` before using login. Then run:
 
 ```bash
 python -m alembic upgrade head
@@ -61,10 +64,8 @@ Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/healt
 - Verify external integrations and permissions before relying on them.
 - Documentation and scaffolding are not proof that a feature is implemented.
 
-## Roadmap
+## Roadmap and limitations
 
-See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
+See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Catalog](docs/CATALOG.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
 
-## Current limitations
-
-Email verification, password reset, MFA, rate limiting, role administration, PostgreSQL deployment configuration, commerce workflows, accounting, AI orchestration, and external connectors remain future work. Do not expose this unauthenticated foundation publicly as a production service.
+Email verification, password reset, MFA, rate limiting, invitation workflows, role administration, order/payment workflows, accounting, AI orchestration, and external connectors remain future work. Do not expose this foundation publicly as a production service.
