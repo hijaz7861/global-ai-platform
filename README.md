@@ -1,6 +1,6 @@
 # Global AI-Powered Business Ecosystem
 
-A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, a double-entry ledger foundation, database migrations, automated tests, and CI. It is not yet a complete business ecosystem.
+A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, a double-entry ledger foundation, audit events, and a guarded OpenAI-compatible AI adapter. It is not yet a complete business ecosystem.
 
 ## Current foundation
 
@@ -9,14 +9,14 @@ A private, modular project for building a global business platform incrementally
 - Registration with Argon2 password hashing and signed bearer-token login.
 - Organization creation and membership-filtered organization access.
 - Tenant-scoped catalog listings with owner/admin publication.
-- Public browsing returns active listings only.
-- Integer minor-unit pricing to avoid floating-point money errors.
+- Owner/admin inventory adjustment with nonnegative stock checks and audit events.
 - Order creation with conditional stock reservation and per-buyer idempotency.
-- Buyer-only order reads and cancellation of unpaid orders with one-time stock release.
+- Buyer-only order reads, seller-scoped order summaries, and unpaid-order cancellation with one-time stock release.
 - Owner/admin chart of accounts and balanced, idempotent journal posting.
 - Transaction-bound allowlisted audit events for organization, catalog, order, and ledger operations.
+- Guarded OpenAI-compatible AI chat adapter; external calls are disabled by default, require explicit opt-in, a positive request limit, and PostgreSQL.
 - Orders remain `pending_payment`; no payment is charged or processed.
-- SQLAlchemy models and Alembic migrations for identity, tenants, listings, inventory, orders, audit, and journal entries.
+- SQLAlchemy models and Alembic migrations for identity, tenants, catalog, inventory, orders, audit, and journal entries.
 - GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks.
 - Optional Docker packaging that applies migrations before starting the API.
 
@@ -29,16 +29,13 @@ python -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
 cp .env.example .env
-```
-
-Set a unique random `SECRET_KEY` of at least 32 characters in `.env` before using login. Then run:
-
-```bash
 python -m alembic upgrade head
 python -m compileall -q app tests migrations
 python -m pytest -q
 uvicorn app.main:app --reload
 ```
+
+Set a unique random `SECRET_KEY` of at least 32 characters in `.env` before using login. Live AI calls stay disabled unless deliberately enabled in configuration. For PostgreSQL deployments, use `DATABASE_URL=postgresql+psycopg://...` and install `python -m pip install 'psycopg[binary]>=3.2,<4'`.
 
 Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/health`.
 
@@ -70,6 +67,6 @@ Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/healt
 
 ## Roadmap and limitations
 
-See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Catalog](docs/CATALOG.md), [Orders](docs/ORDERS.md), [Accounting](docs/ACCOUNTING.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
+See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Catalog](docs/CATALOG.md), [Orders](docs/ORDERS.md), [Accounting](docs/ACCOUNTING.md), [AI Orchestration](docs/AI_ORCHESTRATION.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
 
-Email verification, password reset, MFA, rate limiting, invitations, role administration, payment processing, reversals, full financial reporting, supplier/logistics workflows, AI orchestration, and external connectors remain future work. Do not expose this foundation publicly as a production service.
+Email verification, password reset, MFA, rate limiting, invitations, role administration, payment processing, ledger reversals, full financial reporting, provider routing/fallback, native provider integrations, agent tools, external connectors, suppliers, logistics, rentals, real estate, workforce, and education remain future work. Do not expose this foundation publicly as a production service.
