@@ -1,6 +1,6 @@
 # Global AI-Powered Business Ecosystem
 
-A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation, database migrations, automated tests, and CI. It is not yet a complete business ecosystem.
+A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, database migrations, automated tests, and CI. It is not yet a complete business ecosystem.
 
 ## Current foundation
 
@@ -11,9 +11,10 @@ A private, modular project for building a global business platform incrementally
 - Tenant-scoped catalog listings with owner/admin publication.
 - Public browsing returns active listings only.
 - Integer minor-unit pricing to avoid floating-point money errors.
-- Order creation with conditional stock reservation, request idempotency, and buyer-scoped order reads.
+- Order creation with conditional stock reservation and per-buyer idempotency.
+- Buyer-only order reads and cancellation of unpaid orders with one-time stock release.
 - Orders remain `pending_payment`; no payment is charged or processed.
-- SQLAlchemy models and Alembic migrations for identity, tenants, listings, and orders.
+- SQLAlchemy models and Alembic migrations for identity, tenants, listings, inventory, and orders.
 - GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks.
 - Optional Docker packaging that applies migrations before starting the API.
 
@@ -54,7 +55,6 @@ Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/healt
 - What-if simulations and business analytics.
 - Strict tenant isolation, least privilege, audit logs and encrypted secrets.
 - Web-first architecture with future mobile and desktop expansion.
-- Low-cost, open-source-first development.
 
 ## Engineering rules
 
