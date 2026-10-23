@@ -51,6 +51,18 @@ class OrganizationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MembershipCreate(BaseModel):
+    email: EmailStr
+    role: Literal["member", "admin"] = "member"
+
+
+class MembershipResponse(BaseModel):
+    user_id: str
+    email: EmailStr
+    role: str
+    created_at: datetime
+
+
 class ListingCreate(BaseModel):
     title: str = Field(min_length=2, max_length=200)
     description: str = Field(default="", max_length=5000)
