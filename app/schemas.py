@@ -1,7 +1,8 @@
-"""Request and response schemas for identity, organizations, catalog, and orders."""
+"""Request and response schemas for identity, commerce, orders, and accounting."""
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class RegisterRequest(BaseModel):
@@ -108,3 +109,96 @@ class OrderResponse(BaseModel):
     currency: str
     created_at: datetime
     items: list[OrderItemResponse]
+
+
+class AccountCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=2, max_length=200)
+    account_type: Literal["asset", "liability", "equity", "revenue", "expense"]
+    currency: str = Field(min_length=3, max_length=3)
+
+    @field_validator("code")
+    @classmethod
+    def normalize_code(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not normalized or not normalized.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("Account code may contain letters, digits, hyphens, and underscores")
+        return normalized
+
+    @field_validator("name")
+    @classmethod
+    def normalize_account_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Account name must contain at least two non-space characters")
+        return normalized
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_account_currency(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if len(normalized) != 3 or not normalized.isascii() or not normalized.isalpha():
+            raise ValueError("Currency must be a three-letter ASCII code")
+        return normalized
+
+
+class AccountResponse(BaseModel):
+    id: str
+    organization_id: str
+    code: str
+    name: str
+    account_type: str
+    currency: str
+    is_active: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class JournalLineCreate(BaseModel):
+    account_id: str = Field(min_length=1, max_length=36)
+    debit_minor: int = Field(default=0, ge=0, le=9_000_000_000_000_000)
+    credit_minor: int = Field(default=0, ge=0, le=9_000_000_000_000_000)
+
+    @model_validator(mode="after")
+    def exactly_one_side(self):
+        if (self.debit_minor > 0) == (self.credit_minor > 0):
+            raise ValueError("Each journal line must have either a positive debit or a positive credit")
+        return self
+
+
+class JournalEntryCreate(BaseModel):
+    description: str = Field(min_length=2, max_length=500)
+    lines: list[JournalLineCreate] = Field(min_length=2, max_length=100)
+
+    @field_validator("description")
+    @classmethod
+    def normalize_description(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Description must contain at least two non-space characters")
+        return normalized
+
+    @model_validator(mode="after")
+    def require_balanced_positive_totals(self):
+        debit_total = sum(line.debit_minor for line in self.lines)
+        credit_total = sum(line.credit_minor for line in self.lines)
+        if debit_total <= 0 or debit_total != credit_total:
+            raise ValueError("Journal debits and credits must balance to a positive amount")
+        return self
+
+
+class JournalLineResponse(BaseModel):
+    account_id: str
+    debit_minor: int
+    credit_minor: int
+
+
+class JournalEntryResponse(BaseModel):
+    id: str
+    description: str
+    currency: str
+    total_minor: int
+    status: str
+    created_at: datetime
+    lines: list[JournalLineResponse]
