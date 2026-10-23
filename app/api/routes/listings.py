@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_membership
+from app.audit import record_audit_event
 from app.db import get_db
 from app.models import Listing, Membership
 from app.schemas import ListingCreate, ListingResponse
@@ -33,6 +34,21 @@ def create_listing(
         status="draft",
     )
     db.add(listing)
+    db.flush()
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="listing.created",
+        entity_type="listing",
+        entity_id=listing.id,
+        details={
+            "price_minor": listing.price_minor,
+            "currency": listing.currency,
+            "quantity": listing.inventory_quantity,
+            "status": listing.status,
+        },
+    )
     db.commit()
     db.refresh(listing)
     return ListingResponse.model_validate(listing)
@@ -71,6 +87,15 @@ def publish_listing(
     if listing is None:
         raise HTTPException(status_code=404, detail="Listing not found")
     listing.status = "active"
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="listing.published",
+        entity_type="listing",
+        entity_id=listing.id,
+        details={"status": listing.status},
+    )
     db.commit()
     db.refresh(listing)
     return ListingResponse.model_validate(listing)
