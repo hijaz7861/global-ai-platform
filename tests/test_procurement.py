@@ -296,3 +296,52 @@ def test_procurement_requires_approved_supplier_and_matching_currency(client):
         json={"unit_price_minor": 500, "currency": "USD", "lead_time_days": 4},
     )
     assert wrong_currency.status_code == 422
+
+    submitted = client.post(
+        quote_url,
+        headers={"Authorization": f"Bearer {supplier_token}"},
+        json={"unit_price_minor": 500, "currency": "PKR", "lead_time_days": 4, "notes": "Initial offer"},
+    )
+    assert submitted.status_code == 201, submitted.text
+    quote_id = submitted.json()["id"]
+
+    revised = client.post(
+        f"/api/v1/organizations/{supplier_org}/procurement-requests/{request.json()['id']}/quotes/{quote_id}/revise",
+        headers={"Authorization": f"Bearer {supplier_token}"},
+        json={"unit_price_minor": 450, "currency": "PKR", "lead_time_days": 3, "notes": "Revised offer"},
+    )
+    assert revised.status_code == 200, revised.text
+    assert revised.json()["unit_price_minor"] == 450
+
+    buyer_cannot_revise = client.post(
+        f"/api/v1/organizations/{buyer_org}/procurement-requests/{request.json()['id']}/quotes/{quote_id}/revise",
+        headers=buyer_headers,
+        json={"unit_price_minor": 400, "currency": "PKR", "lead_time_days": 2},
+    )
+    assert buyer_cannot_revise.status_code == 403
+
+    withdrawn = client.post(
+        f"/api/v1/organizations/{supplier_org}/procurement-requests/{request.json()['id']}/quotes/{quote_id}/withdraw",
+        headers={"Authorization": f"Bearer {supplier_token}"},
+    )
+    assert withdrawn.status_code == 200, withdrawn.text
+    assert withdrawn.json()["status"] == "withdrawn"
+
+    resubmitted = client.post(
+        f"/api/v1/organizations/{supplier_org}/procurement-requests/{request.json()['id']}/quotes/{quote_id}/revise",
+        headers={"Authorization": f"Bearer {supplier_token}"},
+        json={"unit_price_minor": 425, "currency": "PKR", "lead_time_days": 2, "notes": "Final offer"},
+    )
+    assert resubmitted.status_code == 200, resubmitted.text
+    assert resubmitted.json()["status"] == "submitted"
+    assert resubmitted.json()["unit_price_minor"] == 425
+
+    revisions = client.get(
+        f"/api/v1/organizations/{buyer_org}/procurement-requests/{request.json()['id']}/quotes/{quote_id}/revisions",
+        headers=buyer_headers,
+    )
+    assert revisions.status_code == 200, revisions.text
+    history = revisions.json()
+    assert [item["revision_number"] for item in history] == [1, 2, 3, 4]
+    assert [item["status"] for item in history] == ["submitted", "submitted", "withdrawn", "submitted"]
+    assert [item["unit_price_minor"] for item in history] == [500, 450, 450, 425]
