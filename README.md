@@ -72,7 +72,7 @@ Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/healt
 
 ## Roadmap and limitations
 
-Organization invitations: owners/admins can invite a registered or future account by email using `POST /api/v1/organizations/{organization_id}/invitations`; the recipient signs in to the matching account and accepts the emailed single-use token at `POST /api/v1/invitations/accept`. Tokens are stored as SHA-256 digests and expire after seven days. SMTP must be configured; raw invitation tokens are never returned by the API.
+Organization invitations: owners/admins can invite a registered or future account by email using `POST /api/v1/organizations/{organization_id}/invitations`; the recipient signs in to the matching account and accepts the emailed single-use token at `POST /api/v1/invitations/accept`. Tokens are stored as SHA-256 digests and expire after seven days. Owners/admins can revoke pending invitations at `POST /api/v1/organizations/{organization_id}/invitations/{invitation_id}/revoke`. SMTP must be configured; raw invitation tokens are never returned by the API.
 
 Refresh-token behavior: login returns a short-lived access token plus a random refresh token whose SHA-256 digest is stored server-side. `POST /api/v1/auth/refresh` rotates the refresh token; clients must persist the newly returned token and discard the old one. Reuse of a consumed token revokes the session family and invalidates that family’s access tokens. Logout revokes the current access token and its refresh-token family. Deploy behind HTTPS and never log or expose tokens.
 
