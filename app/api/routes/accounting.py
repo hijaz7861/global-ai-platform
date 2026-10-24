@@ -1,6 +1,7 @@
 """Tenant-scoped chart of accounts and immutable balanced journal posting."""
 import hashlib
 import json
+from datetime import datetime, timezone
 from typing import Annotated
 from uuid import uuid4
 
@@ -12,10 +13,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_membership
 from app.audit import record_audit_event
 from app.db import get_db
-from app.models import Account, JournalEntry, JournalLine, Membership
+from app.models import Account, AccountingPeriod, JournalEntry, JournalLine, Membership
 from app.schemas import (
     AccountCreate,
     AccountResponse,
+    AccountingPeriodCreate,
+    AccountingPeriodResponse,
     JournalEntryCreate,
     JournalEntryResponse,
     JournalLineResponse,
@@ -23,6 +26,126 @@ from app.schemas import (
 )
 
 router = APIRouter(tags=["accounting"])
+
+
+def _require_owner_or_admin(membership: Membership) -> None:
+    if membership.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Owner or admin role required")
+
+
+def _ensure_open_period_for_today(db: Session, organization_id: str) -> None:
+    """Preserve legacy posting until periods are configured; enforce them once configured."""
+    periods = db.scalars(
+        select(AccountingPeriod).where(AccountingPeriod.organization_id == organization_id)
+    ).all()
+    if not periods:
+        return
+    today = datetime.now(timezone.utc).date()
+    active = next((period for period in periods if period.starts_on <= today <= period.ends_on), None)
+    if active is None or active.status != "open":
+        raise HTTPException(status_code=409, detail="No open accounting period covers today's posting date")
+
+
+@router.post(
+    "/organizations/{organization_id}/accounting-periods",
+    response_model=AccountingPeriodResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_accounting_period(
+    payload: AccountingPeriodCreate,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> AccountingPeriodResponse:
+    _require_owner_or_admin(membership)
+    overlap = db.scalar(
+        select(AccountingPeriod.id).where(
+            AccountingPeriod.organization_id == membership.organization_id,
+            AccountingPeriod.starts_on <= payload.ends_on,
+            AccountingPeriod.ends_on >= payload.starts_on,
+        )
+    )
+    if overlap is not None:
+        raise HTTPException(status_code=409, detail="Accounting periods must not overlap")
+    period = AccountingPeriod(
+        organization_id=membership.organization_id,
+        name=payload.name,
+        starts_on=payload.starts_on,
+        ends_on=payload.ends_on,
+        status="open",
+        created_by_user_id=membership.user_id,
+    )
+    db.add(period)
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="accounting_period.created",
+        entity_type="accounting_period",
+        entity_id=period.id,
+        details={"name": period.name, "starts_on": period.starts_on.isoformat(), "ends_on": period.ends_on.isoformat()},
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Accounting period conflicts with an existing period") from None
+    db.refresh(period)
+    return AccountingPeriodResponse.model_validate(period)
+
+
+@router.get(
+    "/organizations/{organization_id}/accounting-periods",
+    response_model=list[AccountingPeriodResponse],
+)
+def list_accounting_periods(
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[AccountingPeriodResponse]:
+    _require_owner_or_admin(membership)
+    periods = db.scalars(
+        select(AccountingPeriod)
+        .where(AccountingPeriod.organization_id == membership.organization_id)
+        .order_by(AccountingPeriod.starts_on, AccountingPeriod.id)
+    ).all()
+    return [AccountingPeriodResponse.model_validate(period) for period in periods]
+
+
+@router.post(
+    "/organizations/{organization_id}/accounting-periods/{period_id}/close",
+    response_model=AccountingPeriodResponse,
+)
+def close_accounting_period(
+    period_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> AccountingPeriodResponse:
+    _require_owner_or_admin(membership)
+    period = db.scalar(
+        select(AccountingPeriod).where(
+            AccountingPeriod.id == period_id,
+            AccountingPeriod.organization_id == membership.organization_id,
+        )
+    )
+    if period is None:
+        raise HTTPException(status_code=404, detail="Accounting period not found")
+    if period.status == "closed":
+        return AccountingPeriodResponse.model_validate(period)
+    period.status = "closed"
+    period.closed_at = datetime.now(timezone.utc)
+    period.closed_by_user_id = membership.user_id
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="accounting_period.closed",
+        entity_type="accounting_period",
+        entity_id=period.id,
+        details={"name": period.name},
+    )
+    db.commit()
+    db.refresh(period)
+    return AccountingPeriodResponse.model_validate(period)
+
 
 
 def _entry_response(entry: JournalEntry) -> JournalEntryResponse:
@@ -109,8 +232,8 @@ def post_journal_entry(
     db: Annotated[Session, Depends(get_db)],
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)],
 ) -> JournalEntryResponse:
-    if membership.role not in {"owner", "admin"}:
-        raise HTTPException(status_code=403, detail="Owner or admin role required")
+    _require_owner_or_admin(membership)
+    _ensure_open_period_for_today(db, membership.organization_id)
 
     normalized_lines = sorted(
         [
@@ -238,8 +361,8 @@ def reverse_journal_entry(
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)],
 ) -> JournalEntryResponse:
     """Post one immutable counter-entry; never mutate or delete the original."""
-    if membership.role not in {"owner", "admin"}:
-        raise HTTPException(status_code=403, detail="Owner or admin role required")
+    _require_owner_or_admin(membership)
+    _ensure_open_period_for_today(db, membership.organization_id)
 
     fingerprint = hashlib.sha256(
         json.dumps({"reversal_of_id": entry_id}, sort_keys=True, separators=(",", ":")).encode("utf-8")
