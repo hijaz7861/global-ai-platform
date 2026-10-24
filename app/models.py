@@ -36,6 +36,8 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default=true(), nullable=False)
     auth_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     mfa_secret_encrypted: Mapped[str | None] = mapped_column(String(256), nullable=True)
     mfa_pending_secret_encrypted: Mapped[str | None] = mapped_column(String(256), nullable=True)
