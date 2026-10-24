@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
@@ -266,9 +266,30 @@ def login(payload: LoginRequest, request: Request, db: Annotated[Session, Depend
     if not signing_key_is_configured():
         raise HTTPException(status_code=503, detail="A SECRET_KEY of at least 32 characters is required")
     user = db.scalar(select(User).where(User.email == str(payload.email)))
+    now = utc_now()
+    if user is not None and user.locked_until is not None and _as_utc(user.locked_until) > now:
+        raise HTTPException(status_code=401, detail="Invalid email or password",
+                            headers={"WWW-Authenticate": "Bearer"})
     if settings.require_email_verification and user is not None and user.is_active and verify_password(payload.password, user.password_hash) and not user.email_verified:
         raise HTTPException(status_code=403, detail="Email verification required")
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+        if user is not None and user.is_active:
+            db.execute(
+                update(User)
+                .where(User.id == user.id)
+                .values(
+                    failed_login_attempts=User.failed_login_attempts + 1,
+                    locked_until=case(
+                        (
+                            User.failed_login_attempts + 1 >= settings.auth_account_lockout_threshold,
+                            now + timedelta(minutes=settings.auth_account_lockout_minutes),
+                        ),
+                        else_=User.locked_until,
+                    ),
+                )
+                .execution_options(synchronize_session=False)
+            )
+            db.commit()
         raise HTTPException(status_code=401, detail="Invalid email or password",
                             headers={"WWW-Authenticate": "Bearer"})
     if user.mfa_enabled:
@@ -314,6 +335,13 @@ def login(payload: LoginRequest, request: Request, db: Annotated[Session, Depend
                                     headers={"WWW-Authenticate": "Bearer"})
             db.commit()
 
+    db.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(failed_login_attempts=0, locked_until=None)
+        .execution_options(synchronize_session=False)
+    )
+    db.flush()
     family_id = str(uuid4())
     raw_refresh_token = secrets.token_urlsafe(48)
     refresh_expires_at = utc_now() + timedelta(days=settings.refresh_token_expire_days)
