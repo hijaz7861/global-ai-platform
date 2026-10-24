@@ -67,7 +67,7 @@ def test_cleanup_removes_expired_records_but_preserves_live_refresh_families(cli
     # A non-admin must not be able to invoke security maintenance.
     forbidden = client.post(
         "/api/v1/platform/security/cleanup-expired-tokens",
-        headers=regular,
+        headers={"Authorization": regular["Authorization"]},
     )
     assert forbidden.status_code == 403
 
