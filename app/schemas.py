@@ -136,9 +136,33 @@ class InventoryAdjustmentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class OrderCreate(BaseModel):
+class OrderLineCreate(BaseModel):
     listing_id: str = Field(min_length=1, max_length=36)
     quantity: int = Field(gt=0, le=1000)
+
+
+class OrderCreate(BaseModel):
+    listing_id: str | None = Field(default=None, min_length=1, max_length=36)
+    quantity: int | None = Field(default=None, gt=0, le=1000)
+    items: list[OrderLineCreate] | None = Field(default=None, min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def validate_order_lines(self):
+        if self.items is not None:
+            if self.listing_id is not None or self.quantity is not None:
+                raise ValueError("Use either the single-item fields or items, not both")
+            listing_ids = [item.listing_id for item in self.items]
+            if len(set(listing_ids)) != len(listing_ids):
+                raise ValueError("Each listing may appear only once in an order")
+        elif self.listing_id is None or self.quantity is None:
+            raise ValueError("Provide listing_id and quantity, or a non-empty items list")
+        return self
+
+    def normalized_items(self) -> list[tuple[str, int]]:
+        if self.items is not None:
+            return sorted((item.listing_id, item.quantity) for item in self.items)
+        assert self.listing_id is not None and self.quantity is not None
+        return [(self.listing_id, self.quantity)]
 
 
 class OrderItemResponse(BaseModel):
