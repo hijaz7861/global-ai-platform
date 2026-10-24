@@ -12,7 +12,7 @@ A private, modular project for building a global business platform incrementally
 - Tenant-scoped catalog listings with owner/admin publication, plus public search, currency and price filters, and bounded pagination.
 - Organization-scoped supplier onboarding with draft/submitted/approved/rejected states and platform-admin review.
 - Owner/admin inventory adjustments with nonnegative stock checks, append-only before/after history, optional reason, and transaction-bound audit events.
-- Order creation with conditional stock reservation, per-buyer idempotency, and a configurable unpaid-order expiry timestamp.
+- Order creation with conditional stock reservation, per-buyer idempotency, legacy single-line and multi-item carts (up to 50 unique listings), one-currency enforcement, bounded totals, and a configurable unpaid-order expiry timestamp.
 - Platform-admin-only expiry sweep that marks overdue unpaid orders expired, restores stock once, and records an audit event; external scheduler setup is required for automatic recurring runs.
 - Buyer-only order reads, seller-scoped order summaries, and unpaid-order cancellation with one-time stock release.
 - Owner/admin chart of accounts, balanced idempotent journal posting, and a derived trial balance.
