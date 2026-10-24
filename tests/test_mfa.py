@@ -83,6 +83,8 @@ def test_mfa_enrollment_encrypts_secret_and_login_rejects_missing_or_replayed_co
         assert user is not None and user.mfa_enabled
         assert user.mfa_secret_encrypted != secret
         assert secret not in user.mfa_secret_encrypted
+        consumed_step = user.mfa_last_verified_step
+        assert consumed_step is not None
     finally:
         db.close()
 
@@ -98,7 +100,7 @@ def test_mfa_enrollment_encrypts_secret_and_login_rejects_missing_or_replayed_co
         json={
             "email": "mfa-login@example.com",
             "password": password,
-            "totp_code": generate_totp_code(secret),
+            "totp_code": generate_totp_code(secret, consumed_step),
         },
     )
     assert same_step.status_code == 401
