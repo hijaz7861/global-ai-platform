@@ -84,6 +84,7 @@ async def chat(
             base_url=settings.ai_base_url or "",
             model=settings.ai_model or "",
             timeout_seconds=settings.ai_timeout_seconds,
+            max_response_bytes=settings.ai_max_response_bytes,
         )
         result = await provider.complete(payload.prompt, payload.max_output_tokens)
     except ValueError:
