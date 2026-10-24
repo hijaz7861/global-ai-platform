@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     password_reset_token_expire_minutes: int = Field(default=30, ge=5, le=120)
     auth_login_attempt_limit: int = Field(default=10, ge=3, le=100)
     auth_login_window_minutes: int = Field(default=15, ge=1, le=1440)
+    auth_account_lockout_threshold: int = Field(default=10, ge=3, le=100)
+    auth_account_lockout_minutes: int = Field(default=15, ge=1, le=1440)
     password_reset_request_limit: int = Field(default=5, ge=1, le=100)
     password_reset_window_minutes: int = Field(default=15, ge=1, le=1440)
     email_verification_token_expire_minutes: int = Field(default=30, ge=5, le=120)
