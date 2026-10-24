@@ -10,6 +10,7 @@ from app.api.routes.listings import router as listings_router
 from app.api.routes.memberships import router as memberships_router
 from app.api.routes.organizations import router as organizations_router
 from app.api.routes.platform_operations import router as platform_operations_router
+from app.api.routes.procurement import router as procurement_router
 from app.api.routes.orders import router as orders_router
 from app.api.routes.seller import router as seller_router
 from app.api.routes.suppliers import router as suppliers_router
@@ -26,4 +27,5 @@ api_router.include_router(accounting_router)
 api_router.include_router(seller_router)
 api_router.include_router(suppliers_router)
 api_router.include_router(platform_operations_router)
+api_router.include_router(procurement_router)
 api_router.include_router(ai_router)
