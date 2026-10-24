@@ -31,6 +31,38 @@ logger = logging.getLogger(__name__)
 _RESET_ACCEPTED = {"message": "If the account exists, reset instructions will be sent."}
 
 
+def _rate_limit_subject(identifier: str, request: Request) -> str:
+    """Hash the account identifier and direct peer address; do not persist raw PII."""
+    client_host = request.client.host if request.client else "unknown"
+    material = f"{identifier.strip().lower()}\\0{client_host}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _record_auth_attempt(
+    db: Session, *, scope: str, subject_hash: str, limit: int, window_minutes: int
+) -> None:
+    """Enforce a database-backed sliding window shared by API workers."""
+    now = utc_now()
+    cutoff = now - timedelta(minutes=window_minutes)
+    db.execute(delete(AuthAttempt).where(AuthAttempt.created_at < now - timedelta(hours=24)))
+    count = db.scalar(
+        select(func.count()).select_from(AuthAttempt).where(
+            AuthAttempt.scope == scope,
+            AuthAttempt.subject_hash == subject_hash,
+            AuthAttempt.created_at >= cutoff,
+        )
+    ) or 0
+    if count >= limit:
+        db.rollback()
+        raise HTTPException(
+            status_code=429,
+            detail="Too many attempts. Please wait before trying again.",
+            headers={"Retry-After": str(window_minutes * 60)},
+        )
+    db.add(AuthAttempt(scope=scope, subject_hash=subject_hash, created_at=now))
+    db.commit()
+
+
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
     existing = db.scalar(select(User).where(User.email == payload.email))
@@ -48,7 +80,14 @@ def register(payload: RegisterRequest, db: Annotated[Session, Depends(get_db)]) 
 
 
 @router.post("/token", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Annotated[Session, Depends(get_db)]) -> TokenResponse:
+def login(payload: LoginRequest, request: Request, db: Annotated[Session, Depends(get_db)]) -> TokenResponse:
+    _record_auth_attempt(
+        db,
+        scope="login",
+        subject_hash=_rate_limit_subject(str(payload.email), request),
+        limit=settings.auth_login_attempt_limit,
+        window_minutes=settings.auth_login_window_minutes,
+    )
     if not signing_key_is_configured():
         raise HTTPException(status_code=503, detail="A SECRET_KEY of at least 32 characters is required")
     user = db.scalar(select(User).where(User.email == str(payload.email)))
@@ -97,8 +136,15 @@ def logout(
 
 
 @router.post("/password-reset/request", status_code=status.HTTP_202_ACCEPTED)
-def request_password_reset(payload: PasswordResetRequest, db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
+def request_password_reset(payload: PasswordResetRequest, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
     """Return an identical response for known and unknown accounts."""
+    _record_auth_attempt(
+        db,
+        scope="password_reset",
+        subject_hash=_rate_limit_subject(str(payload.email), request),
+        limit=settings.password_reset_request_limit,
+        window_minutes=settings.password_reset_window_minutes,
+    )
     user = db.scalar(select(User).where(User.email == str(payload.email), User.is_active.is_(True)))
     if user is None:
         return _RESET_ACCEPTED
