@@ -69,6 +69,8 @@ Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/healt
 
 ## Roadmap and limitations
 
+Refresh-token behavior: login returns a short-lived access token plus a random refresh token whose SHA-256 digest is stored server-side. `POST /api/v1/auth/refresh` rotates the refresh token; clients must persist the newly returned token and discard the old one. Reuse of a consumed token revokes the session family and invalidates that family’s access tokens. Logout revokes the current access token and its refresh-token family. Deploy behind HTTPS and never log or expose tokens.
+
 See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Catalog](docs/CATALOG.md), [Orders](docs/ORDERS.md), [Accounting](docs/ACCOUNTING.md), [AI Orchestration](docs/AI_ORCHESTRATION.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
 
 MFA, stronger concurrency-safe throttling, invitations, expanded role administration, payment processing, period-specific financial reporting, reconciliation, provider routing/fallback, native provider integrations, agent tools, external connectors, supplier procurement/quotes, logistics, rentals, real estate, workforce, and education remain future work. Do not expose this foundation publicly as a production service.
