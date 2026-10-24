@@ -24,6 +24,8 @@ from app.schemas import (
     JournalEntryCreate,
     JournalEntryResponse,
     JournalLineResponse,
+    FinancialStatementLineResponse,
+    IncomeStatementResponse,
     TrialBalanceLineResponse,
 )
 
@@ -739,3 +741,101 @@ def get_account_ledger(
         next_cursor_created_at=next_created_at,
         next_cursor_entry_id=next_entry_id,
     )
+
+
+@router.get(
+    "/organizations/{organization_id}/income-statement",
+    response_model=list[IncomeStatementResponse],
+)
+def get_income_statement(
+    organization_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+) -> list[IncomeStatementResponse]:
+    """Derive revenue, expense, and net income by currency for a UTC posting-date range."""
+    _require_owner_or_admin(membership)
+    if start_date is not None and end_date is not None and end_date < start_date:
+        raise HTTPException(status_code=422, detail="end_date must not precede start_date")
+    starts_at = (
+        datetime.combine(start_date, time.min, tzinfo=timezone.utc)
+        if start_date is not None
+        else None
+    )
+    ends_before = (
+        datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=timezone.utc)
+        if end_date is not None
+        else None
+    )
+    conditions = [
+        JournalEntry.organization_id == membership.organization_id,
+        JournalEntry.status == "posted",
+        Account.organization_id == membership.organization_id,
+        Account.account_type.in_({"revenue", "expense"}),
+    ]
+    if starts_at is not None:
+        conditions.append(JournalEntry.created_at >= starts_at)
+    if ends_before is not None:
+        conditions.append(JournalEntry.created_at < ends_before)
+
+    rows = db.execute(
+        select(
+            Account.id,
+            Account.code,
+            Account.name,
+            Account.account_type,
+            Account.currency,
+            func.sum(JournalLine.debit_minor).label("debit_total"),
+            func.sum(JournalLine.credit_minor).label("credit_total"),
+        )
+        .join(JournalLine, JournalLine.account_id == Account.id)
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(*conditions)
+        .group_by(Account.id, Account.code, Account.name, Account.account_type, Account.currency)
+        .order_by(Account.currency, Account.code)
+    ).all()
+
+    grouped: dict[str, dict[str, object]] = {}
+    for account_id, code, name, account_type, currency, debit, credit in rows:
+        statement = grouped.setdefault(
+            currency,
+            {
+                "revenue_lines": [],
+                "expense_lines": [],
+                "total_revenue_minor": 0,
+                "total_expense_minor": 0,
+            },
+        )
+        debit_total = int(debit)
+        credit_total = int(credit)
+        if account_type == "revenue":
+            amount = credit_total - debit_total
+            statement["revenue_lines"].append(
+                FinancialStatementLineResponse(
+                    account_id=account_id, code=code, name=name, amount_minor=amount
+                )
+            )
+            statement["total_revenue_minor"] += amount
+        else:
+            amount = debit_total - credit_total
+            statement["expense_lines"].append(
+                FinancialStatementLineResponse(
+                    account_id=account_id, code=code, name=name, amount_minor=amount
+                )
+            )
+            statement["total_expense_minor"] += amount
+
+    return [
+        IncomeStatementResponse(
+            currency=currency,
+            start_date=start_date,
+            end_date=end_date,
+            revenue_lines=values["revenue_lines"],
+            expense_lines=values["expense_lines"],
+            total_revenue_minor=int(values["total_revenue_minor"]),
+            total_expense_minor=int(values["total_expense_minor"]),
+            net_income_minor=int(values["total_revenue_minor"]) - int(values["total_expense_minor"]),
+        )
+        for currency, values in sorted(grouped.items())
+    ]
