@@ -26,8 +26,8 @@ from app.core.security import (
     verify_password,
 )
 from app.db import get_db
-from app.models import AuthAttempt, AuthRateLimitLock, EmailVerificationToken, PasswordResetToken, RefreshToken, TokenRevocation, User, utc_now
-from app.schemas import EmailVerificationConfirm, LoginRequest, MFAConfirmRequest, MFADisableRequest, MFAEnrollRequest, MFAEnrollmentResponse, PasswordResetConfirm, PasswordResetRequest, RefreshTokenRequest, RegisterRequest, TokenResponse
+from app.models import AuthAttempt, AuthRateLimitLock, EmailVerificationToken, MFARecoveryCode, PasswordResetToken, RefreshToken, TokenRevocation, User, utc_now
+from app.schemas import EmailVerificationConfirm, LoginRequest, MFAConfirmRequest, MFADisableRequest, MFAEnrollRequest, MFAEnrollmentResponse, MFARecoveryCodesRequest, MFARecoveryCodesResponse, PasswordResetConfirm, PasswordResetRequest, RefreshTokenRequest, RegisterRequest, TokenResponse
 from app.services.email import send_email_verification, send_password_reset_email
 
 router = APIRouter(prefix="/auth", tags=["identity"])
@@ -272,19 +272,47 @@ def login(payload: LoginRequest, request: Request, db: Annotated[Session, Depend
         raise HTTPException(status_code=401, detail="Invalid email or password",
                             headers={"WWW-Authenticate": "Bearer"})
     if user.mfa_enabled:
-        if not user.mfa_secret_encrypted or not payload.totp_code:
+        if not user.mfa_secret_encrypted or (payload.totp_code is None) == (payload.recovery_code is None):
             raise HTTPException(status_code=401, detail="Invalid email, password, or MFA code",
                                 headers={"WWW-Authenticate": "Bearer"})
-        try:
-            secret = decrypt_totp_secret(user.mfa_secret_encrypted)
-        except (RuntimeError, ValueError):
-            raise HTTPException(status_code=503, detail="MFA encryption configuration is unavailable") from None
-        step = verify_totp(secret, payload.totp_code, last_step=user.mfa_last_verified_step)
-        if step is None or not _consume_mfa_step(db, user.id, step):
-            db.rollback()
-            raise HTTPException(status_code=401, detail="Invalid email, password, or MFA code",
-                                headers={"WWW-Authenticate": "Bearer"})
-        db.commit()
+        if payload.recovery_code is not None:
+            normalized_code = payload.recovery_code.strip().lower()
+            recovery_digest = hashlib.sha256(normalized_code.encode("utf-8")).hexdigest()
+            consumed = db.execute(
+                update(MFARecoveryCode)
+                .where(
+                    MFARecoveryCode.user_id == user.id,
+                    MFARecoveryCode.code_hash == recovery_digest,
+                    MFARecoveryCode.used_at.is_(None),
+                )
+                .values(used_at=utc_now())
+                .execution_options(synchronize_session=False)
+            )
+            if consumed.rowcount != 1:
+                db.rollback()
+                raise HTTPException(status_code=401, detail="Invalid email, password, or MFA code",
+                                    headers={"WWW-Authenticate": "Bearer"})
+            record_audit_event(
+                db,
+                actor_user_id=user.id,
+                organization_id=None,
+                action="auth.mfa_recovery_code_used",
+                entity_type="user",
+                entity_id=user.id,
+                details={"status": "consumed"},
+            )
+            db.commit()
+        else:
+            try:
+                secret = decrypt_totp_secret(user.mfa_secret_encrypted)
+            except (RuntimeError, ValueError):
+                raise HTTPException(status_code=503, detail="MFA encryption configuration is unavailable") from None
+            step = verify_totp(secret, payload.totp_code, last_step=user.mfa_last_verified_step)
+            if step is None or not _consume_mfa_step(db, user.id, step):
+                db.rollback()
+                raise HTTPException(status_code=401, detail="Invalid email, password, or MFA code",
+                                    headers={"WWW-Authenticate": "Bearer"})
+            db.commit()
 
     family_id = str(uuid4())
     raw_refresh_token = secrets.token_urlsafe(48)
@@ -385,6 +413,48 @@ def confirm_mfa(
     )
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/mfa/recovery-codes", response_model=MFARecoveryCodesResponse)
+def regenerate_mfa_recovery_codes(
+    payload: MFARecoveryCodesRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> MFARecoveryCodesResponse:
+    """Replace one-time MFA recovery codes; show raw codes only in this response."""
+    if not user.mfa_enabled or not user.mfa_secret_encrypted:
+        raise HTTPException(status_code=409, detail="MFA is not enabled")
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is required")
+    try:
+        secret = decrypt_totp_secret(user.mfa_secret_encrypted)
+    except (RuntimeError, ValueError):
+        raise HTTPException(status_code=503, detail="MFA encryption configuration is unavailable") from None
+    step = verify_totp(secret, payload.code, last_step=user.mfa_last_verified_step)
+    if step is None or not _consume_mfa_step(db, user.id, step):
+        db.rollback()
+        raise HTTPException(status_code=401, detail="Invalid current password or MFA code")
+
+    raw_codes = [secrets.token_hex(10) for _ in range(10)]
+    db.execute(delete(MFARecoveryCode).where(MFARecoveryCode.user_id == user.id))
+    db.add_all([
+        MFARecoveryCode(
+            code_hash=hashlib.sha256(code.encode("utf-8")).hexdigest(),
+            user_id=user.id,
+        )
+        for code in raw_codes
+    ])
+    record_audit_event(
+        db,
+        actor_user_id=user.id,
+        organization_id=None,
+        action="auth.mfa_recovery_codes_regenerated",
+        entity_type="user",
+        entity_id=user.id,
+        details={"count": len(raw_codes)},
+    )
+    db.commit()
+    return MFARecoveryCodesResponse(codes=raw_codes)
 
 
 @router.post("/mfa/disable", status_code=status.HTTP_204_NO_CONTENT)
