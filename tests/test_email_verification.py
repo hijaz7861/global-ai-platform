@@ -11,7 +11,7 @@ from app import models  # noqa: F401
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import EmailVerificationToken, User, utc_now
+from app.models import EmailVerificationToken, utc_now
 
 
 @pytest.fixture
