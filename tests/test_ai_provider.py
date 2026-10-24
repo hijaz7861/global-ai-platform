@@ -59,3 +59,34 @@ def test_provider_rejects_insecure_non_loopback_urls():
             base_url="http://provider.example/v1",
             model="test-model",
         )
+
+
+
+def test_provider_rejects_oversized_response_without_buffering_unbounded_body():
+    provider = OpenAICompatibleProvider(
+        api_key="test-secret",
+        base_url="https://provider.example/v1",
+        model="test-model",
+        max_response_bytes=1024,
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, content=b"x" * 2048)
+        ),
+    )
+    with pytest.raises(ProviderError, match="size limit"):
+        asyncio.run(provider.complete("hello", 16))
+
+
+def test_provider_rejects_declared_oversized_response_before_reading_body():
+    provider = OpenAICompatibleProvider(
+        api_key="test-secret",
+        base_url="https://provider.example/v1",
+        model="test-model",
+        max_response_bytes=1024,
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200, headers={"content-length": "4096"}, content=b""
+            )
+        ),
+    )
+    with pytest.raises(ProviderError, match="size limit"):
+        asyncio.run(provider.complete("hello", 16))
