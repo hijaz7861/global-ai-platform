@@ -70,6 +70,10 @@ Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/healt
 - Verify external integrations and permissions before relying on them.
 - Documentation and scaffolding are not proof that a feature is implemented.
 
+## Production readiness
+
+See [Production Readiness Gate](docs/PRODUCTION_READINESS.md) for the evidence-based staging and release checklist. CI success does not mean deployment, SMTP, scheduler, backups, security review, or payment processing are configured.
+
 ## Roadmap and limitations
 
 Organization invitations: owners/admins can invite a registered or future account by email using `POST /api/v1/organizations/{organization_id}/invitations`; the recipient signs in to the matching account and accepts the emailed single-use token at `POST /api/v1/invitations/accept`. Tokens are stored as SHA-256 digests and expire after seven days. Owners/admins can revoke pending invitations at `POST /api/v1/organizations/{organization_id}/invitations/{invitation_id}/revoke`. SMTP must be configured; raw invitation tokens are never returned by the API.
