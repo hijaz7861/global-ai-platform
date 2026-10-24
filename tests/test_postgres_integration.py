@@ -137,3 +137,67 @@ def test_concurrent_orders_cannot_oversell_single_inventory_unit():
         assert orders_one.status_code == 200
         assert orders_two.status_code == 200
         assert len(orders_one.json()) + len(orders_two.json()) == 1
+
+
+def test_concurrent_overlapping_accounting_periods_are_serialized_per_tenant():
+    from datetime import datetime, timedelta, timezone
+
+    suffix = uuid4().hex
+    email = f"postgres-period-{suffix}@example.com"
+    password = "correct-horse-battery-12"
+    with TestClient(app) as client:
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        organization = client.post(
+            "/api/v1/organizations",
+            headers=headers,
+            json={"name": f"Period Race {suffix[:8]}"},
+        )
+        assert organization.status_code == 201, organization.text
+        organization_id = organization.json()["id"]
+
+    today = datetime.now(timezone.utc).date()
+    period_payloads = [
+        {
+            "name": "Concurrent Period A",
+            "starts_on": today.isoformat(),
+            "ends_on": (today + timedelta(days=30)).isoformat(),
+        },
+        {
+            "name": "Concurrent Period B",
+            "starts_on": (today + timedelta(days=1)).isoformat(),
+            "ends_on": (today + timedelta(days=31)).isoformat(),
+        },
+    ]
+
+    def create_period(payload):
+        with TestClient(app) as client:
+            return client.post(
+                f"/api/v1/organizations/{organization_id}/accounting-periods",
+                headers=headers,
+                json=payload,
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(create_period, period_payloads))
+
+    assert sorted(response.status_code for response in responses) == [201, 409], [
+        (response.status_code, response.text) for response in responses
+    ]
+    with TestClient(app) as client:
+        periods = client.get(
+            f"/api/v1/organizations/{organization_id}/accounting-periods",
+            headers=headers,
+        )
+    assert periods.status_code == 200, periods.text
+    assert len(periods.json()) == 1
