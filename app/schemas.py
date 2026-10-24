@@ -580,6 +580,21 @@ class ProcurementAwardRequest(BaseModel):
     quote_id: str = Field(min_length=1, max_length=36)
 
 
+class SupplierQuoteRevisionResponse(BaseModel):
+    id: str
+    supplier_quote_id: str
+    revision_number: int
+    status: str
+    unit_price_minor: int
+    currency: str
+    lead_time_days: int
+    notes: str
+    actor_user_id: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class PurchaseOrderResponse(BaseModel):
     id: str
     procurement_request_id: str
