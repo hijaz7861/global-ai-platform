@@ -41,3 +41,45 @@ jobs:
           python -m alembic check
       - name: Run tests
         run: python -m pytest -q
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: platform_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d platform_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/platform_test
+      SECRET_KEY: postgres-integration-test-key-0123456789abcdef
+      REQUIRE_EMAIL_VERIFICATION: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install ruff
+      - name: Lint
+        run: ruff check --select E4,E7,E9,F app tests migrations
+      - name: Apply PostgreSQL migrations
+        run: python -m alembic upgrade head
+      - name: Verify PostgreSQL schema
+        run: python -m alembic check
+      - name: Run PostgreSQL integration tests
+        run: python -m pytest -q tests/test_postgres_integration.py
