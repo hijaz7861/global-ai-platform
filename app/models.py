@@ -191,6 +191,7 @@ class JournalEntry(Base):
         UniqueConstraint("organization_id", "idempotency_key", name="uq_journal_org_idempotency"),
         CheckConstraint("total_minor > 0", name="ck_journal_total_positive"),
         CheckConstraint("status = 'posted'", name="ck_journal_posted_only"),
+        UniqueConstraint("reversal_of_id", name="uq_journal_reversal_source"),
         Index("ix_journal_org_created", "organization_id", "created_at"),
     )
 
@@ -203,6 +204,7 @@ class JournalEntry(Base):
     )
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    reversal_of_id: Mapped[str | None] = mapped_column(ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=True)
     description: Mapped[str] = mapped_column(String(500), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
