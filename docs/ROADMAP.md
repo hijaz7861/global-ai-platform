@@ -7,7 +7,7 @@
 5. **Accounting ledger — initial slice implemented:** tenant-scoped chart of accounts, balanced journal posting, immutable one-time counter-entry reversals, derived trial balance, currency/account checks, idempotency, and audit events.
 6. **Accounting period controls — initial slice implemented:** organization-scoped non-overlapping periods, owner/admin listing and creation, audited one-way closure, and guards against new journal postings/reversals outside an open period once periods are configured. Period-specific reports and database-level overlap/concurrency enforcement remain open.
 7. **AI adapter — guarded initial slice:** OpenAI-compatible endpoint adapter, output caps, timeout, audit events, opt-in and request quota. Multi-provider routing and agents remain future work.
-8. **Commerce hardening — next:** multi-item carts, external scheduler provisioning for order expiry, database concurrency tests, and full inventory/order race-condition coverage.
+8. **Commerce hardening — partial:** multi-item carts and an idempotent expiry sweep are implemented and CI-verified. External scheduler provisioning, database concurrency tests, and full inventory/order race-condition coverage remain open.
 9. **Financial hardening — next:** period-specific account balances/reports, reconciliation, approvals, and payment sandbox.
 10. **Supplier operations — initial slice implemented:** organization-owned supplier profile, submission, platform-admin review, rejection reason and resubmission. Quotes, procurement and fulfilment remain next.
 11. **Logistics and fulfilment:** shipping quotes, tracking, returns and disputes.
