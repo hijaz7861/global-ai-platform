@@ -3,12 +3,12 @@
 1. **Foundation — in draft:** FastAPI API, health contract, CI, database migration workflow, linting.
 2. **Identity and initial tenancy — initial slice implemented, hardening remains:** users, password hashing, bearer tokens with logout revocation, persistent login/password-reset request rate limits, organizations, owner/admin membership management, tenant-scoped access.
 3. **Catalog MVP — initial slice implemented:** listings, draft/active publication, public search and currency/price filters, bounded pagination, minor-unit pricing.
-4. **Order/inventory MVP — initial slice implemented:** single-listing orders, conditional stock reservation, per-buyer idempotency, buyer-scoped reads, unpaid-order cancellation, stock release, owner/admin inventory adjustments, seller-scoped order summaries.
+4. **Order/inventory MVP — initial slice implemented:** single-listing orders, conditional stock reservation, per-buyer idempotency, buyer-scoped reads, unpaid-order cancellation, stock release, owner/admin inventory adjustments with append-only before/after history and audit events, seller-scoped order summaries.
 5. **Accounting ledger — initial slice implemented:** tenant-scoped chart of accounts, balanced journal posting, immutable one-time counter-entry reversals, derived trial balance, currency/account checks, idempotency, and audit events.
 6. **Accounting period controls — initial slice implemented:** organization-scoped non-overlapping periods, owner/admin listing and creation, audited one-way closure, and guards against new journal postings/reversals outside an open period once periods are configured. Period-specific reports and database-level overlap/concurrency enforcement remain open.
 7. **AI adapter — guarded initial slice:** OpenAI-compatible endpoint adapter, output caps, timeout, audit events, opt-in and request quota. Multi-provider routing and agents remain future work.
-8. **Commerce hardening — next:** multi-item carts, inventory adjustment history, order expiry, database concurrency tests.
-9. **Financial hardening — next:** period controls, account balances/reports, reconciliation, approvals, and payment sandbox.
+8. **Commerce hardening — next:** multi-item carts, order expiry, database concurrency tests, and full inventory/order race-condition coverage.
+9. **Financial hardening — next:** period-specific account balances/reports, reconciliation, approvals, and payment sandbox.
 10. **Supplier operations — initial slice implemented:** organization-owned supplier profile, submission, platform-admin review, rejection reason and resubmission. Quotes, procurement and fulfilment remain next.
 11. **Logistics and fulfilment:** shipping quotes, tracking, returns and disputes.
 12. **AI orchestration:** provider registry, budgets, tool permissions, audit, human approval and bounded retries.
