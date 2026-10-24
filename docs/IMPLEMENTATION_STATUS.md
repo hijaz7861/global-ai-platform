@@ -15,7 +15,7 @@
 - Optional Docker packaging that applies migrations before starting the API.
 
 ## Verification status
-CI run 149 passed lint, compilation, Alembic migration consistency, and 49 tests on Python 3.11, 3.12, and 3.13 for the accounting-period implementation. Inventory adjustment history changes are now in the branch and await their own completed CI run. No production deployment, live payment processing, or live paid AI request has occurred.
+CI run 154 passed lint, compilation, Alembic migration consistency, and 51 tests on Python 3.11, 3.12, and 3.13 for the inventory adjustment history implementation. CI run 157 is verifying the latest documentation commit; the source changes have passed the full matrix. No production deployment, live payment processing, or live paid AI request has occurred.
 
 ## Important remaining gaps
 - MFA, refresh-token rotation, account lockout, expired-token cleanup, and stronger atomic/concurrency-safe auth throttling. Registration/login/password-reset/email-verification endpoints have database-backed request limits; proxy-aware client IP handling still needs deployment-specific review.
