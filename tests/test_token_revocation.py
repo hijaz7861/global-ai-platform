@@ -46,6 +46,7 @@ def test_logout_revokes_access_token(client):
     )
     assert login.status_code == 200, login.text
     token = login.json()["access_token"]
+    refresh_token = login.json()["refresh_token"]
     headers = {"Authorization": f"Bearer {token}"}
     assert client.get("/api/v1/organizations", headers=headers).status_code == 200
 
@@ -53,3 +54,62 @@ def test_logout_revokes_access_token(client):
     assert logout.status_code == 204
     rejected = client.get("/api/v1/organizations", headers=headers)
     assert rejected.status_code == 401
+    refresh_after_logout = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    assert refresh_after_logout.status_code == 401
+
+
+def test_refresh_token_rotates_and_replay_revokes_entire_session_family(client):
+    password = "correct-horse-battery-12"
+    assert client.post(
+        "/api/v1/auth/register",
+        json={"email": "refresh@example.com", "password": password},
+    ).status_code == 201
+    login = client.post(
+        "/api/v1/auth/token",
+        json={"email": "refresh@example.com", "password": password},
+    )
+    assert login.status_code == 200, login.text
+    first = login.json()
+    assert first["refresh_token"]
+    assert first["refresh_expires_in"] > first["expires_in"]
+
+    rotated = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": first["refresh_token"]},
+    )
+    assert rotated.status_code == 200, rotated.text
+    second = rotated.json()
+    assert second["refresh_token"] != first["refresh_token"]
+    assert second["access_token"] != first["access_token"]
+
+    replay = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": first["refresh_token"]},
+    )
+    assert replay.status_code == 401
+    assert "reuse detected" in replay.json()["detail"].lower()
+
+    first_access = client.get(
+        "/api/v1/organizations",
+        headers={"Authorization": f"Bearer {first['access_token']}"},
+    )
+    second_access = client.get(
+        "/api/v1/organizations",
+        headers={"Authorization": f"Bearer {second['access_token']}"},
+    )
+    assert first_access.status_code == 401
+    assert second_access.status_code == 401
+
+    revoked_refresh = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": second["refresh_token"]},
+    )
+    assert revoked_refresh.status_code == 401
+
+
+def test_unknown_refresh_token_is_rejected(client):
+    response = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": "x" * 48},
+    )
+    assert response.status_code == 401
