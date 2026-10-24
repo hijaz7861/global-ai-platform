@@ -22,8 +22,8 @@ from app.core.security import (
     verify_password,
 )
 from app.db import get_db
-from app.models import AuthAttempt, EmailVerificationToken, PasswordResetToken, TokenRevocation, User, utc_now
-from app.schemas import EmailVerificationConfirm, LoginRequest, PasswordResetConfirm, PasswordResetRequest, RegisterRequest, TokenResponse
+from app.models import AuthAttempt, EmailVerificationToken, PasswordResetToken, RefreshToken, TokenRevocation, User, utc_now
+from app.schemas import EmailVerificationConfirm, LoginRequest, PasswordResetConfirm, PasswordResetRequest, RefreshTokenRequest, RegisterRequest, TokenResponse
 from app.services.email import send_email_verification, send_password_reset_email
 
 router = APIRouter(prefix="/auth", tags=["identity"])
@@ -228,10 +228,117 @@ def login(payload: LoginRequest, request: Request, db: Annotated[Session, Depend
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password",
                             headers={"WWW-Authenticate": "Bearer"})
-    token = create_access_token(user.id, auth_version=user.auth_version)
+    family_id = str(__import__("uuid").uuid4())
+    raw_refresh_token = secrets.token_urlsafe(48)
+    refresh_expires_at = utc_now() + timedelta(days=settings.refresh_token_expire_days)
+    db.add(
+        RefreshToken(
+            token_hash=hashlib.sha256(raw_refresh_token.encode("utf-8")).hexdigest(),
+            family_id=family_id,
+            user_id=user.id,
+            auth_version=user.auth_version,
+            expires_at=refresh_expires_at,
+        )
+    )
+    record_audit_event(
+        db,
+        actor_user_id=user.id,
+        organization_id=None,
+        action="auth.session_created",
+        entity_type="auth_session",
+        entity_id=family_id,
+        details={"status": "created"},
+    )
+    db.commit()
+    token = create_access_token(user.id, auth_version=user.auth_version, session_id=family_id)
     return TokenResponse(
         access_token=token,
+        refresh_token=raw_refresh_token,
         expires_in=settings.access_token_expire_minutes * 60,
+        refresh_expires_in=settings.refresh_token_expire_days * 24 * 60 * 60,
+    )
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_access_token(
+    payload: RefreshTokenRequest,
+    db: Annotated[Session, Depends(get_db)],
+) -> TokenResponse:
+    """Rotate refresh credentials; replay of a consumed token revokes its whole family."""
+    now = utc_now()
+    digest = hashlib.sha256(payload.refresh_token.encode("utf-8")).hexdigest()
+    record = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == digest))
+    if record is None or record.expires_at <= now or record.revoked_at is not None:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    if record.used_at is not None:
+        db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.family_id == record.family_id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
+        user = db.scalar(select(User).where(User.id == record.user_id))
+        if user is not None:
+            user.auth_version += 1
+        record_audit_event(
+            db,
+            actor_user_id=record.user_id,
+            organization_id=None,
+            action="auth.refresh_replay_detected",
+            entity_type="auth_session",
+            entity_id=record.family_id,
+            details={"status": "family_revoked"},
+        )
+        db.commit()
+        raise HTTPException(status_code=401, detail="Refresh token reuse detected; sign in again")
+    user = db.scalar(select(User).where(User.id == record.user_id, User.is_active.is_(True)))
+    if user is None or user.auth_version != record.auth_version:
+        db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.family_id == record.family_id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
+        db.commit()
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    consumed = db.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.token_hash == digest,
+            RefreshToken.used_at.is_(None),
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > now,
+        )
+        .values(used_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if consumed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    new_raw_token = secrets.token_urlsafe(48)
+    db.add(
+        RefreshToken(
+            token_hash=hashlib.sha256(new_raw_token.encode("utf-8")).hexdigest(),
+            family_id=record.family_id,
+            user_id=user.id,
+            auth_version=user.auth_version,
+            expires_at=now + timedelta(days=settings.refresh_token_expire_days),
+        )
+    )
+    record_audit_event(
+        db,
+        actor_user_id=user.id,
+        organization_id=None,
+        action="auth.session_rotated",
+        entity_type="auth_session",
+        entity_id=record.family_id,
+        details={"status": "rotated"},
+    )
+    db.commit()
+    access = create_access_token(user.id, auth_version=user.auth_version, session_id=record.family_id)
+    return TokenResponse(
+        access_token=access,
+        refresh_token=new_raw_token,
+        expires_in=settings.access_token_expire_minutes * 60,
+        refresh_expires_in=settings.refresh_token_expire_days * 24 * 60 * 60,
     )
 
 
@@ -256,13 +363,20 @@ def logout(
             expires_at=datetime.fromtimestamp(expires, timezone.utc),
         )
     )
+    session_id = payload.get("sid")
+    if isinstance(session_id, str) and session_id:
+        db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.family_id == session_id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=utc_now())
+        )
     record_audit_event(
         db,
         actor_user_id=user.id,
         organization_id=None,
         action="auth.logout",
-        entity_type="access_token",
-        entity_id=token_id,
+        entity_type="auth_session" if isinstance(session_id, str) else "access_token",
+        entity_id=session_id if isinstance(session_id, str) else token_id,
         details={"status": "revoked"},
     )
     db.commit()
