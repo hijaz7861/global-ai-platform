@@ -138,3 +138,75 @@ def test_public_marketplace_search_and_price_filters(client):
 
     invalid_range = client.get("/api/v1/listings", params={"min_price_minor": 2000, "max_price_minor": 1000})
     assert invalid_range.status_code == 422
+
+
+def test_inventory_adjustments_are_recorded_atomically_and_tenant_scoped(client):
+    token, org_id = account(client, "inventory-history@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    created = client.post(
+        f"/api/v1/organizations/{org_id}/listings",
+        headers=headers,
+        json={
+            "title": "Stock tracked item",
+            "description": "Inventory audit sample",
+            "price_minor": 1000,
+            "currency": "PKR",
+            "inventory_quantity": 5,
+        },
+    )
+    assert created.status_code == 201, created.text
+    listing_id = created.json()["id"]
+    base_url = f"/api/v1/organizations/{org_id}/listings/{listing_id}"
+
+    first = client.post(
+        f"{base_url}/inventory-adjustments",
+        headers=headers,
+        json={"delta": 3, "reason": "Received shipment"},
+    )
+    assert first.status_code == 200, first.text
+    assert first.json()["inventory_quantity"] == 8
+
+    second = client.post(
+        f"{base_url}/inventory-adjustments",
+        headers=headers,
+        json={"delta": -2, "reason": "Damaged units"},
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["inventory_quantity"] == 6
+
+    history = client.get(f"{base_url}/inventory-adjustments", headers=headers)
+    assert history.status_code == 200, history.text
+    assert len(history.json()) == 2
+    newest, oldest = history.json()
+    assert (newest["delta"], newest["quantity_before"], newest["quantity_after"]) == (-2, 8, 6)
+    assert newest["reason"] == "Damaged units"
+    assert (oldest["delta"], oldest["quantity_before"], oldest["quantity_after"]) == (3, 5, 8)
+    assert oldest["reason"] == "Received shipment"
+
+    rejected = client.post(
+        f"{base_url}/inventory-adjustments",
+        headers=headers,
+        json={"delta": -7, "reason": "Would underflow stock"},
+    )
+    assert rejected.status_code == 409
+    after_rejection = client.get(f"{base_url}/inventory-adjustments", headers=headers)
+    assert len(after_rejection.json()) == 2
+    assert client.get(f"{base_url}/inventory-adjustments").status_code == 401
+
+
+def test_inventory_adjustment_history_does_not_cross_tenants(client):
+    owner_token, org_id = account(client, "inventory-owner@example.com")
+    outsider_token, _ = account(client, "inventory-outsider@example.com")
+    headers = {"Authorization": f"Bearer {owner_token}"}
+    created = client.post(
+        f"/api/v1/organizations/{org_id}/listings",
+        headers=headers,
+        json={"title": "Private stock", "price_minor": 500, "currency": "PKR", "inventory_quantity": 2},
+    )
+    assert created.status_code == 201, created.text
+    listing_id = created.json()["id"]
+    response = client.get(
+        f"/api/v1/organizations/{org_id}/listings/{listing_id}/inventory-adjustments",
+        headers={"Authorization": f"Bearer {outsider_token}"},
+    )
+    assert response.status_code == 404
