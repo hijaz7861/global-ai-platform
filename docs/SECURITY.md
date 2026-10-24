@@ -3,12 +3,16 @@
 ## Implemented controls in the draft foundation
 - Passwords are hashed using Argon2 via pwdlib; plaintext passwords are never stored.
 - Signed bearer-token login is disabled unless `SECRET_KEY` is at least 32 characters.
+- Short-lived access tokens are paired with hashed, rotating refresh tokens. Reuse of a consumed refresh token revokes its session family; logout revokes the family and its access tokens.
+- Optional TOTP MFA requires password reauthentication to enroll/disable, encrypts secrets with AES-GCM using a key derived from `SECRET_KEY`, and prevents reuse of the same TOTP time step.
 - Password reset uses random one-time tokens, stores only SHA-256 digests, expires tokens, and consumes them atomically.
-- Password-reset requests return a generic response to reduce account enumeration; delivery uses configurable SMTP and does not log reset tokens.\n- Login and password-reset request endpoints use persistent database-backed sliding-window limits keyed by a digest of normalized account identifier and direct peer address; responses include `Retry-After` when limited.
+- Password-reset and email-verification requests return generic responses to reduce account enumeration; delivery uses configurable SMTP and does not log tokens.
+- Registration, login, password-reset, and email-verification request endpoints use persistent database-backed rate limits keyed by a digest of normalized account identifier and direct peer address; responses include `Retry-After` when limited. The current count-and-insert limiter is not fully concurrency-safe, and proxy-aware IP handling requires deployment review.
 - A successful password reset increments the user's authentication version and invalidates previously issued bearer tokens.
 - Supplier profile reads are organization-membership scoped; changes require owner/admin membership, while review requires an authenticated account in the explicit `PLATFORM_ADMIN_EMAILS` allowlist.
 - Organization and listing reads are scoped to authenticated membership.
-- Orders are visible only to their buyer.
+- Orders are visible only to their buyer; unpaid orders have a configurable expiry and a platform-admin-only idempotent sweep releases reserved stock once.
+- Procurement requests and quotes enforce buyer/supplier tenant boundaries, require approved suppliers to quote, and support a single awarded quote.
 - Order creation uses conditional inventory updates, per-user idempotency keys, and a transaction.
 - Audit records are written in the same transaction as selected organization, listing, and order operations.
 - Audit detail values are allowlisted; request bodies, passwords, tokens, and secret values are not copied into event details.
@@ -16,7 +20,8 @@
 - CI checks compilation, database migrations, and tests on Python 3.11–3.13.
 
 ## Current limitations
-- The API still has no email verification, MFA, refresh-token rotation, registration throttling, or account lockout. Login and password-reset requests have database-backed rate limits; review proxy configuration before relying on client IPs. Password-reset email delivery requires operator-provided SMTP configuration.
+- MFA has no recovery-code flow yet. MFA secret decryption depends on retaining the same `SECRET_KEY`; rotating that key without a planned re-enrollment strategy makes existing MFA secrets unreadable.
+- Rate limiting uses database-backed event rows but the check-and-insert sequence is not fully concurrency-safe. Registration/login/password-reset/email-verification limits also need deployment-specific proxy/IP handling review and stale-row cleanup.
 - Audit records are application-level records; immutability against a database administrator, external log export, retention controls, and tamper-evidence are not implemented.
 - Tenant isolation is demonstrated on organization, catalog, supplier-profile, accounting, audit, and buyer-order routes; every new tenant-owned query must enforce its own authorization boundary.
 - No payment provider or real payment processing is connected.
@@ -24,7 +29,7 @@
 
 ## Required before production
 - Complete threat modeling and an independent security review.
-- Add rate limiting, MFA, refresh-token rotation, and a complete secure session lifecycle.
+- Harden atomic rate limiting, add account lockout and MFA recovery codes, define safe secret-key rotation, and validate a complete secure session lifecycle.
 - Verify tenant scoping for every new endpoint and add cross-tenant regression tests.
 - Protect audit retention and export logs to a separate access-controlled destination.
 - Keep secrets in a secret manager; never commit real credentials.
