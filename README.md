@@ -72,6 +72,9 @@ Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/healt
 
 ## Production readiness
 
+A bounded one-shot maintenance batch is available via `python -m app.maintenance`; schedule it with the platform's cron/CronJob runner (for example, every minute) and monitor its exit status/output. It expires due unpaid orders, restores inventory transactionally, and cleans expired authentication records. The runner is not an always-on in-process scheduler.
+
+
 See [Production Readiness Gate](docs/PRODUCTION_READINESS.md) for the evidence-based staging and release checklist. CI success does not mean deployment, SMTP, scheduler, backups, security review, or payment processing are configured.
 
 ## Roadmap and limitations
