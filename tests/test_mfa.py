@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app import models  # noqa: F401
 from app.core.config import settings
-from app.core.mfa import generate_totp_code
+from app.core.mfa import decrypt_totp_secret, encrypt_totp_secret, generate_totp_code
 from app.db import Base, get_db
 from app.main import app
 from app.models import User
@@ -237,3 +237,30 @@ def test_mfa_can_be_disabled_with_single_use_recovery_code(client):
         json={"email": "mfa-recovery-disable@example.com", "password": password},
     )
     assert login.status_code == 200, login.text
+
+
+
+def test_mfa_secret_remains_decryptable_during_configured_key_rotation(monkeypatch):
+    old_key = "old-signing-key-that-is-long-enough-012345"
+    new_key = "new-signing-key-that-is-long-enough-678901"
+    secret = "JBSWY3DPEHPK3PXP"
+    monkeypatch.setattr(settings, "secret_key", old_key)
+    monkeypatch.setattr(settings, "previous_secret_keys", "")
+    encrypted = encrypt_totp_secret(secret)
+
+    monkeypatch.setattr(settings, "secret_key", new_key)
+    with pytest.raises(ValueError, match="current/previous SECRET_KEY"):
+        decrypt_totp_secret(encrypted)
+
+    monkeypatch.setattr(settings, "previous_secret_keys", old_key)
+    assert decrypt_totp_secret(encrypted) == secret
+
+    newly_encrypted = encrypt_totp_secret(secret)
+    assert decrypt_totp_secret(newly_encrypted) == secret
+
+
+def test_mfa_decryption_rejects_invalid_previous_key_configuration(monkeypatch):
+    monkeypatch.setattr(settings, "secret_key", "current-signing-key-that-is-long-enough-012")
+    monkeypatch.setattr(settings, "previous_secret_keys", "short")
+    with pytest.raises(ValueError, match="current/previous SECRET_KEY"):
+        decrypt_totp_secret("bm90LWEtc2VjcmV0")
