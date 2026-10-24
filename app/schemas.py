@@ -1,5 +1,5 @@
 """Request and response schemas for identity, commerce, AI, and accounting."""
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -216,6 +216,39 @@ class AccountResponse(BaseModel):
     currency: str
     is_active: bool
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AccountingPeriodCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    starts_on: date
+    ends_on: date
+
+    @field_validator("name")
+    @classmethod
+    def normalize_period_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Period name must contain at least two non-space characters")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_date_range(self):
+        if self.ends_on < self.starts_on:
+            raise ValueError("Period end date must not precede its start date")
+        return self
+
+
+class AccountingPeriodResponse(BaseModel):
+    id: str
+    organization_id: str
+    name: str
+    starts_on: date
+    ends_on: date
+    status: str
+    created_at: datetime
+    closed_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
 
