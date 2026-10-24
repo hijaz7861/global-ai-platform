@@ -1,7 +1,7 @@
 # Delivery Roadmap
 
 1. **Foundation — in draft:** FastAPI API, health contract, CI, database migration workflow, linting.
-2. **Identity and initial tenancy — initial slice implemented, hardening remains:** users, password hashing, short-lived bearer access tokens, rotating hashed refresh tokens with replay detection and family revocation, persistent login/password-reset request rate limits, organizations, owner/admin membership management, tenant-scoped access.
+2. **Identity and initial tenancy — initial slice implemented, hardening remains:** users, password hashing, short-lived bearer access tokens, rotating hashed refresh tokens with replay detection and family revocation, persistent login/password-reset request rate limits, organizations, owner/admin membership management, expiring email-bound invitations, single-use invitation acceptance, tenant-scoped access.
 3. **Catalog MVP — initial slice implemented:** listings, draft/active publication, public search and currency/price filters, bounded pagination, minor-unit pricing.
 4. **Order/inventory MVP — initial slice implemented:** single-listing orders, conditional stock reservation, per-buyer idempotency, buyer-scoped reads, unpaid-order cancellation, stock release, owner/admin inventory adjustments with append-only before/after history and audit events, seller-scoped order summaries, and platform-admin-triggered idempotent expiry with stock release.
 5. **Accounting ledger — initial slice implemented:** tenant-scoped chart of accounts, balanced journal posting, immutable one-time counter-entry reversals, derived trial balance, currency/account checks, idempotency, and audit events.
