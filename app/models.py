@@ -1,5 +1,5 @@
 """Identity, commerce, audit, accounting, and security data models."""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -8,6 +8,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -183,6 +184,34 @@ class Account(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     lines: Mapped[list["JournalLine"]] = relationship(back_populates="account")
+
+
+class AccountingPeriod(Base):
+    """Organization-scoped accounting window; closed periods cannot be reopened."""
+    __tablename__ = "accounting_periods"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_accounting_period_org_name"),
+        CheckConstraint("ends_on >= starts_on", name="ck_accounting_period_date_order"),
+        CheckConstraint("status IN ('open','closed')", name="ck_accounting_period_status"),
+        Index("ix_accounting_period_org_dates", "organization_id", "starts_on", "ends_on"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    starts_on: Mapped[date] = mapped_column(Date, nullable=False)
+    ends_on: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    closed_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
 class JournalEntry(Base):
