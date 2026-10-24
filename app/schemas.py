@@ -25,6 +25,10 @@ class LoginRequest(BaseModel):
         return str(value).strip().lower()
 
 
+class EmailVerificationConfirm(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
