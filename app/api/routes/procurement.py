@@ -142,7 +142,7 @@ def submit_supplier_quote(
     if profile is None:
         raise HTTPException(status_code=403, detail="An approved supplier profile is required")
     request = db.scalar(
-        select(ProcurementRequestRecord).where(ProcurementRequestRecord.id == request_id)
+        select(ProcurementRequestRecord).where(ProcurementRequestRecord.id == request_id).with_for_update()
     )
     if request is None or request.status != "open":
         raise HTTPException(status_code=404, detail="Open procurement request not found")
@@ -162,7 +162,11 @@ def submit_supplier_quote(
         status="submitted",
     )
     db.add(quote)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This supplier has already quoted on the request") from None
     record_audit_event(
         db,
         actor_user_id=membership.user_id,
@@ -213,8 +217,21 @@ def award_procurement_request(
     )
     if quote is None:
         raise HTTPException(status_code=404, detail="Submitted quote not found for this request")
+    now = utc_now()
+    transitioned = db.execute(
+        update(ProcurementRequestRecord)
+        .where(
+            ProcurementRequestRecord.id == request.id,
+            ProcurementRequestRecord.status == "open",
+        )
+        .values(status="awarded", awarded_quote_id=quote.id, updated_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if transitioned.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Procurement request was already closed or awarded")
     quote.status = "accepted"
-    quote.updated_at = utc_now()
+    quote.updated_at = now
     db.execute(
         update(SupplierQuote)
         .where(
@@ -222,11 +239,11 @@ def award_procurement_request(
             SupplierQuote.id != quote.id,
             SupplierQuote.status == "submitted",
         )
-        .values(status="rejected", updated_at=utc_now())
+        .values(status="rejected", updated_at=now)
     )
     request.status = "awarded"
     request.awarded_quote_id = quote.id
-    request.updated_at = utc_now()
+    request.updated_at = now
     record_audit_event(
         db,
         actor_user_id=membership.user_id,
@@ -272,8 +289,21 @@ def close_procurement_request(
         raise HTTPException(status_code=409, detail="An awarded request cannot be closed through this endpoint")
     if request.status == "closed":
         return ProcurementRequestResponse.model_validate(request)
+    now = utc_now()
+    transitioned = db.execute(
+        update(ProcurementRequestRecord)
+        .where(
+            ProcurementRequestRecord.id == request.id,
+            ProcurementRequestRecord.status == "open",
+        )
+        .values(status="closed", updated_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if transitioned.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Procurement request was already closed or awarded")
     request.status = "closed"
-    request.updated_at = utc_now()
+    request.updated_at = now
     db.execute(
         update(SupplierQuote)
         .where(
