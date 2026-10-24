@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     ai_model: str | None = None
     ai_timeout_seconds: int = Field(default=20, ge=1, le=120)
     ai_max_output_tokens: int = Field(default=512, ge=1, le=2048)
+    ai_max_response_bytes: int = Field(default=1048576, ge=1024, le=10485760)
     ai_daily_request_limit: int = Field(default=0, ge=0, le=10000)
 
     model_config = SettingsConfigDict(
