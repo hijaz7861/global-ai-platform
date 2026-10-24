@@ -10,15 +10,15 @@
 - Tenant-scoped chart of accounts, balanced idempotent double-entry journal posting, immutable one-time reversal entries, organization-scoped accounting period creation/listing/closure, guarded posting after period setup, and derived trial balance using integer minor units.
 - Transaction-bound allowlisted audit events for implemented sensitive operations.
 - Guarded OpenAI-compatible adapter with bounded output/timeouts, safe errors, no automatic retries, rolling request quota, PostgreSQL locking requirement, and live calls disabled by default.
-- Alembic migrations through persistent auth throttling and email verification.
+- Alembic migrations through persistent auth throttling, email verification, inventory history, and refresh token rotation.
 - GitHub Actions CI for Ruff, compile checks, Alembic migration consistency, and pytest across Python 3.11–3.13.
 - Optional Docker packaging that applies migrations before starting the API.
 
 ## Verification status
-CI run 154 passed lint, compilation, Alembic migration consistency, and 51 tests on Python 3.11, 3.12, and 3.13 for the inventory adjustment history implementation. CI run 157 is verifying the latest documentation commit; the source changes have passed the full matrix. No production deployment, live payment processing, or live paid AI request has occurred.
+CI run 159 passed lint, compilation, Alembic migration consistency, and 51 tests on Python 3.11, 3.12, and 3.13 for the inventory adjustment history implementation. Refresh-token rotation and its tests are now committed to the draft branch and await their own CI run; do not consider them verified until that run completes. No production deployment, live payment processing, or live paid AI request has occurred.
 
 ## Important remaining gaps
-- MFA, refresh-token rotation, account lockout, expired-token cleanup, and stronger atomic/concurrency-safe auth throttling. Registration/login/password-reset/email-verification endpoints have database-backed request limits; proxy-aware client IP handling still needs deployment-specific review.
+- MFA, account lockout, expired-token cleanup, and stronger atomic/concurrency-safe auth throttling. Refresh tokens are hashed, rotated, and replay-protected; operational cleanup and broader concurrency testing remain open. Registration/login/password-reset/email-verification endpoints have database-backed request limits; proxy-aware client IP handling still needs deployment-specific review.
 - Membership invitations and broader role administration.
 - Audit tamper-evidence, retention controls, and external log export.
 - Period-specific reporting and accounting-date persistence; database-enforced non-overlap/concurrency handling; full financial statements, reconciliation, payments, refunds, tax, and seller settlement.
@@ -28,7 +28,7 @@ CI run 154 passed lint, compilation, Alembic migration consistency, and 51 tests
 - PostgreSQL concurrency/service integration tests, independent security review, monitoring, backup/restore exercises, and staged deployment.
 
 ## Next engineering gates
-1. Add shared rate limiting and account-security controls.
+1. Add MFA, account lockout, expired-token cleanup, and concurrency-safe shared rate limiting.
 2. Extend accounting with period-specific reporting, reconciliation, and concurrency-safe period enforcement.
 3. Add supplier procurement and quote workflows.
 4. Expand provider routing and bounded agent orchestration.
