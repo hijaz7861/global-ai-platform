@@ -374,6 +374,54 @@ class SupplierProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 
+class ProcurementRequestRecord(Base):
+    """A buyer organization's bounded request for supplier quotations."""
+    __tablename__ = "procurement_requests"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_procurement_requests_quantity_positive"),
+        CheckConstraint("length(currency) = 3", name="ck_procurement_requests_currency_length"),
+        CheckConstraint("status IN ('open','awarded','closed')", name="ck_procurement_requests_status"),
+        Index("ix_procurement_requests_org_status_created", "buyer_organization_id", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    buyer_organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(String(3000), default="", nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
+    awarded_quote_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class SupplierQuote(Base):
+    """A supplier's one quote per procurement request."""
+    __tablename__ = "supplier_quotes"
+    __table_args__ = (
+        UniqueConstraint("procurement_request_id", "supplier_organization_id", name="uq_supplier_quote_request_supplier"),
+        CheckConstraint("unit_price_minor > 0", name="ck_supplier_quotes_price_positive"),
+        CheckConstraint("lead_time_days >= 0", name="ck_supplier_quotes_lead_time_nonnegative"),
+        CheckConstraint("status IN ('submitted','accepted','rejected','withdrawn')", name="ck_supplier_quotes_status"),
+        Index("ix_supplier_quotes_request_status", "procurement_request_id", "status"),
+        Index("ix_supplier_quotes_supplier_created", "supplier_organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    procurement_request_id: Mapped[str] = mapped_column(ForeignKey("procurement_requests.id", ondelete="RESTRICT"), nullable=False)
+    supplier_organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    unit_price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    lead_time_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    notes: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="submitted", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
 class AuthAttempt(Base):
     """Privacy-minimized persistent rate-limit events for sensitive auth endpoints."""
     __tablename__ = "auth_attempts"
