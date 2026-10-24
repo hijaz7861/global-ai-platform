@@ -19,6 +19,7 @@ from app.schemas import (
     AccountLedgerEntryResponse,
     AccountLedgerResponse,
     AccountResponse,
+    BalanceSheetResponse,
     AccountingPeriodCreate,
     AccountingPeriodResponse,
     JournalEntryCreate,
@@ -839,3 +840,106 @@ def get_income_statement(
         )
         for currency, values in sorted(grouped.items())
     ]
+
+
+@router.get(
+    "/organizations/{organization_id}/balance-sheet",
+    response_model=list[BalanceSheetResponse],
+)
+def get_balance_sheet(
+    organization_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+    as_of_date: date | None = Query(default=None),
+) -> list[BalanceSheetResponse]:
+    """Derive a balance sheet per currency as of a UTC posting date.
+
+    Until an income-closing workflow exists, accumulated net income is shown as
+    current earnings so assets can be reconciled to liabilities plus equity.
+    """
+    _require_owner_or_admin(membership)
+    effective_date = as_of_date or datetime.now(timezone.utc).date()
+    cutoff = datetime.combine(effective_date + timedelta(days=1), time.min, tzinfo=timezone.utc)
+    rows = db.execute(
+        select(
+            Account.id,
+            Account.code,
+            Account.name,
+            Account.account_type,
+            Account.currency,
+            func.sum(JournalLine.debit_minor).label("debit_total"),
+            func.sum(JournalLine.credit_minor).label("credit_total"),
+        )
+        .join(JournalLine, JournalLine.account_id == Account.id)
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(
+            Account.organization_id == membership.organization_id,
+            JournalEntry.organization_id == membership.organization_id,
+            JournalEntry.status == "posted",
+            JournalEntry.created_at < cutoff,
+        )
+        .group_by(Account.id, Account.code, Account.name, Account.account_type, Account.currency)
+        .order_by(Account.currency, Account.code)
+    ).all()
+
+    grouped: dict[str, dict[str, object]] = {}
+    for account_id, code, name, account_type, currency, debit, credit in rows:
+        statement = grouped.setdefault(
+            currency,
+            {
+                "asset_lines": [],
+                "liability_lines": [],
+                "equity_lines": [],
+                "total_assets_minor": 0,
+                "total_liabilities_minor": 0,
+                "total_equity_minor": 0,
+                "current_earnings_minor": 0,
+            },
+        )
+        debit_total = int(debit)
+        credit_total = int(credit)
+        if account_type == "asset":
+            amount = debit_total - credit_total
+            statement["asset_lines"].append(
+                FinancialStatementLineResponse(account_id=account_id, code=code, name=name, amount_minor=amount)
+            )
+            statement["total_assets_minor"] += amount
+        elif account_type == "liability":
+            amount = credit_total - debit_total
+            statement["liability_lines"].append(
+                FinancialStatementLineResponse(account_id=account_id, code=code, name=name, amount_minor=amount)
+            )
+            statement["total_liabilities_minor"] += amount
+        elif account_type == "equity":
+            amount = credit_total - debit_total
+            statement["equity_lines"].append(
+                FinancialStatementLineResponse(account_id=account_id, code=code, name=name, amount_minor=amount)
+            )
+            statement["total_equity_minor"] += amount
+        elif account_type == "revenue":
+            statement["current_earnings_minor"] += credit_total - debit_total
+        elif account_type == "expense":
+            statement["current_earnings_minor"] += debit_total * -1 + credit_total
+
+    results: list[BalanceSheetResponse] = []
+    for currency, values in sorted(grouped.items()):
+        liabilities_and_equity = (
+            int(values["total_liabilities_minor"])
+            + int(values["total_equity_minor"])
+            + int(values["current_earnings_minor"])
+        )
+        results.append(
+            BalanceSheetResponse(
+                as_of_date=effective_date,
+                currency=currency,
+                asset_lines=values["asset_lines"],
+                liability_lines=values["liability_lines"],
+                equity_lines=values["equity_lines"],
+                total_assets_minor=int(values["total_assets_minor"]),
+                total_liabilities_minor=int(values["total_liabilities_minor"]),
+                total_equity_minor=int(values["total_equity_minor"]),
+                current_earnings_minor=int(values["current_earnings_minor"]),
+                total_liabilities_and_equity_minor=liabilities_and_equity,
+            )
+        )
+    return results
