@@ -26,6 +26,10 @@ class LoginRequest(BaseModel):
         return str(value).strip().lower()
 
 
+class MFAEnrollRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+
+
 class MFAConfirmRequest(BaseModel):
     code: str = Field(pattern=r"^\d{6}$")
 
