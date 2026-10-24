@@ -1,4 +1,6 @@
-"""Order lifecycle tests for idempotency, stock protection, and cancellation."""
+"""Order lifecycle tests for idempotency, stock protection, cancellation, and expiry."""
+from datetime import timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -9,6 +11,7 @@ from app import models  # noqa: F401
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
+from app.models import Order, utc_now
 
 
 @pytest.fixture
@@ -31,6 +34,7 @@ def client(monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
+        test_client.testing_sessions = TestingSessionLocal
         yield test_client
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
@@ -169,3 +173,52 @@ def test_non_owner_cannot_cancel_order(client):
         headers={"Authorization": f"Bearer {other_token}"},
     )
     assert response.status_code == 404
+
+
+
+def test_expiry_sweep_releases_stock_once_and_requires_platform_admin(client, monkeypatch):
+    listing_id, seller_token, org_id = make_active_listing(client, quantity=4)
+    buyer_token = register_login(client, "expiry-buyer@example.com")
+    created = create_order(client, listing_id, buyer_token, "order-expiry-0001", quantity=3)
+    assert created.status_code == 201, created.text
+    order_id = created.json()["id"]
+    assert created.json()["expires_at"]
+    assert listing_stock(client, org_id, seller_token) == 1
+
+    # A normal buyer cannot invoke the maintenance operation.
+    forbidden = client.post(
+        "/api/v1/platform/orders/expire-pending",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+    )
+    assert forbidden.status_code == 403
+
+    db = client.testing_sessions()
+    try:
+        order = db.get(Order, order_id)
+        assert order is not None
+        order.expires_at = utc_now() - timedelta(seconds=1)
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setattr(settings, "platform_admin_emails", "platform-ops@example.com")
+    admin_token = register_login(client, "platform-ops@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    swept = client.post("/api/v1/platform/orders/expire-pending?limit=10", headers=headers)
+    assert swept.status_code == 200, swept.text
+    assert swept.json() == {"expired_count": 1, "order_ids": [order_id]}
+    assert listing_stock(client, org_id, seller_token) == 4
+
+    repeated = client.post("/api/v1/platform/orders/expire-pending?limit=10", headers=headers)
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json() == {"expired_count": 0, "order_ids": []}
+    buyer_headers = {"Authorization": f"Bearer {buyer_token}"}
+    assert client.get(f"/api/v1/orders/{order_id}", headers=buyer_headers).json()["status"] == "expired"
+    assert client.post(f"/api/v1/orders/{order_id}/cancel", headers=buyer_headers).status_code == 409
+
+    audit = client.get(
+        f"/api/v1/organizations/{org_id}/audit-events",
+        headers={"Authorization": f"Bearer {seller_token}"},
+    )
+    assert audit.status_code == 200, audit.text
+    assert "order.expired" in {event["action"] for event in audit.json()}
