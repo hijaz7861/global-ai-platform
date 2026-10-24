@@ -104,6 +104,7 @@ class Order(Base):
         UniqueConstraint("user_id", "idempotency_key", name="uq_orders_user_idempotency"),
         CheckConstraint("total_minor > 0", name="ck_orders_total_positive"),
         Index("ix_orders_user_created", "user_id", "created_at"),
+        Index("ix_orders_status_expires", "status", "expires_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -111,7 +112,7 @@ class Order(Base):
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending_payment", nullable=False)
     total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
