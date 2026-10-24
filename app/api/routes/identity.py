@@ -4,6 +4,7 @@ import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
@@ -228,7 +229,7 @@ def login(payload: LoginRequest, request: Request, db: Annotated[Session, Depend
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password",
                             headers={"WWW-Authenticate": "Bearer"})
-    family_id = str(__import__("uuid").uuid4())
+    family_id = str(uuid4())
     raw_refresh_token = secrets.token_urlsafe(48)
     refresh_expires_at = utc_now() + timedelta(days=settings.refresh_token_expire_days)
     db.add(
@@ -312,6 +313,28 @@ def refresh_access_token(
     )
     if consumed.rowcount != 1:
         db.rollback()
+        current = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == digest))
+        if current is not None and current.used_at is not None and current.revoked_at is None:
+            replay_time = utc_now()
+            db.execute(
+                update(RefreshToken)
+                .where(RefreshToken.family_id == current.family_id, RefreshToken.revoked_at.is_(None))
+                .values(revoked_at=replay_time)
+            )
+            replay_user = db.scalar(select(User).where(User.id == current.user_id))
+            if replay_user is not None:
+                replay_user.auth_version += 1
+            record_audit_event(
+                db,
+                actor_user_id=current.user_id,
+                organization_id=None,
+                action="auth.refresh_replay_detected",
+                entity_type="auth_session",
+                entity_id=current.family_id,
+                details={"status": "family_revoked"},
+            )
+            db.commit()
+            raise HTTPException(status_code=401, detail="Refresh token reuse detected; sign in again")
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
     new_raw_token = secrets.token_urlsafe(48)
     db.add(
