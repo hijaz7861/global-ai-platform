@@ -8,6 +8,7 @@ from app.models import (
     AuthAttempt,
     AuthRateLimitLock,
     EmailVerificationToken,
+    MembershipInvitation,
     PasswordResetToken,
     RefreshToken,
     TokenRevocation,
@@ -40,6 +41,15 @@ def cleanup_expired_security_records(db: Session, *, now: datetime | None = None
             )
         )
     )
+    invitation_result = db.execute(
+        delete(MembershipInvitation).where(
+            or_(
+                MembershipInvitation.expires_at < retention_cutoff,
+                and_(MembershipInvitation.accepted_at.is_not(None), MembershipInvitation.accepted_at < retention_cutoff),
+                and_(MembershipInvitation.revoked_at.is_not(None), MembershipInvitation.revoked_at < retention_cutoff),
+            )
+        )
+    )
     revocation_result = db.execute(
         delete(TokenRevocation).where(TokenRevocation.expires_at < current_time)
     )
@@ -62,6 +72,7 @@ def cleanup_expired_security_records(db: Session, *, now: datetime | None = None
     return {
         "email_verification_tokens_deleted": int(email_result.rowcount or 0),
         "password_reset_tokens_deleted": int(reset_result.rowcount or 0),
+        "membership_invitations_deleted": int(invitation_result.rowcount or 0),
         "expired_access_revocations_deleted": int(revocation_result.rowcount or 0),
         "expired_refresh_families_deleted": int(refresh_result.rowcount or 0),
         "auth_attempts_deleted": int(attempts_result.rowcount or 0),
