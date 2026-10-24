@@ -549,6 +549,24 @@ class ProcurementAwardRequest(BaseModel):
     quote_id: str = Field(min_length=1, max_length=36)
 
 
+class PurchaseOrderResponse(BaseModel):
+    id: str
+    procurement_request_id: str
+    supplier_quote_id: str
+    buyer_organization_id: str
+    supplier_organization_id: str
+    quantity: int
+    unit_price_minor: int
+    total_minor: int
+    currency: str
+    status: str
+    created_by_user_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class SupplierProfileCreate(BaseModel):
     legal_name: str = Field(min_length=2, max_length=200)
     business_type: Literal["manufacturer", "distributor", "wholesaler", "retailer", "service_provider", "other"]
