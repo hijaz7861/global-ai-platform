@@ -1,0 +1,296 @@
+"""Tenant-scoped procurement requests, supplier quotes, and award workflow."""
+from typing import Annotated
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.api.deps import require_membership
+from app.audit import record_audit_event
+from app.db import get_db
+from app.models import (
+    Membership,
+    ProcurementRequestRecord,
+    SupplierProfile,
+    SupplierQuote,
+    utc_now,
+)
+from app.schemas import (
+    ProcurementAwardRequest,
+    ProcurementRequestCreate,
+    ProcurementRequestResponse,
+    SupplierQuoteCreate,
+    SupplierQuoteResponse,
+)
+
+router = APIRouter(tags=["procurement"])
+
+
+def _require_owner_or_admin(membership: Membership) -> None:
+    if membership.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Owner or admin role required")
+
+
+@router.post(
+    "/organizations/{organization_id}/procurement-requests",
+    response_model=ProcurementRequestResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_procurement_request(
+    payload: ProcurementRequestCreate,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ProcurementRequestResponse:
+    _require_owner_or_admin(membership)
+    request = ProcurementRequestRecord(
+        id=str(uuid4()),
+        buyer_organization_id=membership.organization_id,
+        created_by_user_id=membership.user_id,
+        title=payload.title,
+        description=payload.description.strip(),
+        quantity=payload.quantity,
+        currency=payload.currency,
+        status="open",
+    )
+    db.add(request)
+    db.flush()
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="procurement_request.created",
+        entity_type="procurement_request",
+        entity_id=request.id,
+        details={"status": request.status, "quantity": request.quantity, "currency": request.currency},
+    )
+    db.commit()
+    db.refresh(request)
+    return ProcurementRequestResponse.model_validate(request)
+
+
+@router.get(
+    "/organizations/{organization_id}/procurement-requests",
+    response_model=list[ProcurementRequestResponse],
+)
+def list_procurement_requests(
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+    request_status: Annotated[str | None, Query(alias="status", pattern="^(open|awarded|closed)$")] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[ProcurementRequestResponse]:
+    _require_owner_or_admin(membership)
+    query = select(ProcurementRequestRecord).where(
+        ProcurementRequestRecord.buyer_organization_id == membership.organization_id
+    )
+    if request_status is not None:
+        query = query.where(ProcurementRequestRecord.status == request_status)
+    rows = db.scalars(
+        query.order_by(ProcurementRequestRecord.created_at.desc(), ProcurementRequestRecord.id)
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return [ProcurementRequestResponse.model_validate(row) for row in rows]
+
+
+@router.get(
+    "/organizations/{organization_id}/procurement-requests/{request_id}/quotes",
+    response_model=list[SupplierQuoteResponse],
+)
+def list_procurement_quotes(
+    request_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[SupplierQuoteResponse]:
+    _require_owner_or_admin(membership)
+    request = db.scalar(
+        select(ProcurementRequestRecord).where(
+            ProcurementRequestRecord.id == request_id,
+            ProcurementRequestRecord.buyer_organization_id == membership.organization_id,
+        )
+    )
+    if request is None:
+        raise HTTPException(status_code=404, detail="Procurement request not found")
+    quotes = db.scalars(
+        select(SupplierQuote)
+        .where(SupplierQuote.procurement_request_id == request.id)
+        .order_by(SupplierQuote.unit_price_minor, SupplierQuote.lead_time_days, SupplierQuote.created_at)
+    ).all()
+    return [SupplierQuoteResponse.model_validate(quote) for quote in quotes]
+
+
+@router.post(
+    "/organizations/{organization_id}/procurement-requests/{request_id}/quotes",
+    response_model=SupplierQuoteResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_supplier_quote(
+    request_id: str,
+    payload: SupplierQuoteCreate,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> SupplierQuoteResponse:
+    _require_owner_or_admin(membership)
+    profile = db.scalar(
+        select(SupplierProfile).where(
+            SupplierProfile.organization_id == membership.organization_id,
+            SupplierProfile.status == "approved",
+        )
+    )
+    if profile is None:
+        raise HTTPException(status_code=403, detail="An approved supplier profile is required")
+    request = db.scalar(
+        select(ProcurementRequestRecord).where(ProcurementRequestRecord.id == request_id)
+    )
+    if request is None or request.status != "open":
+        raise HTTPException(status_code=404, detail="Open procurement request not found")
+    if request.buyer_organization_id == membership.organization_id:
+        raise HTTPException(status_code=409, detail="A buyer organization cannot quote on its own request")
+    if payload.currency != request.currency:
+        raise HTTPException(status_code=422, detail="Quote currency must match the procurement request")
+    quote = SupplierQuote(
+        id=str(uuid4()),
+        procurement_request_id=request.id,
+        supplier_organization_id=membership.organization_id,
+        created_by_user_id=membership.user_id,
+        unit_price_minor=payload.unit_price_minor,
+        currency=payload.currency,
+        lead_time_days=payload.lead_time_days,
+        notes=payload.notes.strip(),
+        status="submitted",
+    )
+    db.add(quote)
+    db.flush()
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="supplier_quote.submitted",
+        entity_type="supplier_quote",
+        entity_id=quote.id,
+        details={"status": quote.status, "price_minor": quote.unit_price_minor, "currency": quote.currency},
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This supplier has already quoted on the request") from None
+    db.refresh(quote)
+    return SupplierQuoteResponse.model_validate(quote)
+
+
+@router.post(
+    "/organizations/{organization_id}/procurement-requests/{request_id}/award",
+    response_model=ProcurementRequestResponse,
+)
+def award_procurement_request(
+    request_id: str,
+    payload: ProcurementAwardRequest,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ProcurementRequestResponse:
+    _require_owner_or_admin(membership)
+    request = db.scalar(
+        select(ProcurementRequestRecord)
+        .where(
+            ProcurementRequestRecord.id == request_id,
+            ProcurementRequestRecord.buyer_organization_id == membership.organization_id,
+        )
+        .with_for_update()
+    )
+    if request is None:
+        raise HTTPException(status_code=404, detail="Procurement request not found")
+    if request.status != "open":
+        raise HTTPException(status_code=409, detail="Only open procurement requests can be awarded")
+    quote = db.scalar(
+        select(SupplierQuote).where(
+            SupplierQuote.id == payload.quote_id,
+            SupplierQuote.procurement_request_id == request.id,
+            SupplierQuote.status == "submitted",
+        )
+    )
+    if quote is None:
+        raise HTTPException(status_code=404, detail="Submitted quote not found for this request")
+    quote.status = "accepted"
+    quote.updated_at = utc_now()
+    db.execute(
+        update(SupplierQuote)
+        .where(
+            SupplierQuote.procurement_request_id == request.id,
+            SupplierQuote.id != quote.id,
+            SupplierQuote.status == "submitted",
+        )
+        .values(status="rejected", updated_at=utc_now())
+    )
+    request.status = "awarded"
+    request.awarded_quote_id = quote.id
+    request.updated_at = utc_now()
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="procurement_request.awarded",
+        entity_type="procurement_request",
+        entity_id=request.id,
+        details={"status": request.status},
+    )
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=quote.supplier_organization_id,
+        action="supplier_quote.accepted",
+        entity_type="supplier_quote",
+        entity_id=quote.id,
+        details={"status": quote.status, "price_minor": quote.unit_price_minor, "currency": quote.currency},
+    )
+    db.commit()
+    db.refresh(request)
+    return ProcurementRequestResponse.model_validate(request)
+
+
+@router.post(
+    "/organizations/{organization_id}/procurement-requests/{request_id}/close",
+    response_model=ProcurementRequestResponse,
+)
+def close_procurement_request(
+    request_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> ProcurementRequestResponse:
+    _require_owner_or_admin(membership)
+    request = db.scalar(
+        select(ProcurementRequestRecord).where(
+            ProcurementRequestRecord.id == request_id,
+            ProcurementRequestRecord.buyer_organization_id == membership.organization_id,
+        )
+    )
+    if request is None:
+        raise HTTPException(status_code=404, detail="Procurement request not found")
+    if request.status == "awarded":
+        raise HTTPException(status_code=409, detail="An awarded request cannot be closed through this endpoint")
+    if request.status == "closed":
+        return ProcurementRequestResponse.model_validate(request)
+    request.status = "closed"
+    request.updated_at = utc_now()
+    db.execute(
+        update(SupplierQuote)
+        .where(
+            SupplierQuote.procurement_request_id == request.id,
+            SupplierQuote.status == "submitted",
+        )
+        .values(status="rejected", updated_at=utc_now())
+    )
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="procurement_request.closed",
+        entity_type="procurement_request",
+        entity_id=request.id,
+        details={"status": request.status},
+    )
+    db.commit()
+    db.refresh(request)
+    return ProcurementRequestResponse.model_validate(request)
