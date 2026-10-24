@@ -16,6 +16,7 @@ from app.models import (
     AuthAttempt,
     AuthRateLimitLock,
     EmailVerificationToken,
+    MembershipInvitation,
     PasswordResetToken,
     RefreshToken,
     TokenRevocation,
@@ -63,6 +64,14 @@ def test_cleanup_removes_expired_records_but_preserves_live_refresh_families(cli
     _, admin = register_login(client, "platform-admin@example.com")
     _, target = register_login(client, "cleanup-target@example.com")
     _, regular = register_login(client, "regular-user@example.com")
+
+    admin_org = client.post(
+        "/api/v1/organizations",
+        headers={"Authorization": admin["Authorization"]},
+        json={"name": "Maintenance Org"},
+    )
+    assert admin_org.status_code == 201, admin_org.text
+    organization_id = admin_org.json()["id"]
 
     # A non-admin must not be able to invoke security maintenance.
     forbidden = client.post(
@@ -112,6 +121,28 @@ def test_cleanup_removes_expired_records_but_preserves_live_refresh_families(cli
             synchronize_session=False,
         )
 
+        from app.models import User
+
+        admin_user = db.scalar(select(User).where(User.email == "platform-admin@example.com"))
+        assert admin_user is not None
+        stale_invitation = MembershipInvitation(
+            organization_id=organization_id,
+            email="stale-invite@example.com",
+            role="member",
+            token_hash=hashlib.sha256(b"stale-invitation-token").hexdigest(),
+            expires_at=cutoff,
+            created_by_user_id=admin_user.id,
+            created_at=cutoff,
+        )
+        live_invitation = MembershipInvitation(
+            organization_id=organization_id,
+            email="live-invite@example.com",
+            role="member",
+            token_hash=hashlib.sha256(b"live-invitation-token").hexdigest(),
+            expires_at=now + timedelta(days=2),
+            created_by_user_id=admin_user.id,
+        )
+        db.add_all([stale_invitation, live_invitation])
         db.query(AuthAttempt).update(
             {AuthAttempt.created_at: cutoff},
             synchronize_session=False,
@@ -132,6 +163,7 @@ def test_cleanup_removes_expired_records_but_preserves_live_refresh_families(cli
     result = response.json()
     assert result["email_verification_tokens_deleted"] >= 1
     assert result["password_reset_tokens_deleted"] >= 1
+    assert result["membership_invitations_deleted"] == 1
     assert result["expired_access_revocations_deleted"] >= 1
     assert result["expired_refresh_families_deleted"] == 1
     assert result["auth_attempts_deleted"] > 0
@@ -142,5 +174,11 @@ def test_cleanup_removes_expired_records_but_preserves_live_refresh_families(cli
         assert db.get(RefreshToken, target_hash) is None
         admin_hash = hashlib.sha256(admin["refresh_token"].encode("utf-8")).hexdigest()
         assert db.get(RefreshToken, admin_hash) is not None
+        assert db.scalar(
+            select(MembershipInvitation).where(MembershipInvitation.email == "stale-invite@example.com")
+        ) is None
+        assert db.scalar(
+            select(MembershipInvitation).where(MembershipInvitation.email == "live-invite@example.com")
+        ) is not None
     finally:
         db.close()
