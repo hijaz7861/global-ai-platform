@@ -6,7 +6,7 @@ A private, modular project for building a global business platform incrementally
 
 - FastAPI application with OpenAPI docs.
 - Versioned process health endpoint: `GET /api/v1/health`.
-- Registration with Argon2 password hashing, signed short-lived bearer access tokens, hashed rotating refresh tokens, refresh replay detection, session-family revocation, and server-side logout revocation.
+- Registration with Argon2 password hashing, email verification, signed short-lived bearer access tokens, hashed rotating refresh tokens, refresh replay detection, session-family revocation, server-side logout revocation, and optional encrypted TOTP MFA.
 - Email-based password reset with hashed, expiring, single-use tokens; successful reset invalidates existing sessions.
 - Organization creation, membership-filtered access, and owner/admin member management.
 - Tenant-scoped catalog listings with owner/admin publication, plus public search, currency and price filters, and bounded pagination.
@@ -75,4 +75,4 @@ Refresh-token behavior: login returns a short-lived access token plus a random r
 
 See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Catalog](docs/CATALOG.md), [Orders](docs/ORDERS.md), [Supplier Procurement](docs/PROCUREMENT.md), [Accounting](docs/ACCOUNTING.md), [AI Orchestration](docs/AI_ORCHESTRATION.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
 
-MFA, stronger concurrency-safe throttling, invitations, expanded role administration, payment processing, period-specific financial reporting, reconciliation, provider routing/fallback, native provider integrations, agent tools, external connectors, purchase orders and supplier fulfilment, logistics, rentals, real estate, workforce, and education remain future work. Do not expose this foundation publicly as a production service.
+MFA recovery codes, account lockout, stronger concurrency-safe throttling, invitations, expanded role administration, payment processing, period-specific financial reporting, reconciliation, provider routing/fallback, native provider integrations, agent tools, external connectors, purchase orders and supplier fulfilment, logistics, rentals, real estate, workforce, and education remain future work. Do not expose this foundation publicly as a production service.
