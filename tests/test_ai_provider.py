@@ -90,3 +90,30 @@ def test_provider_rejects_declared_oversized_response_before_reading_body():
     )
     with pytest.raises(ProviderError, match="size limit"):
         asyncio.run(provider.complete("hello", 16))
+
+
+
+def test_provider_enforces_streaming_byte_limit_when_content_length_is_absent():
+    class OversizedStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b"x" * 700
+            yield b"y" * 700
+
+        async def aclose(self):
+            return None
+
+    provider = OpenAICompatibleProvider(
+        api_key="test-secret",
+        base_url="https://provider.example/v1",
+        model="test-model",
+        max_response_bytes=1024,
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                headers={"content-type": "application/json"},
+                stream=OversizedStream(),
+            )
+        ),
+    )
+    with pytest.raises(ProviderError, match="size limit"):
+        asyncio.run(provider.complete("hello", 16))
