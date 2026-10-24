@@ -155,6 +155,7 @@ class OrderResponse(BaseModel):
     total_minor: int
     currency: str
     created_at: datetime
+    expires_at: datetime
     items: list[OrderItemResponse]
 
 
