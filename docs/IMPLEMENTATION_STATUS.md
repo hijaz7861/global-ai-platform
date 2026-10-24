@@ -15,7 +15,7 @@
 - Optional Docker packaging that applies migrations before starting the API.
 
 ## Verification status
-CI run 159 passed lint, compilation, Alembic migration consistency, and 51 tests on Python 3.11, 3.12, and 3.13 for the inventory adjustment history implementation. Refresh-token rotation and its tests are now committed to the draft branch and await their own CI run; do not consider them verified until that run completes. No production deployment, live payment processing, or live paid AI request has occurred.
+CI run 175 passed lint, compilation, Alembic migration consistency, and 54 tests on Python 3.11, 3.12, and 3.13 after refresh-token rotation was added. One Starlette/httpx deprecation warning remains. No production deployment, live payment processing, or live paid AI request has occurred.
 
 ## Important remaining gaps
 - MFA, account lockout, expired-token cleanup, and stronger atomic/concurrency-safe auth throttling. Refresh tokens are hashed, rotated, and replay-protected; operational cleanup and broader concurrency testing remain open. Registration/login/password-reset/email-verification endpoints have database-backed request limits; proxy-aware client IP handling still needs deployment-specific review.
