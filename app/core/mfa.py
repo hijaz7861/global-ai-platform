@@ -31,8 +31,10 @@ def _decryption_keys() -> list[bytes]:
 
 
 def encrypt_totp_secret(secret: str) -> str:
+    if not settings.secret_key or len(settings.secret_key) < 32:
+        raise RuntimeError("A SECRET_KEY of at least 32 characters is required for MFA")
     nonce = os.urandom(12)
-    encrypted = AESGCM(_encryption_key(settings.secret_key or "")).encrypt(nonce, secret.encode("ascii"), _AAD)
+    encrypted = AESGCM(_encryption_key(settings.secret_key)).encrypt(nonce, secret.encode("ascii"), _AAD)
     return base64.urlsafe_b64encode(nonce + encrypted).decode("ascii").rstrip("=")
 
 
