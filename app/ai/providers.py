@@ -2,6 +2,7 @@
 
 This adapter performs no retries and never logs prompts, credentials, or provider response bodies.
 """
+import json
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -20,6 +21,7 @@ class OpenAICompatibleProvider:
         base_url: str,
         model: str,
         timeout_seconds: float = 20.0,
+        max_response_bytes: int = 1_048_576,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         parsed = urlsplit(base_url)
@@ -37,10 +39,13 @@ class OpenAICompatibleProvider:
             raise ValueError("Provider API key and model are required")
         if not 1 <= timeout_seconds <= 120:
             raise ValueError("Provider timeout must be between 1 and 120 seconds")
+        if not 1024 <= max_response_bytes <= 10_485_760:
+            raise ValueError("Provider response limit must be between 1024 and 10485760 bytes")
         self._api_key = api_key
         self._endpoint = base_url.rstrip("/") + "/chat/completions"
         self._model = model
         self._timeout = timeout_seconds
+        self._max_response_bytes = max_response_bytes
         self._transport = transport
 
     async def complete(self, prompt: str, max_output_tokens: int) -> dict[str, Any]:
@@ -61,20 +66,35 @@ class OpenAICompatibleProvider:
             transport=self._transport,
         ) as client:
             try:
-                response = await client.post(
+                async with client.stream(
+                    "POST",
                     self._endpoint,
                     headers={"Authorization": f"Bearer {self._api_key}"},
                     json=payload,
-                )
+                ) as response:
+                    if response.is_error:
+                        raise ProviderError(f"AI provider returned HTTP {response.status_code}")
+                    content_length = response.headers.get("content-length")
+                    if content_length is not None:
+                        try:
+                            if int(content_length) > self._max_response_bytes:
+                                raise ProviderError("AI provider response exceeded the configured size limit")
+                        except ValueError:
+                            raise ProviderError("AI provider returned an invalid response length") from None
+                    response_body = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        if len(response_body) + len(chunk) > self._max_response_bytes:
+                            raise ProviderError("AI provider response exceeded the configured size limit")
+                        response_body.extend(chunk)
+            except ProviderError:
+                raise
             except httpx.TimeoutException as exc:
                 raise ProviderError("AI provider request timed out") from exc
             except httpx.HTTPError as exc:
                 raise ProviderError("AI provider connection failed") from exc
 
-        if response.is_error:
-            raise ProviderError(f"AI provider returned HTTP {response.status_code}")
         try:
-            body = response.json()
+            body = json.loads(response_body)
             choices = body["choices"]
             message = choices[0]["message"]
             content = message["content"]
