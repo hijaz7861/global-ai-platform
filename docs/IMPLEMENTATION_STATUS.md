@@ -11,7 +11,7 @@
 - Transaction-bound allowlisted audit events for implemented sensitive operations.
 - Platform-admin security maintenance endpoint cleans expired verification/reset tokens, old accepted/revoked/expired invitations, expired access revocations, fully expired refresh-token families, and stale auth-throttle rows.
 - Guarded OpenAI-compatible adapter with bounded output/timeouts, safe errors, no automatic retries, rolling request quota, PostgreSQL locking requirement, and live calls disabled by default.
-- Alembic migrations through persistent auth throttling, email verification, inventory history, refresh token rotation, membership invitations, account lockout, and purchase orders.
+- Alembic migrations through persistent auth throttling, email verification, inventory history, refresh token rotation, membership invitations, account lockout, purchase orders, and supplier quote revision history.
 - GitHub Actions CI for Ruff, compile checks, Alembic migration consistency, and pytest across Python 3.11–3.13, plus a PostgreSQL 16 service job for full migrations, schema consistency, and concurrent refresh-token replay integration.
 - Optional Docker packaging that applies migrations before starting the API.
 
@@ -26,7 +26,7 @@ CI run 332 passed lint, compilation, Alembic migration consistency, and 70 tests
 - Cash-flow statements, reconciliation workflows, payments, refunds, tax, seller settlement, and database-enforced accounting-period overlap/concurrency controls. The balance sheet includes accumulated net income as current earnings until a closing workflow is implemented.
 - External scheduler provisioning and full inventory/order race-condition coverage.
 - Multi-provider AI routing/fallback, provider-specific native APIs, monetary budgets, tool permissions, and autonomous agent workflows.
-- Quote revisions/withdrawals, procurement approval thresholds, logistics, rentals, real estate, workforce, education, OAuth connectors, and webhooks.
+- Procurement approval thresholds, logistics, rentals, real estate, workforce, education, OAuth connectors, and webhooks.
 - Independent security review, monitoring/alerting, backup/restore exercises, and staged deployment.
 
 ## Next engineering gates
