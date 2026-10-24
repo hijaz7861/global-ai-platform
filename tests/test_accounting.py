@@ -335,3 +335,56 @@ def test_accounting_period_rejects_invalid_date_range(client):
         json={"name": "Invalid Period", "starts_on": "2026-12-31", "ends_on": "2026-01-01"},
     )
     assert response.status_code == 422
+
+
+
+def test_income_statement_derives_revenue_expense_and_net_income_by_currency(client):
+    from datetime import datetime, timezone
+
+    token, org_id = owner_and_org(client, "income-statement@example.com")
+    cash = create_account(client, token, org_id, "1000", "asset")
+    revenue = create_account(client, token, org_id, "4000", "revenue")
+    expense = create_account(client, token, org_id, "6000", "expense")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    sale = client.post(
+        f"/api/v1/organizations/{org_id}/journal-entries",
+        headers={**headers, "Idempotency-Key": "income-sale-0001"},
+        json={"description": "Sale", "lines": [
+            {"account_id": cash, "debit_minor": 1000, "credit_minor": 0},
+            {"account_id": revenue, "debit_minor": 0, "credit_minor": 1000},
+        ]},
+    )
+    assert sale.status_code == 201, sale.text
+    expense_entry = client.post(
+        f"/api/v1/organizations/{org_id}/journal-entries",
+        headers={**headers, "Idempotency-Key": "income-expense-01"},
+        json={"description": "Operating expense", "lines": [
+            {"account_id": expense, "debit_minor": 250, "credit_minor": 0},
+            {"account_id": cash, "debit_minor": 0, "credit_minor": 250},
+        ]},
+    )
+    assert expense_entry.status_code == 201, expense_entry.text
+
+    today = datetime.now(timezone.utc).date().isoformat()
+    report = client.get(
+        f"/api/v1/organizations/{org_id}/income-statement",
+        headers=headers,
+        params={"start_date": today, "end_date": today},
+    )
+    assert report.status_code == 200, report.text
+    assert len(report.json()) == 1
+    statement = report.json()[0]
+    assert statement["currency"] == "PKR"
+    assert statement["total_revenue_minor"] == 1000
+    assert statement["total_expense_minor"] == 250
+    assert statement["net_income_minor"] == 750
+    assert [line["account_id"] for line in statement["revenue_lines"]] == [revenue]
+    assert [line["account_id"] for line in statement["expense_lines"]] == [expense]
+
+    invalid_range = client.get(
+        f"/api/v1/organizations/{org_id}/income-statement",
+        headers=headers,
+        params={"start_date": "2026-12-31", "end_date": "2026-01-01"},
+    )
+    assert invalid_range.status_code == 422
