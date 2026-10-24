@@ -206,6 +206,33 @@ def test_journal_reversal_is_immutable_idempotent_and_offsets_trial_balance(clie
     assert trial.status_code == 200
     assert all(row["normal_balance_minor"] == 0 for row in trial.json())
 
+    first_page = client.get(
+        f"/api/v1/organizations/{org_id}/accounts/{cash}/ledger",
+        headers=reverse_headers,
+        params={"limit": 1},
+    )
+    assert first_page.status_code == 200, first_page.text
+    first_ledger = first_page.json()
+    assert len(first_ledger["entries"]) == 1
+    assert first_ledger["has_more"] is True
+    assert first_ledger["opening_balance_minor"] == 0
+
+    second_page = client.get(
+        f"/api/v1/organizations/{org_id}/accounts/{cash}/ledger",
+        headers=reverse_headers,
+        params={
+            "limit": 1,
+            "after_created_at": first_ledger["next_cursor_created_at"],
+            "after_entry_id": first_ledger["next_cursor_entry_id"],
+        },
+    )
+    assert second_page.status_code == 200, second_page.text
+    second_ledger = second_page.json()
+    assert len(second_ledger["entries"]) == 1
+    assert second_ledger["opening_balance_minor"] == first_ledger["closing_balance_minor"]
+    assert second_ledger["closing_balance_minor"] == 0
+    assert second_ledger["has_more"] is False
+
 
 def test_accounting_period_overlap_close_and_posting_guard(client):
     from datetime import datetime, timedelta, timezone
