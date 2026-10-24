@@ -256,3 +256,76 @@ def test_audit_events_are_database_enforced_append_only():
                 )
     finally:
         engine.dispose()
+
+
+
+def test_accounting_period_overlap_is_rejected_by_database_trigger():
+    from datetime import datetime, timedelta, timezone
+
+    suffix = uuid4().hex
+    email = f"postgres-period-trigger-{suffix}@example.com"
+    password = "correct-horse-battery-12"
+    with TestClient(app) as client:
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        organization = client.post(
+            "/api/v1/organizations",
+            headers=headers,
+            json={"name": f"Period trigger {suffix[:8]}"},
+        )
+        assert organization.status_code == 201, organization.text
+        organization_id = organization.json()["id"]
+        today = datetime.now(timezone.utc).date()
+        period = client.post(
+            f"/api/v1/organizations/{organization_id}/accounting-periods",
+            headers=headers,
+            json={
+                "name": "Original period",
+                "starts_on": today.isoformat(),
+                "ends_on": (today + timedelta(days=30)).isoformat(),
+            },
+        )
+        assert period.status_code == 201, period.text
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    try:
+        with engine.connect() as connection:
+            user_id = connection.scalar(
+                text("SELECT id FROM users WHERE email = :email"),
+                {"email": email},
+            )
+        assert user_id
+        with pytest.raises(DBAPIError, match="accounting periods must not overlap"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO accounting_periods
+                            (id, organization_id, name, starts_on, ends_on, status,
+                             created_by_user_id, created_at)
+                        VALUES
+                            (:id, :org_id, :name, :starts_on, :ends_on, 'open',
+                             :user_id, CURRENT_TIMESTAMP)
+                        """
+                    ),
+                    {
+                        "id": str(uuid4()),
+                        "org_id": organization_id,
+                        "name": "Direct SQL overlapping period",
+                        "starts_on": today + timedelta(days=1),
+                        "ends_on": today + timedelta(days=40),
+                        "user_id": user_id,
+                    },
+                )
+    finally:
+        engine.dispose()
