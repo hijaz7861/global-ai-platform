@@ -1,4 +1,7 @@
-"""Access-token revocation tests."""
+"""Access and refresh-token lifecycle tests."""
+import hashlib
+from datetime import timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -9,6 +12,7 @@ from app import models  # noqa: F401
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
+from app.models import RefreshToken, utc_now
 
 
 @pytest.fixture
@@ -27,6 +31,7 @@ def client(monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
+        test_client.testing_sessions = TestingSessionLocal
         yield test_client
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
@@ -113,3 +118,46 @@ def test_unknown_refresh_token_is_rejected(client):
         json={"refresh_token": "x" * 48},
     )
     assert response.status_code == 401
+
+
+
+def test_expired_consumed_refresh_token_replay_still_revokes_family(client):
+    password = "correct-horse-battery-12"
+    assert client.post(
+        "/api/v1/auth/register",
+        json={"email": "expired-replay@example.com", "password": password},
+    ).status_code == 201
+    login = client.post(
+        "/api/v1/auth/token",
+        json={"email": "expired-replay@example.com", "password": password},
+    )
+    assert login.status_code == 200, login.text
+    first = login.json()
+    rotated = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": first["refresh_token"]},
+    )
+    assert rotated.status_code == 200, rotated.text
+    second = rotated.json()
+
+    db = client.testing_sessions()
+    try:
+        old_hash = hashlib.sha256(first["refresh_token"].encode("utf-8")).hexdigest()
+        old_record = db.get(RefreshToken, old_hash)
+        assert old_record is not None and old_record.used_at is not None
+        old_record.expires_at = utc_now() - timedelta(seconds=1)
+        db.commit()
+    finally:
+        db.close()
+
+    replay = client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": first["refresh_token"]},
+    )
+    assert replay.status_code == 401
+    assert "reuse detected" in replay.json()["detail"].lower()
+    second_access = client.get(
+        "/api/v1/organizations",
+        headers={"Authorization": f"Bearer {second['access_token']}"},
+    )
+    assert second_access.status_code == 401
