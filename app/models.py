@@ -436,6 +436,20 @@ class SupplierQuote(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 
+class MFARecoveryCode(Base):
+    """One-time, hash-only recovery credentials for MFA-protected accounts."""
+    __tablename__ = "mfa_recovery_codes"
+    __table_args__ = (
+        Index("ix_mfa_recovery_codes_user_used", "user_id", "used_at"),
+        Index("ix_mfa_recovery_codes_created", "created_at"),
+    )
+
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
 class AuthRateLimitLock(Base):
     """Per-subject serialization row for atomic auth rate-limit accounting."""
     __tablename__ = "auth_rate_limit_locks"
