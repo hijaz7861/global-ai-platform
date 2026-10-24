@@ -415,6 +415,31 @@ class JournalEntryResponse(BaseModel):
     lines: list[JournalLineResponse]
 
 
+class AccountLedgerEntryResponse(BaseModel):
+    journal_entry_id: str
+    created_at: datetime
+    description: str
+    debit_minor: int
+    credit_minor: int
+    running_balance_minor: int
+
+
+class AccountLedgerResponse(BaseModel):
+    account_id: str
+    code: str
+    name: str
+    account_type: str
+    currency: str
+    start_date: date | None
+    end_date: date | None
+    opening_balance_minor: int
+    closing_balance_minor: int
+    entries: list[AccountLedgerEntryResponse]
+    has_more: bool
+    next_cursor_created_at: datetime | None
+    next_cursor_entry_id: str | None
+
+
 class TrialBalanceLineResponse(BaseModel):
     account_id: str
     code: str
