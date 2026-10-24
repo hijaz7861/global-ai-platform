@@ -38,4 +38,15 @@ def create_access_token(subject: str, auth_version: int = 0, session_id: str | N
 def decode_access_token(token: str) -> dict[str, Any]:
     if not signing_key_is_configured():
         raise RuntimeError("SECRET_KEY must contain at least 32 characters before validating tokens")
-    return jwt.decode(token, settings.secret_key, algorithms=[_ALGORITHM])
+    previous_keys = [item.strip() for item in settings.previous_secret_keys.split(",") if item.strip()]
+    if any(len(key) < _MIN_SIGNING_KEY_LENGTH for key in previous_keys):
+        raise RuntimeError("Every PREVIOUS_SECRET_KEYS entry must contain at least 32 characters")
+    last_error: jwt.InvalidTokenError | None = None
+    for key in [settings.secret_key, *previous_keys]:
+        try:
+            return jwt.decode(token, key, algorithms=[_ALGORITHM])
+        except jwt.InvalidTokenError as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+    raise jwt.InvalidTokenError("Invalid access token")
