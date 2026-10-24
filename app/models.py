@@ -458,6 +458,43 @@ class SupplierQuote(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 
+class PurchaseOrder(Base):
+    """Issued purchase commitment for the awarded supplier quote."""
+    __tablename__ = "purchase_orders"
+    __table_args__ = (
+        UniqueConstraint("procurement_request_id", name="uq_purchase_order_request"),
+        UniqueConstraint("supplier_quote_id", name="uq_purchase_order_quote"),
+        CheckConstraint("quantity > 0", name="ck_purchase_orders_quantity_positive"),
+        CheckConstraint("unit_price_minor > 0", name="ck_purchase_orders_unit_price_positive"),
+        CheckConstraint("total_minor > 0", name="ck_purchase_orders_total_positive"),
+        CheckConstraint("status IN ('issued','fulfilled','cancelled')", name="ck_purchase_orders_status"),
+        Index("ix_purchase_orders_buyer_created", "buyer_organization_id", "created_at"),
+        Index("ix_purchase_orders_supplier_status", "supplier_organization_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    procurement_request_id: Mapped[str] = mapped_column(
+        ForeignKey("procurement_requests.id", ondelete="RESTRICT"), nullable=False
+    )
+    supplier_quote_id: Mapped[str] = mapped_column(
+        ForeignKey("supplier_quotes.id", ondelete="RESTRICT"), nullable=False
+    )
+    buyer_organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    supplier_organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit_price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="issued", nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
 class MFARecoveryCode(Base):
     """One-time, hash-only recovery credentials for MFA-protected accounts."""
     __tablename__ = "mfa_recovery_codes"
