@@ -186,6 +186,27 @@ class Account(Base):
     lines: Mapped[list["JournalLine"]] = relationship(back_populates="account")
 
 
+class InventoryAdjustmentHistory(Base):
+    """Append-only record of each explicit stock correction."""
+    __tablename__ = "inventory_adjustments"
+    __table_args__ = (
+        CheckConstraint("delta != 0", name="ck_inventory_adjustments_nonzero_delta"),
+        CheckConstraint("quantity_before >= 0 AND quantity_after >= 0", name="ck_inventory_adjustments_nonnegative_quantities"),
+        Index("ix_inventory_adjustments_listing_created", "listing_id", "created_at"),
+        Index("ix_inventory_adjustments_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id", ondelete="RESTRICT"), nullable=False)
+    actor_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    delta: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantity_before: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantity_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
 class AccountingPeriod(Base):
     """Organization-scoped accounting window; closed periods cannot be reopened."""
     __tablename__ = "accounting_periods"
