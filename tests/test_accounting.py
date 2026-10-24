@@ -382,6 +382,20 @@ def test_income_statement_derives_revenue_expense_and_net_income_by_currency(cli
     assert [line["account_id"] for line in statement["revenue_lines"]] == [revenue]
     assert [line["account_id"] for line in statement["expense_lines"]] == [expense]
 
+    balance_sheet = client.get(
+        f"/api/v1/organizations/{org_id}/balance-sheet",
+        headers=headers,
+        params={"as_of_date": today},
+    )
+    assert balance_sheet.status_code == 200, balance_sheet.text
+    assert len(balance_sheet.json()) == 1
+    balance = balance_sheet.json()[0]
+    assert balance["currency"] == "PKR"
+    assert balance["total_assets_minor"] == 750
+    assert balance["current_earnings_minor"] == 750
+    assert balance["total_liabilities_and_equity_minor"] == 750
+    assert balance["total_assets_minor"] == balance["total_liabilities_and_equity_minor"]
+
     invalid_range = client.get(
         f"/api/v1/organizations/{org_id}/income-statement",
         headers=headers,
