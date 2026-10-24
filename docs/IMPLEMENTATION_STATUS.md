@@ -20,7 +20,7 @@ CI run 366 passed lint, compilation, Alembic migration consistency, and 72 tests
 
 ## Important remaining gaps
 - Broader PostgreSQL workload/concurrency coverage remains open. Authentication throttling now resolves X-Forwarded-For only when the direct peer matches an explicit TRUSTED_PROXY_IPS entry; deployment operators must configure exact proxy IPs/CIDRs or leave it empty. CI includes spoofing, trusted-chain, and malformed-header tests.
-- Safe key rotation still requires an operator-controlled procedure: configure the new `SECRET_KEY`, retain prior keys only for the old access-token lifetime, then remove them.
+- Signing-key rotation requires an operator-controlled procedure: configure `PREVIOUS_SECRET_KEYS`, run `python -m app.rotate_mfa_secrets` to re-encrypt stored MFA secrets, verify MFA login, retain old keys until prior access tokens expire, then remove them. This procedure still requires staging validation.
 - Broader role administration and organization membership-role changes.
 - Cryptographic audit hash chaining, retention policy, and external log export. Database-level UPDATE/DELETE protection is implemented; it does not by itself prevent a privileged database operator from disabling triggers.
 - Cash-flow statements, reconciliation workflows, payments, refunds, tax, seller settlement, and  The balance sheet includes accumulated net income as current earnings until a closing workflow is implemented.
