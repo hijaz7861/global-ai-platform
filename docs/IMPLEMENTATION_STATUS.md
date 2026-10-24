@@ -11,12 +11,12 @@
 - Transaction-bound allowlisted audit events for implemented sensitive operations.
 - Platform-admin security maintenance endpoint cleans expired verification/reset tokens, old accepted/revoked/expired invitations, expired access revocations, fully expired refresh-token families, and stale auth-throttle rows.
 - Guarded OpenAI-compatible adapter with bounded output/timeouts, safe errors, no automatic retries, rolling request quota, PostgreSQL locking requirement, and live calls disabled by default.
-- Alembic migrations through persistent auth throttling, email verification, inventory history, and refresh token rotation.
+- Alembic migrations through persistent auth throttling, email verification, inventory history, refresh token rotation, membership invitations, account lockout, and purchase orders.
 - GitHub Actions CI for Ruff, compile checks, Alembic migration consistency, and pytest across Python 3.11–3.13, plus a PostgreSQL 16 service job for full migrations, schema consistency, and concurrent refresh-token replay integration.
 - Optional Docker packaging that applies migrations before starting the API.
 
 ## Verification status
-CI run 323 passed lint, compilation, Alembic migration consistency, and 69 tests (1 PostgreSQL-only test skipped) on Python 3.11, 3.12, and 3.13. Its PostgreSQL 16 job passed lint, all migrations, schema consistency, and 1 concurrent refresh-token replay integration test. The membership invitation lifecycle, cleanup, account lockout, account-ledger pagination, and purchase-order lifecycle are included in this run. The prior 54 SQLAlchemy foreign-key-cycle warnings were resolved by marking the migration-managed cycle explicitly; only the existing Starlette/httpx deprecation warning remains. One Starlette/httpx deprecation warning remains. No production deployment, live payment processing, or live paid AI request has occurred.
+CI run 332 passed lint, compilation, Alembic migration consistency, and 70 tests (1 PostgreSQL-only test skipped) on Python 3.11, 3.12, and 3.13. Its PostgreSQL 16 job passed lint, all migrations, schema consistency, and 1 concurrent refresh-token replay integration test. The membership invitation lifecycle, cleanup, account lockout, account-ledger pagination, purchase-order lifecycle, income statement, and balance sheet are included in this run. The prior 54 SQLAlchemy foreign-key-cycle warnings were resolved by marking the migration-managed cycle explicitly; only the existing Starlette/httpx deprecation warning remains. One Starlette/httpx deprecation warning remains. No production deployment, live payment processing, or live paid AI request has occurred.
 
 ## Important remaining gaps
 - Deployment-specific proxy-aware client IP handling and broader PostgreSQL workload/concurrency coverage. CI now runs migrations and a concurrent refresh-token replay test against PostgreSQL 16.
