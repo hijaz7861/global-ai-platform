@@ -11,14 +11,14 @@ A private, modular project for building a global business platform incrementally
 - Organization creation, membership-filtered access, and owner/admin member management.
 - Tenant-scoped catalog listings with owner/admin publication, plus public search, currency and price filters, and bounded pagination.
 - Organization-scoped supplier onboarding with draft/submitted/approved/rejected states and platform-admin review.
-- Owner/admin inventory adjustment with nonnegative stock checks and audit events.
+- Owner/admin inventory adjustments with nonnegative stock checks, append-only before/after history, optional reason, and transaction-bound audit events.
 - Order creation with conditional stock reservation and per-buyer idempotency.
 - Buyer-only order reads, seller-scoped order summaries, and unpaid-order cancellation with one-time stock release.
 - Owner/admin chart of accounts, balanced idempotent journal posting, and a derived trial balance.
 - Transaction-bound allowlisted audit events for organization, catalog, order, and ledger operations.
 - Guarded OpenAI-compatible AI chat adapter; external calls are disabled by default, require explicit opt-in, a positive request limit, and PostgreSQL.
 - Orders remain `pending_payment`; no payment is charged or processed.
-- SQLAlchemy models and Alembic migrations for identity, tenants, catalog, inventory, orders, audit, and journal entries, token revocation, password reset, and supplier profiles.
+- SQLAlchemy models and Alembic migrations for identity, tenants, catalog, inventory adjustment history, orders, audit, accounting periods, journal entries and reversals, token revocation, password reset, and supplier profiles.
 - GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks.
 - Optional Docker packaging that applies migrations before starting the API.
 
