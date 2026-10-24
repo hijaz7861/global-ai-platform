@@ -144,7 +144,7 @@ def test_mfa_disable_requires_password_and_fresh_code_and_revokes_sessions(clien
 
 
 
-def test_mfa_recovery_codes_are_hash_only_single_use_and_regenerable(client):
+def test_mfa_recovery_codes_are_hash_only_single_use_and_regenerable(client, monkeypatch):
     password, access_token, secret = enroll_and_confirm(client, "mfa-recovery@example.com")
     headers = {"Authorization": f"Bearer {access_token}"}
     fresh_code = generate_totp_code(secret, int(time.time() // 30) + 1)
@@ -178,8 +178,12 @@ def test_mfa_recovery_codes_are_hash_only_single_use_and_regenerable(client):
     )
     assert replay.status_code == 401
 
-    # A fresh TOTP is required to replace codes; all previous codes are invalidated.
-    new_fresh_code = generate_totp_code(secret, int(time.time() // 30) + 2)
+    # Simulate a newly accepted TOTP step to isolate recovery-code rotation without sleeping for a 30-second window.
+    monkeypatch.setattr(
+        "app.api.routes.identity.verify_totp",
+        lambda _secret, _code, last_step=None: max(int(time.time() // 30) + 1, (last_step or -1) + 1),
+    )
+    new_fresh_code = "123456"
     regenerated = client.post(
         "/api/v1/auth/mfa/recovery-codes",
         headers=headers,
