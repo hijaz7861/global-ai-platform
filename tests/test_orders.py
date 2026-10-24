@@ -222,3 +222,125 @@ def test_expiry_sweep_releases_stock_once_and_requires_platform_admin(client, mo
     )
     assert audit.status_code == 200, audit.text
     assert "order.expired" in {event["action"] for event in audit.json()}
+
+
+
+def test_multi_item_order_reserves_each_listing_and_is_idempotent(client):
+    first_listing, seller_token, org_id = make_active_listing(client, quantity=3)
+    second = client.post(
+        f"/api/v1/organizations/{org_id}/listings",
+        headers={"Authorization": f"Bearer {seller_token}"},
+        json={"title": "Pen Set", "description": "Second cart item", "price_minor": 700,
+              "currency": "PKR", "inventory_quantity": 2},
+    )
+    assert second.status_code == 201, second.text
+    second_listing = second.json()["id"]
+    assert client.post(
+        f"/api/v1/organizations/{org_id}/listings/{second_listing}/publish",
+        headers={"Authorization": f"Bearer {seller_token}"},
+    ).status_code == 200
+
+    buyer_token = register_login(client, "multi-cart-buyer@example.com")
+    headers = {"Authorization": f"Bearer {buyer_token}", "Idempotency-Key": "multi-cart-key-001"}
+    payload = {"items": [
+        {"listing_id": first_listing, "quantity": 2},
+        {"listing_id": second_listing, "quantity": 1},
+    ]}
+    first = client.post("/api/v1/orders", headers=headers, json=payload)
+    assert first.status_code == 201, first.text
+    assert first.json()["total_minor"] == 1700
+    assert len(first.json()["items"]) == 2
+    assert {item["listing_id"] for item in first.json()["items"]} == {first_listing, second_listing}
+
+    replay = client.post("/api/v1/orders", headers=headers, json=payload)
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["id"] == first.json()["id"]
+    mismatch = client.post(
+        "/api/v1/orders",
+        headers=headers,
+        json={"items": [
+            {"listing_id": first_listing, "quantity": 1},
+            {"listing_id": second_listing, "quantity": 1},
+        ]},
+    )
+    assert mismatch.status_code == 409
+
+    listings = client.get(
+        f"/api/v1/organizations/{org_id}/listings",
+        headers={"Authorization": f"Bearer {seller_token}"},
+    )
+    assert listings.status_code == 200
+    stock = {item["id"]: item["inventory_quantity"] for item in listings.json()}
+    assert stock[first_listing] == 1
+    assert stock[second_listing] == 1
+
+
+def test_multi_item_order_rolls_back_all_stock_if_any_line_lacks_inventory(client):
+    first_listing, seller_token, org_id = make_active_listing(client, quantity=2)
+    second = client.post(
+        f"/api/v1/organizations/{org_id}/listings",
+        headers={"Authorization": f"Bearer {seller_token}"},
+        json={"title": "Unavailable Item", "description": "No stock", "price_minor": 700,
+              "currency": "PKR", "inventory_quantity": 0},
+    )
+    assert second.status_code == 201, second.text
+    second_listing = second.json()["id"]
+    assert client.post(
+        f"/api/v1/organizations/{org_id}/listings/{second_listing}/publish",
+        headers={"Authorization": f"Bearer {seller_token}"},
+    ).status_code == 200
+
+    buyer_token = register_login(client, "multi-cart-fail@example.com")
+    response = client.post(
+        "/api/v1/orders",
+        headers={"Authorization": f"Bearer {buyer_token}", "Idempotency-Key": "multi-cart-key-002"},
+        json={"items": [
+            {"listing_id": first_listing, "quantity": 1},
+            {"listing_id": second_listing, "quantity": 1},
+        ]},
+    )
+    assert response.status_code == 409
+    listings = client.get(
+        f"/api/v1/organizations/{org_id}/listings",
+        headers={"Authorization": f"Bearer {seller_token}"},
+    )
+    stock = {item["id"]: item["inventory_quantity"] for item in listings.json()}
+    assert stock[first_listing] == 2
+    assert stock[second_listing] == 0
+    assert client.get("/api/v1/orders", headers={"Authorization": f"Bearer {buyer_token}"}).json() == []
+
+
+def test_multi_item_order_rejects_mixed_currencies_and_duplicate_listings(client):
+    first_listing, seller_token, org_id = make_active_listing(client, quantity=3)
+    second = client.post(
+        f"/api/v1/organizations/{org_id}/listings",
+        headers={"Authorization": f"Bearer {seller_token}"},
+        json={"title": "Foreign Currency Item", "price_minor": 700, "currency": "USD",
+              "inventory_quantity": 2},
+    )
+    assert second.status_code == 201, second.text
+    second_listing = second.json()["id"]
+    assert client.post(
+        f"/api/v1/organizations/{org_id}/listings/{second_listing}/publish",
+        headers={"Authorization": f"Bearer {seller_token}"},
+    ).status_code == 200
+    buyer_token = register_login(client, "multi-cart-currency@example.com")
+    headers = {"Authorization": f"Bearer {buyer_token}", "Idempotency-Key": "multi-cart-key-003"}
+    mixed = client.post(
+        "/api/v1/orders",
+        headers=headers,
+        json={"items": [
+            {"listing_id": first_listing, "quantity": 1},
+            {"listing_id": second_listing, "quantity": 1},
+        ]},
+    )
+    assert mixed.status_code == 422
+    duplicate = client.post(
+        "/api/v1/orders",
+        headers={**headers, "Idempotency-Key": "multi-cart-key-004"},
+        json={"items": [
+            {"listing_id": first_listing, "quantity": 1},
+            {"listing_id": first_listing, "quantity": 2},
+        ]},
+    )
+    assert duplicate.status_code == 422
