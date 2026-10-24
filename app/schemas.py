@@ -19,6 +19,7 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
     totp_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    recovery_code: str | None = Field(default=None, min_length=16, max_length=32)
 
     @field_validator("email")
     @classmethod
@@ -36,7 +37,23 @@ class MFAConfirmRequest(BaseModel):
 
 class MFADisableRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
+    code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    recovery_code: str | None = Field(default=None, min_length=16, max_length=32)
+
+    @model_validator(mode="after")
+    def require_one_mfa_proof(self):
+        if (self.code is None) == (self.recovery_code is None):
+            raise ValueError("Provide exactly one of code or recovery_code")
+        return self
+
+
+class MFARecoveryCodesRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
     code: str = Field(pattern=r"^\d{6}$")
+
+
+class MFARecoveryCodesResponse(BaseModel):
+    codes: list[str]
 
 
 class MFAEnrollmentResponse(BaseModel):
