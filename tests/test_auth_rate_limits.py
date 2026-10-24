@@ -1,5 +1,4 @@
 """Persistent rate-limit regression tests for authentication endpoints."""
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -60,8 +59,6 @@ def test_password_reset_requests_are_limited_without_disclosing_account_state(cl
 
 def test_rate_limit_subject_does_not_store_raw_email(client):
     client.post("/api/v1/auth/token", json={"email": "private@example.com", "password": "bad"})
-    from sqlalchemy import select
-    from app.db import SessionLocal
     # Endpoint tests use an overridden DB; the privacy guarantee is asserted through
     # the model schema itself: only a fixed-length digest is stored for the subject.
     assert models.AuthAttempt.__table__.c.subject_hash.type.length == 64
