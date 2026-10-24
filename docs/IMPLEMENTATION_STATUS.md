@@ -7,7 +7,7 @@
 - Organization creation and membership/role controls with tenant-scoped access and audit events.
 - Tenant-owned catalog listings, draft/active publication, bounded public search with currency/price filters and pagination, conditional stock reservation, idempotent orders, buyer-scoped reads, cancellation and seller-scoped summaries. Owner/admin inventory adjustments now create append-only before/after history rows in the same transaction as audit events. Orders support legacy single-line payloads and multi-item carts (up to 50 unique listings), reserve each line atomically, enforce one currency and bounded totals, and have bounded unpaid expiry timestamps with a platform-admin-only idempotent sweep that restores stock and records an audit event.
 - Supplier profile onboarding per organization, draft/submitted/approved/rejected workflow, rejection reason validation, resubmission after rejection, and platform-admin review guarded by a configured email allowlist. Initial procurement requests and supplier quotes now support approved-supplier submissions, tenant-scoped quote comparison, single-winner award, request closure, and audit events.
-- Tenant-scoped chart of accounts, balanced idempotent double-entry journal posting, immutable one-time reversal entries, organization-scoped accounting period creation/listing/closure, guarded posting after period setup, period-specific derived trial balance, and all-time derived trial balance using integer minor units.
+- Tenant-scoped chart of accounts, balanced idempotent double-entry journal posting, immutable one-time reversal entries, organization-scoped accounting period creation/listing/closure, guarded posting after period setup, period-specific derived trial balance, all-time derived trial balance, and a bounded cursor-paginated account ledger with opening/running balances using integer minor units.
 - Transaction-bound allowlisted audit events for implemented sensitive operations.
 - Platform-admin security maintenance endpoint cleans expired verification/reset tokens, old accepted/revoked/expired invitations, expired access revocations, fully expired refresh-token families, and stale auth-throttle rows.
 - Guarded OpenAI-compatible adapter with bounded output/timeouts, safe errors, no automatic retries, rolling request quota, PostgreSQL locking requirement, and live calls disabled by default.
@@ -23,7 +23,7 @@ CI run 302 passed lint, compilation, Alembic migration consistency, and 69 tests
 - Safe key rotation still requires an operator-controlled procedure: configure the new `SECRET_KEY`, retain prior keys only for the old access-token lifetime, then remove them.
 - Broader role administration and organization membership-role changes.
 - Audit tamper-evidence, retention policy, and external log export.
-- Full financial statements, reconciliation, payments, refunds, tax, seller settlement, and database-enforced accounting-period overlap/concurrency controls.
+- Full financial statements, reconciliation workflows, payments, refunds, tax, seller settlement, and database-enforced accounting-period overlap/concurrency controls.
 - External scheduler provisioning and full inventory/order race-condition coverage.
 - Multi-provider AI routing/fallback, provider-specific native APIs, monetary budgets, tool permissions, and autonomous agent workflows.
 - Purchase-order generation, quote revisions/withdrawals, procurement approval thresholds, supplier fulfilment, logistics, rentals, real estate, workforce, education, OAuth connectors, and webhooks.
