@@ -16,4 +16,4 @@
 14. **Expansion modules:** rentals, real estate, workforce, education and business operations.
 15. **Readiness:** threat model, integration/regression tests, observability, backup restore, staging review.
 
-Identity hardening still needs MFA, expired-token cleanup, and concurrency-safe rate limiting. Every phase needs acceptance criteria and automated tests. Production deployment requires explicit owner approval. CI passing is not equivalent to production readiness.
+Identity hardening still needs MFA, expired-token cleanup, and concurrency-safe rate limiting. Refresh-token rotation is covered by CI, including replay detection, logout family revocation, and expired consumed-token replay. Every phase needs acceptance criteria and automated tests. Production deployment requires explicit owner approval. CI passing is not equivalent to production readiness.
