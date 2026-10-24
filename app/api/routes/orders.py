@@ -1,4 +1,5 @@
 """Authenticated order creation with stock checks, idempotency, and cancellation."""
+from datetime import timedelta
 from typing import Annotated
 from uuid import uuid4
 
@@ -10,7 +11,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.audit import record_audit_event
 from app.db import get_db
-from app.models import Listing, Order, OrderItem, User
+from app.core.config import settings
+from app.models import Listing, Order, OrderItem, User, utc_now
 from app.schemas import OrderCreate, OrderItemResponse, OrderResponse
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -23,6 +25,7 @@ def _response(order: Order) -> OrderResponse:
         total_minor=order.total_minor,
         currency=order.currency,
         created_at=order.created_at,
+        expires_at=order.expires_at,
         items=[
             OrderItemResponse(
                 listing_id=item.listing_id,
@@ -93,6 +96,7 @@ def create_order(
         idempotency_key=idempotency_key,
         status="pending_payment",
         total_minor=listing.price_minor * payload.quantity,
+        expires_at=utc_now() + timedelta(minutes=settings.order_payment_expire_minutes),
         currency=listing.currency,
     )
     db.add(order)
