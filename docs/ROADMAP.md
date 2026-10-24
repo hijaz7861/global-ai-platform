@@ -5,14 +5,15 @@
 3. **Catalog MVP — initial slice implemented:** listings, draft/active publication, public search and currency/price filters, bounded pagination, minor-unit pricing.
 4. **Order/inventory MVP — initial slice implemented:** single-listing orders, conditional stock reservation, per-buyer idempotency, buyer-scoped reads, unpaid-order cancellation, stock release, owner/admin inventory adjustments, seller-scoped order summaries.
 5. **Accounting ledger — initial slice implemented:** tenant-scoped chart of accounts, balanced journal posting, immutable one-time counter-entry reversals, derived trial balance, currency/account checks, idempotency, and audit events.
-6. **AI adapter — guarded initial slice:** OpenAI-compatible endpoint adapter, output caps, timeout, audit events, opt-in and request quota. Multi-provider routing and agents remain future work.
-7. **Commerce hardening — next:** multi-item carts, inventory adjustment history, order expiry, database concurrency tests.
-8. **Financial hardening — next:** period controls, account balances/reports, reconciliation, approvals, and payment sandbox.
-9. **Supplier operations — initial slice implemented:** organization-owned supplier profile, submission, platform-admin review, rejection reason and resubmission. Quotes, procurement and fulfilment remain next.
-10. **Logistics and fulfilment:** shipping quotes, tracking, returns and disputes.
-11. **AI orchestration:** provider registry, budgets, tool permissions, audit, human approval and bounded retries.
-12. **Connector hub:** OAuth lifecycle, scoped tokens, webhook signature verification, retry handling and revocation.
-13. **Expansion modules:** rentals, real estate, workforce, education and business operations.
-14. **Readiness:** threat model, integration/regression tests, observability, backup restore, staging review.
+6. **Accounting period controls — initial slice implemented:** organization-scoped non-overlapping periods, owner/admin listing and creation, audited one-way closure, and guards against new journal postings/reversals outside an open period once periods are configured. Period-specific reports and database-level overlap/concurrency enforcement remain open.
+7. **AI adapter — guarded initial slice:** OpenAI-compatible endpoint adapter, output caps, timeout, audit events, opt-in and request quota. Multi-provider routing and agents remain future work.
+8. **Commerce hardening — next:** multi-item carts, inventory adjustment history, order expiry, database concurrency tests.
+9. **Financial hardening — next:** period controls, account balances/reports, reconciliation, approvals, and payment sandbox.
+10. **Supplier operations — initial slice implemented:** organization-owned supplier profile, submission, platform-admin review, rejection reason and resubmission. Quotes, procurement and fulfilment remain next.
+11. **Logistics and fulfilment:** shipping quotes, tracking, returns and disputes.
+12. **AI orchestration:** provider registry, budgets, tool permissions, audit, human approval and bounded retries.
+13. **Connector hub:** OAuth lifecycle, scoped tokens, webhook signature verification, retry handling and revocation.
+14. **Expansion modules:** rentals, real estate, workforce, education and business operations.
+15. **Readiness:** threat model, integration/regression tests, observability, backup restore, staging review.
 
 Every phase needs acceptance criteria and automated tests. Production deployment requires explicit owner approval. CI passing is not equivalent to production readiness.
