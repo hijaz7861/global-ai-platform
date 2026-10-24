@@ -29,6 +29,19 @@ def upgrade() -> None:
         sa.CheckConstraint("lead_time_days >= 0", name="ck_supplier_quote_revision_lead_time_nonnegative"),
         sa.CheckConstraint("status IN ('submitted','withdrawn')", name="ck_supplier_quote_revisions_status"),
     )
+    # Preserve the original submitted terms for quotes that predate revision history.
+    op.execute(
+        sa.text(
+            """
+            INSERT INTO supplier_quote_revisions
+                (id, supplier_quote_id, revision_number, status, unit_price_minor,
+                 currency, lead_time_days, notes, actor_user_id, created_at)
+            SELECT id, id, 1, 'submitted', unit_price_minor, currency,
+                   lead_time_days, notes, created_by_user_id, created_at
+            FROM supplier_quotes
+            """
+        )
+    )
     op.create_index(
         "ix_supplier_quote_revisions_quote_created",
         "supplier_quote_revisions",
