@@ -5,7 +5,7 @@
 - Registration with normalized email, Argon2 password hashing, single-use email ownership verification tokens, registration throttling, signed bearer tokens, server-side logout revocation, and fail-closed signing-key validation.
 - Password recovery with random one-time tokens, SHA-256 digests at rest, expiry, atomic single-use consumption, generic request responses, configurable SMTP delivery, and invalidation of existing sessions. Login, registration, password-reset, and email-verification requests are rate-limited using persistent database-backed sliding windows. Login requires verified email by default (`REQUIRE_EMAIL_VERIFICATION=true`); verification tokens are single-use, expire, and are stored as SHA-256 digests.
 - Organization creation and membership/role controls with tenant-scoped access and audit events.
-- Tenant-owned catalog listings, draft/active publication, bounded public search with currency/price filters and pagination, conditional stock reservation, idempotent orders, buyer-scoped reads, cancellation and seller-scoped summaries. Owner/admin inventory adjustments now create append-only before/after history rows in the same transaction as audit events. Orders have bounded unpaid expiry timestamps and a platform-admin-only idempotent sweep that restores stock and records an audit event.
+- Tenant-owned catalog listings, draft/active publication, bounded public search with currency/price filters and pagination, conditional stock reservation, idempotent orders, buyer-scoped reads, cancellation and seller-scoped summaries. Owner/admin inventory adjustments now create append-only before/after history rows in the same transaction as audit events. Orders support legacy single-line payloads and multi-item carts (up to 50 unique listings), reserve each line atomically, enforce one currency and bounded totals, and have bounded unpaid expiry timestamps with a platform-admin-only idempotent sweep that restores stock and records an audit event.
 - Supplier profile onboarding per organization, draft/submitted/approved/rejected workflow, rejection reason validation, resubmission after rejection, and platform-admin review guarded by a configured email allowlist.
 - Tenant-scoped chart of accounts, balanced idempotent double-entry journal posting, immutable one-time reversal entries, organization-scoped accounting period creation/listing/closure, guarded posting after period setup, and derived trial balance using integer minor units.
 - Transaction-bound allowlisted audit events for implemented sensitive operations.
@@ -15,14 +15,14 @@
 - Optional Docker packaging that applies migrations before starting the API.
 
 ## Verification status
-CI run 175 passed lint, compilation, Alembic migration consistency, and 54 tests on Python 3.11, 3.12, and 3.13 after refresh-token rotation was added. Order-expiry code and migration 0015 are now committed and await their own CI run. One Starlette/httpx deprecation warning remains. No production deployment, live payment processing, or live paid AI request has occurred.
+CI run 175 passed lint, compilation, Alembic migration consistency, and 54 tests on Python 3.11, 3.12, and 3.13 after refresh-token rotation was added. CI run 197 passed lint, compilation, Alembic migration consistency, and 58 tests on Python 3.11, 3.12, and 3.13 for order expiry and multi-item cart behavior. One Starlette/httpx deprecation warning remains. No production deployment, live payment processing, or live paid AI request has occurred.
 
 ## Important remaining gaps
 - MFA, account lockout, expired-token cleanup, and stronger atomic/concurrency-safe auth throttling. Refresh tokens are hashed, rotated, and replay-protected; operational cleanup and broader concurrency testing remain open. Registration/login/password-reset/email-verification endpoints have database-backed request limits; proxy-aware client IP handling still needs deployment-specific review.
 - Membership invitations and broader role administration.
 - Audit tamper-evidence, retention controls, and external log export.
 - Period-specific reporting and accounting-date persistence; database-enforced non-overlap/concurrency handling; full financial statements, reconciliation, payments, refunds, tax, and seller settlement.
-- Multi-line carts, shipping, tax, product variants, external scheduler provisioning, and concurrency testing of all inventory/order paths.
+- Shipping, tax, product variants, external scheduler provisioning, and concurrency testing of all inventory/order paths.
 - Multi-provider AI routing/fallback, provider-specific native APIs, monetary budgets, tool calls, and autonomous agent workflows.
 - Supplier quotes/procurement/fulfilment, logistics, rentals, real estate, workforce, education, OAuth connectors, and webhooks.
 - PostgreSQL concurrency/service integration tests, independent security review, monitoring, backup/restore exercises, and staged deployment.
