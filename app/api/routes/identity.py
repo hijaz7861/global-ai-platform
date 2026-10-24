@@ -269,7 +269,7 @@ def refresh_access_token(
     now = utc_now()
     digest = hashlib.sha256(payload.refresh_token.encode("utf-8")).hexdigest()
     record = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == digest))
-    if record is None or record.expires_at <= now or record.revoked_at is not None:
+    if record is None or record.revoked_at is not None:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
     if record.used_at is not None:
         db.execute(
@@ -291,6 +291,8 @@ def refresh_access_token(
         )
         db.commit()
         raise HTTPException(status_code=401, detail="Refresh token reuse detected; sign in again")
+    if record.expires_at <= now:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
     user = db.scalar(select(User).where(User.id == record.user_id, User.is_active.is_(True)))
     if user is None or user.auth_version != record.auth_version:
         db.execute(
