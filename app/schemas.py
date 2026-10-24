@@ -440,6 +440,24 @@ class AccountLedgerResponse(BaseModel):
     next_cursor_entry_id: str | None
 
 
+class FinancialStatementLineResponse(BaseModel):
+    account_id: str
+    code: str
+    name: str
+    amount_minor: int
+
+
+class IncomeStatementResponse(BaseModel):
+    currency: str
+    start_date: date | None
+    end_date: date | None
+    revenue_lines: list[FinancialStatementLineResponse]
+    expense_lines: list[FinancialStatementLineResponse]
+    total_revenue_minor: int
+    total_expense_minor: int
+    net_income_minor: int
+
+
 class TrialBalanceLineResponse(BaseModel):
     account_id: str
     code: str
