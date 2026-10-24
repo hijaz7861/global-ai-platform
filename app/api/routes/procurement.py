@@ -2,7 +2,7 @@
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -13,6 +13,7 @@ from app.db import get_db
 from app.models import (
     Membership,
     ProcurementRequestRecord,
+    PurchaseOrder,
     SupplierProfile,
     SupplierQuote,
     utc_now,
@@ -20,6 +21,7 @@ from app.models import (
 from app.schemas import (
     ProcurementAwardRequest,
     ProcurementRequestCreate,
+    PurchaseOrderResponse,
     ProcurementRequestResponse,
     SupplierQuoteCreate,
     SupplierQuoteResponse,
@@ -265,6 +267,226 @@ def award_procurement_request(
     db.commit()
     db.refresh(request)
     return ProcurementRequestResponse.model_validate(request)
+
+
+
+
+@router.post(
+    "/organizations/{organization_id}/procurement-requests/{request_id}/purchase-order",
+    response_model=PurchaseOrderResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_purchase_order(
+    request_id: str,
+    response: Response,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> PurchaseOrderResponse:
+    """Issue one immutable purchase-order snapshot from the awarded quote."""
+    _require_owner_or_admin(membership)
+    request = db.scalar(
+        select(ProcurementRequestRecord).where(
+            ProcurementRequestRecord.id == request_id,
+            ProcurementRequestRecord.buyer_organization_id == membership.organization_id,
+        )
+    )
+    if request is None:
+        raise HTTPException(status_code=404, detail="Procurement request not found")
+    existing = db.scalar(
+        select(PurchaseOrder).where(PurchaseOrder.procurement_request_id == request.id)
+    )
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+        return PurchaseOrderResponse.model_validate(existing)
+    if request.status != "awarded" or request.awarded_quote_id is None:
+        raise HTTPException(status_code=409, detail="Only an awarded procurement request can issue a purchase order")
+    quote = db.scalar(
+        select(SupplierQuote).where(
+            SupplierQuote.id == request.awarded_quote_id,
+            SupplierQuote.procurement_request_id == request.id,
+            SupplierQuote.status == "accepted",
+        )
+    )
+    if quote is None:
+        raise HTTPException(status_code=409, detail="The awarded supplier quote is unavailable")
+    total_minor = request.quantity * quote.unit_price_minor
+    if total_minor <= 0 or total_minor > 9_000_000_000_000_000:
+        raise HTTPException(status_code=422, detail="Purchase-order total exceeds the supported monetary limit")
+
+    now = utc_now()
+    order = PurchaseOrder(
+        id=str(uuid4()),
+        procurement_request_id=request.id,
+        supplier_quote_id=quote.id,
+        buyer_organization_id=request.buyer_organization_id,
+        supplier_organization_id=quote.supplier_organization_id,
+        quantity=request.quantity,
+        unit_price_minor=quote.unit_price_minor,
+        total_minor=total_minor,
+        currency=request.currency,
+        status="issued",
+        created_by_user_id=membership.user_id,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(order)
+    db.flush()
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=request.buyer_organization_id,
+        action="purchase_order.issued",
+        entity_type="purchase_order",
+        entity_id=order.id,
+        details={"total_minor": total_minor, "currency": order.currency, "status": order.status},
+    )
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=quote.supplier_organization_id,
+        action="purchase_order.received",
+        entity_type="purchase_order",
+        entity_id=order.id,
+        details={"status": order.status},
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(
+            select(PurchaseOrder).where(PurchaseOrder.procurement_request_id == request.id)
+        )
+        if existing is not None:
+            response.status_code = status.HTTP_200_OK
+            return PurchaseOrderResponse.model_validate(existing)
+        raise HTTPException(status_code=409, detail="Purchase order could not be issued") from None
+    db.refresh(order)
+    return PurchaseOrderResponse.model_validate(order)
+
+
+@router.get(
+    "/organizations/{organization_id}/purchase-orders",
+    response_model=list[PurchaseOrderResponse],
+)
+def list_purchase_orders(
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[PurchaseOrderResponse]:
+    _require_owner_or_admin(membership)
+    orders = db.scalars(
+        select(PurchaseOrder)
+        .where(
+            or_(
+                PurchaseOrder.buyer_organization_id == membership.organization_id,
+                PurchaseOrder.supplier_organization_id == membership.organization_id,
+            )
+        )
+        .order_by(PurchaseOrder.created_at.desc(), PurchaseOrder.id)
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return [PurchaseOrderResponse.model_validate(order) for order in orders]
+
+
+@router.post(
+    "/organizations/{organization_id}/purchase-orders/{purchase_order_id}/fulfill",
+    response_model=PurchaseOrderResponse,
+)
+def fulfill_purchase_order(
+    purchase_order_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> PurchaseOrderResponse:
+    _require_owner_or_admin(membership)
+    order = db.scalar(
+        select(PurchaseOrder).where(
+            PurchaseOrder.id == purchase_order_id,
+            PurchaseOrder.supplier_organization_id == membership.organization_id,
+        )
+    )
+    if order is None:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+    if order.status == "fulfilled":
+        return PurchaseOrderResponse.model_validate(order)
+    if order.status != "issued":
+        raise HTTPException(status_code=409, detail="Only issued purchase orders can be fulfilled")
+    now = utc_now()
+    transitioned = db.execute(
+        update(PurchaseOrder)
+        .where(PurchaseOrder.id == order.id, PurchaseOrder.status == "issued")
+        .values(status="fulfilled", updated_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if transitioned.rowcount != 1:
+        db.rollback()
+        current = db.scalar(select(PurchaseOrder).where(PurchaseOrder.id == purchase_order_id))
+        if current is not None and current.status == "fulfilled":
+            return PurchaseOrderResponse.model_validate(current)
+        raise HTTPException(status_code=409, detail="Purchase order is no longer available for fulfilment")
+    order.status = "fulfilled"
+    order.updated_at = now
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="purchase_order.fulfilled",
+        entity_type="purchase_order",
+        entity_id=order.id,
+        details={"status": order.status},
+    )
+    db.commit()
+    db.refresh(order)
+    return PurchaseOrderResponse.model_validate(order)
+
+
+@router.post(
+    "/organizations/{organization_id}/purchase-orders/{purchase_order_id}/cancel",
+    response_model=PurchaseOrderResponse,
+)
+def cancel_purchase_order(
+    purchase_order_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> PurchaseOrderResponse:
+    _require_owner_or_admin(membership)
+    order = db.scalar(
+        select(PurchaseOrder).where(
+            PurchaseOrder.id == purchase_order_id,
+            PurchaseOrder.buyer_organization_id == membership.organization_id,
+        )
+    )
+    if order is None:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+    if order.status == "cancelled":
+        return PurchaseOrderResponse.model_validate(order)
+    if order.status != "issued":
+        raise HTTPException(status_code=409, detail="Only issued purchase orders can be cancelled")
+    now = utc_now()
+    transitioned = db.execute(
+        update(PurchaseOrder)
+        .where(PurchaseOrder.id == order.id, PurchaseOrder.status == "issued")
+        .values(status="cancelled", updated_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if transitioned.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Purchase order is no longer available for cancellation")
+    order.status = "cancelled"
+    order.updated_at = now
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="purchase_order.cancelled",
+        entity_type="purchase_order",
+        entity_id=order.id,
+        details={"status": order.status},
+    )
+    db.commit()
+    db.refresh(order)
+    return PurchaseOrderResponse.model_validate(order)
 
 
 @router.post(
