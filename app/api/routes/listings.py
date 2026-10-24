@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_membership
 from app.audit import record_audit_event
 from app.db import get_db
-from app.models import Listing, Membership
-from app.schemas import InventoryAdjustmentRequest, ListingCreate, ListingResponse
+from app.models import InventoryAdjustmentHistory, Listing, Membership
+from app.schemas import InventoryAdjustmentRequest, InventoryAdjustmentResponse, ListingCreate, ListingResponse
 
 router = APIRouter(tags=["catalog"])
 
@@ -96,12 +96,24 @@ def adjust_inventory(
             Listing.inventory_quantity + payload.delta >= 0,
         )
         .values(inventory_quantity=Listing.inventory_quantity + payload.delta)
+        .returning(Listing.inventory_quantity)
         .execution_options(synchronize_session=False)
     )
-    if result.rowcount != 1:
+    quantity_after = result.scalar_one_or_none()
+    if quantity_after is None:
         db.rollback()
         raise HTTPException(status_code=409, detail="Inventory cannot be reduced below zero")
 
+    adjustment = InventoryAdjustmentHistory(
+        organization_id=membership.organization_id,
+        listing_id=listing.id,
+        actor_user_id=membership.user_id,
+        delta=payload.delta,
+        quantity_before=quantity_after - payload.delta,
+        quantity_after=quantity_after,
+        reason=payload.reason.strip() if payload.reason and payload.reason.strip() else None,
+    )
+    db.add(adjustment)
     record_audit_event(
         db,
         actor_user_id=membership.user_id,
@@ -109,11 +121,46 @@ def adjust_inventory(
         action="inventory.adjusted",
         entity_type="listing",
         entity_id=listing.id,
-        details={"quantity": payload.delta, "status": "adjusted"},
+        details={
+            "delta": payload.delta,
+            "quantity_before": quantity_after - payload.delta,
+            "quantity_after": quantity_after,
+            "status": "adjusted",
+        },
     )
     db.commit()
     db.refresh(listing)
     return ListingResponse.model_validate(listing)
+
+
+@router.get(
+    "/organizations/{organization_id}/listings/{listing_id}/inventory-adjustments",
+    response_model=list[InventoryAdjustmentResponse],
+)
+def list_inventory_adjustments(
+    listing_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[InventoryAdjustmentResponse]:
+    if membership.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Owner or admin role required")
+    listing = db.scalar(
+        select(Listing).where(
+            Listing.id == listing_id,
+            Listing.organization_id == membership.organization_id,
+        )
+    )
+    if listing is None:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    rows = db.scalars(
+        select(InventoryAdjustmentHistory)
+        .where(
+            InventoryAdjustmentHistory.organization_id == membership.organization_id,
+            InventoryAdjustmentHistory.listing_id == listing.id,
+        )
+        .order_by(InventoryAdjustmentHistory.created_at.desc(), InventoryAdjustmentHistory.id.desc())
+    ).all()
+    return [InventoryAdjustmentResponse.model_validate(row) for row in rows]
 
 
 @router.post(
