@@ -458,6 +458,19 @@ class IncomeStatementResponse(BaseModel):
     net_income_minor: int
 
 
+class BalanceSheetResponse(BaseModel):
+    as_of_date: date
+    currency: str
+    asset_lines: list[FinancialStatementLineResponse]
+    liability_lines: list[FinancialStatementLineResponse]
+    equity_lines: list[FinancialStatementLineResponse]
+    total_assets_minor: int
+    total_liabilities_minor: int
+    total_equity_minor: int
+    current_earnings_minor: int
+    total_liabilities_and_equity_minor: int
+
+
 class TrialBalanceLineResponse(BaseModel):
     account_id: str
     code: str
