@@ -141,3 +141,55 @@ def test_mfa_disable_requires_password_and_fresh_code_and_revokes_sessions(clien
         json={"email": "mfa-disable@example.com", "password": password},
     )
     assert login.status_code == 200, login.text
+
+
+
+def test_mfa_recovery_codes_are_hash_only_single_use_and_regenerable(client):
+    password, access_token, secret = enroll_and_confirm(client, "mfa-recovery@example.com")
+    headers = {"Authorization": f"Bearer {access_token}"}
+    fresh_code = generate_totp_code(secret, int(time.time() // 30) + 1)
+    generated = client.post(
+        "/api/v1/auth/mfa/recovery-codes",
+        headers=headers,
+        json={"password": password, "code": fresh_code},
+    )
+    assert generated.status_code == 200, generated.text
+    codes = generated.json()["codes"]
+    assert len(codes) == 10
+    assert len(set(codes)) == 10
+
+    db = client.testing_sessions()
+    try:
+        rows = db.scalars(select(models.MFARecoveryCode)).all()
+        assert len(rows) == 10
+        assert all(row.code_hash not in codes for row in rows)
+        assert all(len(row.code_hash) == 64 for row in rows)
+    finally:
+        db.close()
+
+    recovery_login = client.post(
+        "/api/v1/auth/token",
+        json={"email": "mfa-recovery@example.com", "password": password, "recovery_code": codes[0]},
+    )
+    assert recovery_login.status_code == 200, recovery_login.text
+    replay = client.post(
+        "/api/v1/auth/token",
+        json={"email": "mfa-recovery@example.com", "password": password, "recovery_code": codes[0]},
+    )
+    assert replay.status_code == 401
+
+    # A fresh TOTP is required to replace codes; all previous codes are invalidated.
+    new_fresh_code = generate_totp_code(secret, int(time.time() // 30) + 2)
+    regenerated = client.post(
+        "/api/v1/auth/mfa/recovery-codes",
+        headers=headers,
+        json={"password": password, "code": new_fresh_code},
+    )
+    assert regenerated.status_code == 200, regenerated.text
+    replacement_codes = regenerated.json()["codes"]
+    assert codes[1] not in replacement_codes
+    invalidated = client.post(
+        "/api/v1/auth/token",
+        json={"email": "mfa-recovery@example.com", "password": password, "recovery_code": codes[1]},
+    )
+    assert invalidated.status_code == 401
