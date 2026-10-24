@@ -10,8 +10,7 @@ from app.db import Base, get_db
 from app.main import app
 
 
-@pytest.fixture
-def client(monkeypatch):
+def test_client(monkeypatch):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     sessions = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
@@ -36,29 +35,26 @@ def client(monkeypatch):
     engine.dispose()
 
 
-def test_login_attempts_are_limited_by_email_and_peer(client):
+def test_login_attempts_are_limited_by_email_and_peer(test_client):
     payload = {"email": "missing@example.com", "password": "wrong-password"}
-    assert client.post("/api/v1/auth/token", json=payload).status_code == 401
-    assert client.post("/api/v1/auth/token", json=payload).status_code == 401
-    assert client.post("/api/v1/auth/token", json=payload).status_code == 401
-    limited = client.post("/api/v1/auth/token", json=payload)
+    assert test_client.post("/api/v1/auth/token", json=payload).status_code == 401
+    assert test_client.post("/api/v1/auth/token", json=payload).status_code == 401
+    assert test_client.post("/api/v1/auth/token", json=payload).status_code == 401
+    limited = test_client.post("/api/v1/auth/token", json=payload)
     assert limited.status_code == 429
     assert limited.headers["retry-after"] == "900"
 
 
-def test_password_reset_requests_are_limited_without_disclosing_account_state(client):
+def test_password_reset_requests_are_limited_without_disclosing_account_state(test_client):
     payload = {"email": "unknown@example.com"}
-    first = client.post("/api/v1/auth/password-reset/request", json=payload)
-    second = client.post("/api/v1/auth/password-reset/request", json=payload)
+    first = test_client.post("/api/v1/auth/password-reset/request", json=payload)
+    second = test_client.post("/api/v1/auth/password-reset/request", json=payload)
     assert first.status_code == second.status_code == 202
     assert first.json() == second.json()
-    limited = client.post("/api/v1/auth/password-reset/request", json=payload)
+    limited = test_client.post("/api/v1/auth/password-reset/request", json=payload)
     assert limited.status_code == 429
     assert "retry-after" in limited.headers
 
 
-def test_rate_limit_subject_does_not_store_raw_email(client):
-    client.post("/api/v1/auth/token", json={"email": "private@example.com", "password": "bad"})
-    # Endpoint tests use an overridden DB; the privacy guarantee is asserted through
-    # the model schema itself: only a fixed-length digest is stored for the subject.
+def test_rate_limit_subject_stores_only_fixed_length_digest():
     assert models.AuthAttempt.__table__.c.subject_hash.type.length == 64
