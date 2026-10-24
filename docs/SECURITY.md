@@ -17,11 +17,13 @@
 - Audit records are written in the same transaction as selected organization, listing, and order operations.
 - Audit detail values are allowlisted; request bodies, passwords, tokens, and secret values are not copied into event details.
 - `.gitignore` excludes local environment files, virtual environments, caches, and build artifacts.
+- A platform-admin-only cleanup endpoint removes expired verification/reset tokens, expired access-token revocations, fully expired refresh-token families, and stale rate-limit rows. It retains refresh-token history while any token in that family remains unexpired.
 - CI checks compilation, database migrations, and tests on Python 3.11–3.13.
 
 ## Current limitations
 - MFA has no recovery-code flow yet. MFA secret decryption depends on retaining the same `SECRET_KEY`; rotating that key without a planned re-enrollment strategy makes existing MFA secrets unreadable.
-- Rate limiting uses database-backed event rows but the check-and-insert sequence is not fully concurrency-safe. Registration/login/password-reset/email-verification limits also need deployment-specific proxy/IP handling review and stale-row cleanup.
+- MFA has no recovery-code flow yet. MFA secret decryption depends on retaining the same `SECRET_KEY`; rotating that key without a planned re-enrollment strategy makes existing MFA secrets unreadable.
+- Rate limiting supports SQLite/PostgreSQL atomic subject locks, but PostgreSQL concurrency testing and trusted-proxy/IP configuration remain unverified.
 - Audit records are application-level records; immutability against a database administrator, external log export, retention controls, and tamper-evidence are not implemented.
 - Tenant isolation is demonstrated on organization, catalog, supplier-profile, accounting, audit, and buyer-order routes; every new tenant-owned query must enforce its own authorization boundary.
 - No payment provider or real payment processing is connected.
