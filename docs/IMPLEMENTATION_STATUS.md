@@ -9,7 +9,7 @@
 - Supplier profile onboarding per organization, draft/submitted/approved/rejected workflow, rejection reason validation, resubmission after rejection, and platform-admin review guarded by a configured email allowlist. Initial procurement requests and supplier quotes now support approved-supplier submissions, tenant-scoped quote comparison, single-winner award, request closure, and audit events.
 - Tenant-scoped chart of accounts, balanced idempotent double-entry journal posting, immutable one-time reversal entries, organization-scoped accounting period creation/listing/closure, guarded posting after period setup, period-specific derived trial balance, and all-time derived trial balance using integer minor units.
 - Transaction-bound allowlisted audit events for implemented sensitive operations.
-- Platform-admin security maintenance endpoint cleans expired verification/reset tokens, expired access revocations, fully expired refresh-token families, and stale auth-throttle rows.
+- Platform-admin security maintenance endpoint cleans expired verification/reset tokens, old accepted/revoked/expired invitations, expired access revocations, fully expired refresh-token families, and stale auth-throttle rows.
 - Guarded OpenAI-compatible adapter with bounded output/timeouts, safe errors, no automatic retries, rolling request quota, PostgreSQL locking requirement, and live calls disabled by default.
 - Alembic migrations through persistent auth throttling, email verification, inventory history, and refresh token rotation.
 - GitHub Actions CI for Ruff, compile checks, Alembic migration consistency, and pytest across Python 3.11–3.13, plus a PostgreSQL 16 service job for full migrations, schema consistency, and concurrent refresh-token replay integration.
