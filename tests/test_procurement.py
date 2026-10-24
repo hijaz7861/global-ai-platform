@@ -156,6 +156,96 @@ def test_procurement_quote_award_is_tenant_scoped_and_single_winner(client):
     assert statuses[quote_one.json()["id"]] == "accepted"
     assert statuses[quote_two.json()["id"]] == "rejected"
 
+    issued = client.post(
+        f"/api/v1/organizations/{buyer_org}/procurement-requests/{request_id}/purchase-order",
+        headers=buyer_headers,
+    )
+    assert issued.status_code == 201, issued.text
+    purchase_order = issued.json()
+    assert purchase_order["status"] == "issued"
+    assert purchase_order["quantity"] == 100
+    assert purchase_order["unit_price_minor"] == 100
+    assert purchase_order["total_minor"] == 10_000
+    assert purchase_order["currency"] == "PKR"
+
+    replay_order = client.post(
+        f"/api/v1/organizations/{buyer_org}/procurement-requests/{request_id}/purchase-order",
+        headers=buyer_headers,
+    )
+    assert replay_order.status_code == 200
+    assert replay_order.json()["id"] == purchase_order["id"]
+
+    buyer_orders = client.get(
+        f"/api/v1/organizations/{buyer_org}/purchase-orders",
+        headers=buyer_headers,
+    )
+    supplier_headers = {"Authorization": f"Bearer {supplier_one_token}"}
+    supplier_orders = client.get(
+        f"/api/v1/organizations/{supplier_one_org}/purchase-orders",
+        headers=supplier_headers,
+    )
+    assert buyer_orders.status_code == 200 and len(buyer_orders.json()) == 1
+    assert supplier_orders.status_code == 200 and supplier_orders.json()[0]["id"] == purchase_order["id"]
+
+    fulfilled = client.post(
+        f"/api/v1/organizations/{supplier_one_org}/purchase-orders/{purchase_order['id']}/fulfill",
+        headers=supplier_headers,
+    )
+    assert fulfilled.status_code == 200, fulfilled.text
+    assert fulfilled.json()["status"] == "fulfilled"
+    fulfilled_replay = client.post(
+        f"/api/v1/organizations/{supplier_one_org}/purchase-orders/{purchase_order['id']}/fulfill",
+        headers=supplier_headers,
+    )
+    assert fulfilled_replay.status_code == 200
+    assert fulfilled_replay.json()["status"] == "fulfilled"
+    cannot_cancel_fulfilled = client.post(
+        f"/api/v1/organizations/{buyer_org}/purchase-orders/{purchase_order['id']}/cancel",
+        headers=buyer_headers,
+    )
+    assert cannot_cancel_fulfilled.status_code == 409
+
+    cancel_request = client.post(
+        f"/api/v1/organizations/{buyer_org}/procurement-requests",
+        headers=buyer_headers,
+        json={"title": "Bulk pens", "quantity": 20, "currency": "PKR"},
+    )
+    assert cancel_request.status_code == 201, cancel_request.text
+    cancel_request_id = cancel_request.json()["id"]
+    cancel_quote = client.post(
+        f"/api/v1/organizations/{supplier_two_org}/procurement-requests/{cancel_request_id}/quotes",
+        headers={"Authorization": f"Bearer {supplier_two_token}"},
+        json={"unit_price_minor": 50, "currency": "PKR", "lead_time_days": 3},
+    )
+    assert cancel_quote.status_code == 201, cancel_quote.text
+    cancel_award = client.post(
+        f"/api/v1/organizations/{buyer_org}/procurement-requests/{cancel_request_id}/award",
+        headers=buyer_headers,
+        json={"quote_id": cancel_quote.json()["id"]},
+    )
+    assert cancel_award.status_code == 200, cancel_award.text
+    cancel_order = client.post(
+        f"/api/v1/organizations/{buyer_org}/procurement-requests/{cancel_request_id}/purchase-order",
+        headers=buyer_headers,
+    )
+    assert cancel_order.status_code == 201, cancel_order.text
+    cancelled = client.post(
+        f"/api/v1/organizations/{buyer_org}/purchase-orders/{cancel_order.json()['id']}/cancel",
+        headers=buyer_headers,
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "cancelled"
+    cancelled_replay = client.post(
+        f"/api/v1/organizations/{buyer_org}/purchase-orders/{cancel_order.json()['id']}/cancel",
+        headers=buyer_headers,
+    )
+    assert cancelled_replay.status_code == 200
+    cannot_fulfil_cancelled = client.post(
+        f"/api/v1/organizations/{supplier_two_org}/purchase-orders/{cancel_order.json()['id']}/fulfill",
+        headers={"Authorization": f"Bearer {supplier_two_token}"},
+    )
+    assert cannot_fulfil_cancelled.status_code == 409
+
     second_award = client.post(
         f"/api/v1/organizations/{buyer_org}/procurement-requests/{request_id}/award",
         headers=buyer_headers,
