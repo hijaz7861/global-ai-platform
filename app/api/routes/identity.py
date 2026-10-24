@@ -222,7 +222,7 @@ def login(payload: LoginRequest, request: Request, db: Annotated[Session, Depend
     if not signing_key_is_configured():
         raise HTTPException(status_code=503, detail="A SECRET_KEY of at least 32 characters is required")
     user = db.scalar(select(User).where(User.email == str(payload.email)))
-    if user is not None and user.is_active and verify_password(payload.password, user.password_hash) and not user.email_verified:
+    if settings.require_email_verification and user is not None and user.is_active and verify_password(payload.password, user.password_hash) and not user.email_verified:
         raise HTTPException(status_code=403, detail="Email verification required")
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password",
