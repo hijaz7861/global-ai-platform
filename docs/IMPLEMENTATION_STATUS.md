@@ -19,21 +19,21 @@
 CI run 291 passed lint, compilation, Alembic migration consistency, and 69 tests (1 PostgreSQL-only test skipped) on Python 3.11, 3.12, and 3.13. Its PostgreSQL 16 job passed lint, all migrations, schema consistency, and 1 concurrent refresh-token replay integration test. The membership invitation and account lockout implementations are included in this run. The prior 54 SQLAlchemy foreign-key-cycle warnings were resolved by marking the migration-managed cycle explicitly; only the existing Starlette/httpx deprecation warning remains. One Starlette/httpx deprecation warning remains. No production deployment, live payment processing, or live paid AI request has occurred.
 
 ## Important remaining gaps
-- proxy-aware IP handling. A PostgreSQL 16 CI service now verifies migrations and concurrent refresh-token replay behavior; broader PostgreSQL workload/concurrency coverage remains open. Signing-key rotation now supports configured previous keys for verification; operators must remove previous keys after the old access-token lifetime and planned rotation window. Persistent account lockout is configured by `AUTH_ACCOUNT_LOCKOUT_THRESHOLD` and `AUTH_ACCOUNT_LOCKOUT_MINUTES`; failed-password counts clear after a successful login once the lock has expired. Refresh tokens are hashed, rotated, replay-protected, and cleaned only after every token in a family expires. Registration/login/password-reset/email-verification endpoints have database-backed request limits; proxy-aware client IP handling still needs deployment-specific review.
+- Deployment-specific proxy-aware client IP handling and broader PostgreSQL workload/concurrency coverage. CI now runs migrations and a concurrent refresh-token replay test against PostgreSQL 16.
+- Safe key rotation still requires an operator-controlled procedure: configure the new `SECRET_KEY`, retain prior keys only for the old access-token lifetime, then remove them.
 - Broader role administration and organization membership-role changes.
-- Audit tamper-evidence, retention controls, and external log export.
-- Period-specific reporting and accounting-date persistence; database-enforced non-overlap/concurrency handling; full financial statements, reconciliation, payments, refunds, tax, and seller settlement.
-- Shipping, tax, product variants, external scheduler provisioning, and concurrency testing of all inventory/order paths.
-- Multi-provider AI routing/fallback, provider-specific native APIs, monetary budgets, tool calls, and autonomous agent workflows.
+- Audit tamper-evidence, retention policy, and external log export.
+- Full financial statements, reconciliation, payments, refunds, tax, seller settlement, and database-enforced accounting-period overlap/concurrency controls.
+- External scheduler provisioning and full inventory/order race-condition coverage.
+- Multi-provider AI routing/fallback, provider-specific native APIs, monetary budgets, tool permissions, and autonomous agent workflows.
 - Purchase-order generation, quote revisions/withdrawals, procurement approval thresholds, supplier fulfilment, logistics, rentals, real estate, workforce, education, OAuth connectors, and webhooks.
-- PostgreSQL concurrency/service integration tests, independent security review, monitoring, backup/restore exercises, and staged deployment.
+- Independent security review, monitoring/alerting, backup/restore exercises, and staged deployment.
 
 ## Next engineering gates
-1. Add MFA, account lockout, expired-token cleanup, and concurrency-safe shared rate limiting.
-2. Extend accounting with period-specific reporting, reconciliation, and concurrency-safe period enforcement.
-3. Add supplier procurement and quote workflows.
-4. Expand provider routing and bounded agent orchestration.
-5. Add connector OAuth/webhook lifecycle.
-6. Add integration tests and operational readiness gates.
+1. Complete accounting reports, reconciliation, and concurrency-safe period enforcement.
+2. Add bounded multi-provider AI routing, budget controls, and tool permissions.
+3. Add OAuth/webhook lifecycle and external scheduler provisioning.
+4. Expand PostgreSQL concurrency tests for inventory, orders, accounting periods, and procurement.
+5. Complete threat-model review, monitoring, backup/restore drills, and staged deployment readiness.
 
 CI passing is not equivalent to production readiness. Production deployment and paid services require explicit owner approval.
