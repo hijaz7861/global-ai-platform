@@ -8,7 +8,7 @@ from app.api.deps import get_current_user
 from app.core.config import settings
 from app.db import get_db
 from app.audit import record_audit_event
-from app.models import User, utc_now
+from app.models import User
 from app.services.security_maintenance import cleanup_expired_security_records
 from app.schemas import OrderExpirySweepResponse, SecurityCleanupResponse
 from app.services.order_expiry import expire_due_orders
