@@ -98,6 +98,29 @@ class OrganizationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MembershipInvitationCreate(BaseModel):
+    email: EmailStr
+    role: Literal["member", "admin"] = "member"
+
+    @field_validator("email")
+    @classmethod
+    def normalize_invitation_email(cls, value: EmailStr) -> str:
+        return str(value).strip().lower()
+
+
+class MembershipInvitationAccept(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+
+
+class MembershipInvitationResponse(BaseModel):
+    id: str
+    organization_id: str
+    email: EmailStr
+    role: str
+    expires_at: datetime
+    created_at: datetime
+
+
 class MembershipCreate(BaseModel):
     email: EmailStr
     role: Literal["member", "admin"] = "member"
