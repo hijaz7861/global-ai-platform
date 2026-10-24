@@ -19,7 +19,7 @@ This checklist is deliberately not marked complete merely because CI passes. Com
 - [ ] Configure SMTP and verify registration, email verification, password reset, invitation delivery, and bounce/failure handling with a real test mailbox.
 - [ ] Set PLATFORM_ADMIN_EMAILS to explicit authorized operator addresses; test denied access for every other account.
 - [ ] Set DATABASE_URL to managed PostgreSQL; confirm TLS, least-privilege DB role, connection limits, and migration permissions.
-- [ ] Keep AI_LIVE_CALLS_ENABLED=false and AI_REQUEST_QUOTA=0 until a provider, budget, permissions, and approval path are deliberately configured.
+- [ ] Keep AI_LIVE_CALLS_ENABLED=false and AI_DAILY_REQUEST_LIMIT=0 until a provider, budget, permissions, and approval path are deliberately configured.
 - [ ] Configure HTTPS, request size limits, rate limits, and log redaction at the actual ingress. If behind a reverse proxy, set `TRUSTED_PROXY_IPS` to exact trusted proxy IPs/CIDRs; forwarded client-IP headers are ignored unless the direct peer is trusted. Leave it empty for direct connections and never trust broad or user-controlled networks.
 - [ ] Schedule the one-shot runner (python -m app.maintenance) with a durable cron/CronJob runner for unpaid-order expiry and security-record cleanup; verify retries, alerting, and idempotency.
 - [ ] Configure monitoring for error rate, latency, authentication failures, failed email delivery, database saturation, scheduler lag, and quota rejection.
