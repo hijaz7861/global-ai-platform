@@ -159,6 +159,11 @@ class OrderResponse(BaseModel):
     items: list[OrderItemResponse]
 
 
+class OrderExpirySweepResponse(BaseModel):
+    expired_count: int
+    order_ids: list[str]
+
+
 class SellerOrderItemResponse(BaseModel):
     listing_id: str
     title: str
