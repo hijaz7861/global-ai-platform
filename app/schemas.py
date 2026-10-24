@@ -398,6 +398,15 @@ class PasswordResetConfirm(BaseModel):
     new_password: str = Field(min_length=12, max_length=128)
 
 
+class SecurityCleanupResponse(BaseModel):
+    email_verification_tokens_deleted: int
+    password_reset_tokens_deleted: int
+    expired_access_revocations_deleted: int
+    expired_refresh_families_deleted: int
+    auth_attempts_deleted: int
+    rate_limit_locks_deleted: int
+
+
 class ProcurementRequestCreate(BaseModel):
     title: str = Field(min_length=2, max_length=200)
     description: str = Field(default="", max_length=3000)
