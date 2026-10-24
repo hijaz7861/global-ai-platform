@@ -1,5 +1,6 @@
 """Registration and token issuance endpoints."""
 import hashlib
+import ipaddress
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -55,9 +56,49 @@ def _consume_mfa_step(db: Session, user_id: str, step: int) -> bool:
 
 
 
+def _client_ip_for_rate_limit(request: Request) -> str:
+    """Resolve client IP only through explicitly trusted reverse proxies.
+
+    Forwarded headers are ignored unless the direct peer is in TRUSTED_PROXY_IPS.
+    When trusted, walk the X-Forwarded-For chain from right to left and select
+    the first address not belonging to a trusted proxy network.
+    """
+    peer = request.client.host if request.client else "unknown"
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return peer
+    trusted_networks = []
+    for item in settings.trusted_proxy_ips.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            trusted_networks.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            # Invalid entries never grant trust; operators should fix configuration.
+            continue
+    if not any(peer_ip in network for network in trusted_networks):
+        return str(peer_ip)
+
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if not forwarded.strip():
+        return str(peer_ip)
+    try:
+        chain = [ipaddress.ip_address(value.strip()) for value in forwarded.split(",")]
+    except ValueError:
+        # Malformed chains are not used for identity/rate-limit decisions.
+        return str(peer_ip)
+    for candidate in reversed([*chain, peer_ip]):
+        if any(candidate in network for network in trusted_networks):
+            continue
+        return str(candidate)
+    return str(peer_ip)
+
+
 def _rate_limit_subject(identifier: str, request: Request) -> str:
-    """Hash the account identifier and direct peer address; do not persist raw PII."""
-    client_host = request.client.host if request.client else "unknown"
+    """Hash the account identifier and resolved client address; never persist raw PII."""
+    client_host = _client_ip_for_rate_limit(request)
     material = f"{identifier.strip().lower()}\\0{client_host}"
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
