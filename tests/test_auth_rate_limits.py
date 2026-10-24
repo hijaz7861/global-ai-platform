@@ -1,4 +1,5 @@
 """Persistent rate-limit regression tests for authentication endpoints."""
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -10,6 +11,7 @@ from app.db import Base, get_db
 from app.main import app
 
 
+@pytest.fixture
 def test_client(monkeypatch):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     sessions = sessionmaker(bind=engine, autoflush=False, autocommit=False)
