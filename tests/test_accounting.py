@@ -255,6 +255,18 @@ def test_accounting_period_overlap_close_and_posting_guard(client):
     )
     assert posted.status_code == 201, posted.text
 
+    period_trial = client.get(
+        f"/api/v1/organizations/{org_id}/accounting-periods/{period['id']}/trial-balance",
+        headers=headers,
+    )
+    assert period_trial.status_code == 200, period_trial.text
+    period_balances = {row["account_id"]: row for row in period_trial.json()}
+    assert period_balances[cash]["debit_total_minor"] == 500
+    assert period_balances[cash]["credit_total_minor"] == 0
+    assert period_balances[revenue]["debit_total_minor"] == 0
+    assert period_balances[revenue]["credit_total_minor"] == 500
+    assert all(row["normal_balance_minor"] == 0 for row in period_trial.json() if row["account_type"] not in {"asset", "revenue"})
+
     closed = client.post(
         f"/api/v1/organizations/{org_id}/accounting-periods/{period['id']}/close",
         headers=headers,
