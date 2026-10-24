@@ -594,6 +594,7 @@ def get_period_trial_balance(
     response_model=AccountLedgerResponse,
 )
 def get_account_ledger(
+    organization_id: str,
     account_id: str,
     membership: Annotated[Membership, Depends(require_membership)],
     db: Annotated[Session, Depends(get_db)],
