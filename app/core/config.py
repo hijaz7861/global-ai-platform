@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     auth_login_window_minutes: int = Field(default=15, ge=1, le=1440)
     password_reset_request_limit: int = Field(default=5, ge=1, le=100)
     password_reset_window_minutes: int = Field(default=15, ge=1, le=1440)
+    email_verification_token_expire_minutes: int = Field(default=30, ge=5, le=120)
+    auth_register_attempt_limit: int = Field(default=5, ge=1, le=100)
+    auth_register_window_minutes: int = Field(default=60, ge=1, le=1440)
     smtp_host: str | None = None
     smtp_port: int = Field(default=587, ge=1, le=65535)
     smtp_username: str | None = None
