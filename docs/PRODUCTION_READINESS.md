@@ -18,7 +18,7 @@ This checklist is deliberately not marked complete merely because CI passes. Com
 - [ ] Set PLATFORM_ADMIN_EMAILS to explicit authorized operator addresses; test denied access for every other account.
 - [ ] Set DATABASE_URL to managed PostgreSQL; confirm TLS, least-privilege DB role, connection limits, and migration permissions.
 - [ ] Keep AI_LIVE_CALLS_ENABLED=false and AI_REQUEST_QUOTA=0 until a provider, budget, permissions, and approval path are deliberately configured.
-- [ ] Configure HTTPS, trusted proxy headers, request size limits, rate limits, and log redaction at the actual ingress.
+- [ ] Configure HTTPS, request size limits, rate limits, and log redaction at the actual ingress. If behind a reverse proxy, set `TRUSTED_PROXY_IPS` to exact trusted proxy IPs/CIDRs; forwarded client-IP headers are ignored unless the direct peer is trusted. Leave it empty for direct connections and never trust broad or user-controlled networks.
 - [ ] Schedule the one-shot runner (python -m app.maintenance) with a durable cron/CronJob runner for unpaid-order expiry and security-record cleanup; verify retries, alerting, and idempotency.
 - [ ] Configure monitoring for error rate, latency, authentication failures, failed email delivery, database saturation, scheduler lag, and quota rejection.
 
@@ -29,7 +29,7 @@ This checklist is deliberately not marked complete merely because CI passes. Com
 - [ ] Test rollback/forward-fix procedures against a disposable database copy; do not assume every data migration is safely reversible.
 
 ## Security and domain sign-off
-- [ ] Conduct an independent security review and threat-model walkthrough, including MFA recovery, session revocation, tenant isolation, admin allowlists, and proxy-aware client IP handling.
+- [ ] Conduct an independent security review and threat-model walkthrough, including MFA recovery, session revocation, tenant isolation, admin allowlists, and trusted-proxy client IP handling. CI tests cover untrusted forwarded headers, trusted proxy chains, and malformed forwarded values.
 - [ ] Define signing-key rotation procedure and verify token lifetime behavior during rotation.
 - [ ] Review audit retention, export to a separately controlled destination, and tamper-evidence. Append-only triggers are not protection against a privileged operator who can disable triggers.
 - [ ] Obtain accounting-domain review of period policy, financial statement semantics, multi-currency limitations, and reconciliation controls.
