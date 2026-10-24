@@ -215,9 +215,17 @@ def test_mfa_can_be_disabled_with_single_use_recovery_code(client):
     assert disabled.status_code == 204, disabled.text
     assert client.get("/api/v1/organizations", headers=headers).status_code == 401
 
-    # Disabling MFA removes every recovery credential and restores password-only login.
-    replay = client.post(
+    db = client.testing_sessions()
+    try:
+        assert db.scalars(
+            select(models.MFARecoveryCode).where(models.MFARecoveryCode.user_id.is_not(None))
+        ).all() == []
+    finally:
+        db.close()
+
+    # Disabling MFA restores password-only login.
+    login = client.post(
         "/api/v1/auth/token",
-        json={"email": "mfa-recovery-disable@example.com", "password": password, "recovery_code": recovery_code},
+        json={"email": "mfa-recovery-disable@example.com", "password": password},
     )
-    assert replay.status_code == 200, replay.text
+    assert login.status_code == 200, login.text
