@@ -7,7 +7,7 @@
 - Organization creation and membership/role controls with tenant-scoped access and audit events.
 - Tenant-owned catalog listings, draft/active publication, bounded public search with currency/price filters and pagination, inventory adjustment, atomic stock reservation, idempotent orders, buyer-scoped reads, cancellation and seller-scoped summaries.
 - Supplier profile onboarding per organization, draft/submitted/approved/rejected workflow, rejection reason validation, resubmission after rejection, and platform-admin review guarded by a configured email allowlist.
-- Tenant-scoped chart of accounts, balanced idempotent double-entry journal posting, and derived trial balance using integer minor units.
+- Tenant-scoped chart of accounts, balanced idempotent double-entry journal posting, immutable one-time reversal entries, and derived trial balance using integer minor units.
 - Transaction-bound allowlisted audit events for implemented sensitive operations.
 - Guarded OpenAI-compatible adapter with bounded output/timeouts, safe errors, no automatic retries, rolling request quota, PostgreSQL locking requirement, and live calls disabled by default.
 - Alembic migrations through persistent auth throttling and email verification.
@@ -21,7 +21,7 @@ The latest code workflow passed lint, compilation, migration consistency, and te
 - MFA, refresh-token rotation, account lockout, expired-token cleanup, and stronger atomic/concurrency-safe auth throttling. Registration/login/password-reset/email-verification endpoints have database-backed request limits; proxy-aware client IP handling still needs deployment-specific review.
 - Membership invitations and broader role administration.
 - Audit tamper-evidence, retention controls, and external log export.
-- Journal reversals, period closing, full financial statements, reconciliation, payments, refunds, tax, and seller settlement.
+- Period closing, full financial statements, reconciliation, payments, refunds, tax, and seller settlement.
 - Multi-line carts, inventory adjustment history, order expiry, shipping, tax, and product variants.
 - Multi-provider AI routing/fallback, provider-specific native APIs, monetary budgets, tool calls, and autonomous agent workflows.
 - Supplier quotes/procurement/fulfilment, logistics, rentals, real estate, workforce, education, OAuth connectors, and webhooks.
