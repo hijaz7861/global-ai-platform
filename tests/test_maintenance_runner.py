@@ -1,5 +1,5 @@
 """Tests for the one-shot scheduled maintenance runner."""
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
