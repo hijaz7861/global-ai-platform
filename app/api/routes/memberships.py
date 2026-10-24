@@ -105,6 +105,44 @@ def create_membership_invitation(
     return MembershipInvitationResponse.model_validate(invitation)
 
 
+@router.post(
+    "/organizations/{organization_id}/invitations/{invitation_id}/revoke",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def revoke_membership_invitation(
+    organization_id: str,
+    invitation_id: str,
+    current: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    if current.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Owner or admin role required")
+    invitation = db.scalar(
+        select(MembershipInvitation).where(
+            MembershipInvitation.id == invitation_id,
+            MembershipInvitation.organization_id == current.organization_id,
+        )
+    )
+    if invitation is None:
+        raise HTTPException(status_code=404, detail="Membership invitation not found")
+    if invitation.accepted_at is not None:
+        raise HTTPException(status_code=409, detail="Accepted invitations cannot be revoked")
+    if invitation.revoked_at is not None:
+        return None
+    invitation.revoked_at = utc_now()
+    record_audit_event(
+        db,
+        actor_user_id=current.user_id,
+        organization_id=current.organization_id,
+        action="membership.invitation_revoked",
+        entity_type="membership_invitation",
+        entity_id=invitation.id,
+        details={"status": "revoked"},
+    )
+    db.commit()
+    return None
+
+
 @router.post("/invitations/accept", response_model=MembershipResponse, status_code=status.HTTP_201_CREATED)
 def accept_membership_invitation(
     payload: MembershipInvitationAccept,
