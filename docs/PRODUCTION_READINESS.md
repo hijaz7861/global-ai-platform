@@ -30,7 +30,7 @@ This checklist is deliberately not marked complete merely because CI passes. Com
 
 ## Security and domain sign-off
 - [ ] Conduct an independent security review and threat-model walkthrough, including MFA recovery, session revocation, tenant isolation, admin allowlists, and trusted-proxy client IP handling. CI tests cover untrusted forwarded headers, trusted proxy chains, and malformed forwarded values.
-- [ ] Define signing-key rotation procedure and verify token lifetime behavior during rotation.
+- [ ] Define signing-key rotation procedure: configure the new `SECRET_KEY` and old key in `PREVIOUS_SECRET_KEYS`, run `python -m app.rotate_mfa_secrets`, verify MFA login and the reported re-encryption count, retain the old key until prior access tokens expire, then remove it. Test this in staging first.
 - [ ] Review audit retention, export to a separately controlled destination, and tamper-evidence. Append-only triggers are not protection against a privileged operator who can disable triggers.
 - [ ] Obtain accounting-domain review of period policy, financial statement semantics, multi-currency limitations, and reconciliation controls.
 - [ ] Define payment/refund/tax/seller-settlement scope before connecting a real payment provider; no money movement is enabled by this foundation.
