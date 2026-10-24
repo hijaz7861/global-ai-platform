@@ -436,6 +436,16 @@ class SupplierQuote(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 
+class AuthRateLimitLock(Base):
+    """Per-subject serialization row for atomic auth rate-limit accounting."""
+    __tablename__ = "auth_rate_limit_locks"
+    __table_args__ = (Index("ix_auth_rate_limit_locks_touched", "touched_at"),)
+
+    scope: Mapped[str] = mapped_column(String(32), primary_key=True)
+    subject_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    touched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
 class AuthAttempt(Base):
     """Privacy-minimized persistent rate-limit events for sensitive auth endpoints."""
     __tablename__ = "auth_attempts"
