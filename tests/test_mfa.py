@@ -193,3 +193,31 @@ def test_mfa_recovery_codes_are_hash_only_single_use_and_regenerable(client):
         json={"email": "mfa-recovery@example.com", "password": password, "recovery_code": codes[1]},
     )
     assert invalidated.status_code == 401
+
+
+
+def test_mfa_can_be_disabled_with_single_use_recovery_code(client):
+    password, access_token, secret = enroll_and_confirm(client, "mfa-recovery-disable@example.com")
+    headers = {"Authorization": f"Bearer {access_token}"}
+    generated = client.post(
+        "/api/v1/auth/mfa/recovery-codes",
+        headers=headers,
+        json={"password": password, "code": generate_totp_code(secret, int(time.time() // 30) + 1)},
+    )
+    assert generated.status_code == 200, generated.text
+    recovery_code = generated.json()["codes"][0]
+
+    disabled = client.post(
+        "/api/v1/auth/mfa/disable",
+        headers=headers,
+        json={"password": password, "recovery_code": recovery_code},
+    )
+    assert disabled.status_code == 204, disabled.text
+    assert client.get("/api/v1/organizations", headers=headers).status_code == 401
+
+    # Disabling MFA removes every recovery credential and restores password-only login.
+    replay = client.post(
+        "/api/v1/auth/token",
+        json={"email": "mfa-recovery-disable@example.com", "password": password, "recovery_code": recovery_code},
+    )
+    assert replay.status_code == 200, replay.text
