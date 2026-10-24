@@ -637,8 +637,21 @@ def get_account_ledger(
     if cursor_time is not None and ends_before is not None and cursor_time >= ends_before:
         raise HTTPException(status_code=422, detail="Cursor is outside the requested date range")
 
-    opening_boundary = cursor_time or starts_at
-    if opening_boundary is None:
+    opening_conditions = [
+        JournalEntry.organization_id == membership.organization_id,
+        JournalEntry.status == "posted",
+        JournalLine.account_id == account.id,
+    ]
+    if cursor_time is not None and after_entry_id is not None:
+        opening_conditions.append(
+            or_(
+                JournalEntry.created_at < cursor_time,
+                and_(JournalEntry.created_at == cursor_time, JournalEntry.id < after_entry_id),
+            )
+        )
+    elif starts_at is not None:
+        opening_conditions.append(JournalEntry.created_at < starts_at)
+    if cursor_time is None and starts_at is None:
         opening_balance = 0
     else:
         signed_total = db.scalar(
@@ -649,12 +662,7 @@ def get_account_ledger(
                 )
             )
             .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
-            .where(
-                JournalEntry.organization_id == membership.organization_id,
-                JournalEntry.status == "posted",
-                JournalLine.account_id == account.id,
-                JournalEntry.created_at < opening_boundary,
-            )
+            .where(*opening_conditions)
         ) or 0
         opening_balance = int(signed_total)
         if account.account_type not in {"asset", "expense"}:
