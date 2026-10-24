@@ -1,0 +1,41 @@
+# Production Readiness Gate
+
+This checklist is deliberately not marked complete merely because CI passes. Complete each gate in a staging environment with evidence before a production release.
+
+## Current verified automation
+- [x] Ruff lint and Python compilation in CI.
+- [x] Alembic upgrade consistency on Python 3.11, 3.12, and 3.13.
+- [x] PostgreSQL 16 full migration and schema-consistency job.
+- [x] PostgreSQL concurrent refresh-token replay integration test.
+- [x] PostgreSQL concurrent single-unit inventory reservation test.
+- [x] PostgreSQL concurrent overlapping accounting-period creation test.
+- [x] Database triggers reject UPDATE/DELETE of audit events on PostgreSQL and SQLite.
+- [x] API tests for authentication, tenant boundaries, orders, procurement, accounting, and security maintenance.
+
+## Operator-owned gates before staging
+- [ ] Configure a unique SECRET_KEY (at least 32 random characters) using the deployment secret manager; never commit .env.
+- [ ] Configure SMTP and verify registration, email verification, password reset, invitation delivery, and bounce/failure handling with a real test mailbox.
+- [ ] Set PLATFORM_ADMIN_EMAILS to explicit authorized operator addresses; test denied access for every other account.
+- [ ] Set DATABASE_URL to managed PostgreSQL; confirm TLS, least-privilege DB role, connection limits, and migration permissions.
+- [ ] Keep AI_LIVE_CALLS_ENABLED=false and AI_REQUEST_QUOTA=0 until a provider, budget, permissions, and approval path are deliberately configured.
+- [ ] Configure HTTPS, trusted proxy headers, request size limits, rate limits, and log redaction at the actual ingress.
+- [ ] Configure a durable scheduler for unpaid-order expiry and security-record cleanup; verify retries, alerting, and idempotency.
+- [ ] Configure monitoring for error rate, latency, authentication failures, failed email delivery, database saturation, scheduler lag, and quota rejection.
+
+## Backup and recovery evidence
+- [ ] Configure encrypted automated PostgreSQL backups and a documented retention period.
+- [ ] Perform a restore into an isolated environment; record restore duration and validate row counts, constraints, migrations, audit events, orders, and ledger balances.
+- [ ] Document recovery point objective (RPO), recovery time objective (RTO), owner, escalation contact, and rollback steps.
+- [ ] Test rollback/forward-fix procedures against a disposable database copy; do not assume every data migration is safely reversible.
+
+## Security and domain sign-off
+- [ ] Conduct an independent security review and threat-model walkthrough, including MFA recovery, session revocation, tenant isolation, admin allowlists, and proxy-aware client IP handling.
+- [ ] Define signing-key rotation procedure and verify token lifetime behavior during rotation.
+- [ ] Review audit retention, export to a separately controlled destination, and tamper-evidence. Append-only triggers are not protection against a privileged operator who can disable triggers.
+- [ ] Obtain accounting-domain review of period policy, financial statement semantics, multi-currency limitations, and reconciliation controls.
+- [ ] Define payment/refund/tax/seller-settlement scope before connecting a real payment provider; no money movement is enabled by this foundation.
+- [ ] Run staged load/concurrency tests against a production-like PostgreSQL configuration and record results.
+- [ ] Confirm privacy policy, terms, data retention/deletion, incident response, and user support ownership.
+
+## Release decision
+A release owner must review the evidence above and explicitly approve the release. Passing CI is necessary but not sufficient. Do not enable paid AI calls, real payment processing, or production deployment without explicit authorization.
