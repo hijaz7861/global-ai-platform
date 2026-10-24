@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import decode_access_token
 from app.db import get_db
-from app.models import Membership, TokenRevocation, User
+from app.models import Membership, RefreshToken, TokenRevocation, User
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -38,6 +38,18 @@ def get_current_user(
         )
         if revoked is not None:
             raise jwt.InvalidTokenError("Revoked token")
+        session_id = payload.get("sid")
+        if session_id is not None:
+            if not isinstance(session_id, str) or not session_id:
+                raise ValueError("Invalid session claim")
+            revoked_family = db.scalar(
+                select(RefreshToken.token_hash).where(
+                    RefreshToken.family_id == session_id,
+                    RefreshToken.revoked_at.is_not(None),
+                ).limit(1)
+            )
+            if revoked_family is not None:
+                raise jwt.InvalidTokenError("Revoked session family")
     except (jwt.InvalidTokenError, RuntimeError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired access token",
                             headers={"WWW-Authenticate": "Bearer"}) from None
