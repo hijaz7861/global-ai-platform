@@ -1,7 +1,7 @@
 """Tenant-scoped chart of accounts and immutable balanced journal posting."""
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import uuid4
 
@@ -468,6 +468,83 @@ def get_trial_balance(
         )
         .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
         .where(JournalEntry.organization_id == membership.organization_id)
+        .group_by(JournalLine.account_id)
+        .subquery()
+    )
+    rows = db.execute(
+        select(
+            Account.id,
+            Account.code,
+            Account.name,
+            Account.account_type,
+            Account.currency,
+            func.coalesce(totals.c.debit_total_minor, 0),
+            func.coalesce(totals.c.credit_total_minor, 0),
+        )
+        .outerjoin(totals, totals.c.account_id == Account.id)
+        .where(Account.organization_id == membership.organization_id)
+        .order_by(Account.currency, Account.code)
+    ).all()
+
+    result: list[TrialBalanceLineResponse] = []
+    for account_id, code, name, account_type, currency, debit, credit in rows:
+        debit_total = int(debit)
+        credit_total = int(credit)
+        normal_balance = (
+            debit_total - credit_total
+            if account_type in {"asset", "expense"}
+            else credit_total - debit_total
+        )
+        result.append(
+            TrialBalanceLineResponse(
+                account_id=account_id,
+                code=code,
+                name=name,
+                account_type=account_type,
+                currency=currency,
+                debit_total_minor=debit_total,
+                credit_total_minor=credit_total,
+                normal_balance_minor=normal_balance,
+            )
+        )
+    return result
+
+
+@router.get(
+    "/organizations/{organization_id}/accounting-periods/{period_id}/trial-balance",
+    response_model=list[TrialBalanceLineResponse],
+)
+def get_period_trial_balance(
+    period_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[TrialBalanceLineResponse]:
+    """Derive a period-only trial balance from posted journal lines and UTC posting timestamps."""
+    _require_owner_or_admin(membership)
+    period = db.scalar(
+        select(AccountingPeriod).where(
+            AccountingPeriod.id == period_id,
+            AccountingPeriod.organization_id == membership.organization_id,
+        )
+    )
+    if period is None:
+        raise HTTPException(status_code=404, detail="Accounting period not found")
+
+    starts_at = datetime.combine(period.starts_on, datetime.min.time(), tzinfo=timezone.utc)
+    ends_before = datetime.combine(period.ends_on + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    totals = (
+        select(
+            JournalLine.account_id.label("account_id"),
+            func.sum(JournalLine.debit_minor).label("debit_total_minor"),
+            func.sum(JournalLine.credit_minor).label("credit_total_minor"),
+        )
+        .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+        .where(
+            JournalEntry.organization_id == membership.organization_id,
+            JournalEntry.status == "posted",
+            JournalEntry.created_at >= starts_at,
+            JournalEntry.created_at < ends_before,
+        )
         .group_by(JournalLine.account_id)
         .subquery()
     )
