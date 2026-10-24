@@ -9,6 +9,7 @@ from app import models  # noqa: F401
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
+from app.api.routes.identity import _client_ip_for_rate_limit
 
 
 @pytest.fixture
@@ -60,3 +61,31 @@ def test_password_reset_requests_are_limited_without_disclosing_account_state(te
 
 def test_rate_limit_subject_stores_only_fixed_length_digest():
     assert models.AuthAttempt.__table__.c.subject_hash.type.length == 64
+
+
+
+def test_forwarded_for_is_ignored_for_untrusted_direct_peer(test_client, monkeypatch):
+    monkeypatch.setattr(settings, "trusted_proxy_ips", "10.0.0.0/8")
+    request = type("Request", (), {
+        "client": type("Client", (), {"host": "198.51.100.20"})(),
+        "headers": {"x-forwarded-for": "203.0.113.99"},
+    })()
+    assert _client_ip_for_rate_limit(request) == "198.51.100.20"
+
+
+def test_trusted_proxy_uses_first_untrusted_address_from_right(test_client, monkeypatch):
+    monkeypatch.setattr(settings, "trusted_proxy_ips", "10.0.0.0/8, 192.0.2.10")
+    request = type("Request", (), {
+        "client": type("Client", (), {"host": "10.0.0.4"})(),
+        "headers": {"x-forwarded-for": "203.0.113.8, 192.0.2.10"},
+    })()
+    assert _client_ip_for_rate_limit(request) == "203.0.113.8"
+
+
+def test_malformed_forwarded_chain_falls_back_to_trusted_peer(test_client, monkeypatch):
+    monkeypatch.setattr(settings, "trusted_proxy_ips", "10.0.0.0/8")
+    request = type("Request", (), {
+        "client": type("Client", (), {"host": "10.0.0.4"})(),
+        "headers": {"x-forwarded-for": "spoofed, 203.0.113.8"},
+    })()
+    assert _client_ip_for_rate_limit(request) == "10.0.0.4"
