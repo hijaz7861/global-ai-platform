@@ -467,29 +467,47 @@ def disable_mfa(
         raise HTTPException(status_code=409, detail="MFA is not enabled")
     if not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Current password is required")
-    try:
-        secret = decrypt_totp_secret(user.mfa_secret_encrypted)
-    except (RuntimeError, ValueError):
-        raise HTTPException(status_code=503, detail="MFA encryption configuration is unavailable") from None
-    step = verify_totp(secret, payload.code, last_step=user.mfa_last_verified_step)
-    if step is None:
-        raise HTTPException(status_code=401, detail="Invalid current password or MFA code")
+    step: int | None = None
+    if payload.recovery_code is not None:
+        recovery_digest = hashlib.sha256(payload.recovery_code.strip().lower().encode("utf-8")).hexdigest()
+        consumed = db.execute(
+            update(MFARecoveryCode)
+            .where(
+                MFARecoveryCode.user_id == user.id,
+                MFARecoveryCode.code_hash == recovery_digest,
+                MFARecoveryCode.used_at.is_(None),
+            )
+            .values(used_at=utc_now())
+            .execution_options(synchronize_session=False)
+        )
+        if consumed.rowcount != 1:
+            db.rollback()
+            raise HTTPException(status_code=401, detail="Invalid current password or MFA code")
+    else:
+        try:
+            secret = decrypt_totp_secret(user.mfa_secret_encrypted)
+        except (RuntimeError, ValueError):
+            raise HTTPException(status_code=503, detail="MFA encryption configuration is unavailable") from None
+        step = verify_totp(secret, payload.code, last_step=user.mfa_last_verified_step)
+        if step is None:
+            raise HTTPException(status_code=401, detail="Invalid current password or MFA code")
     now = utc_now()
+    predicates = [User.id == user.id, User.mfa_enabled.is_(True)]
+    if step is not None:
+        predicates.append(or_(User.mfa_last_verified_step.is_(None), User.mfa_last_verified_step < step))
+    values = {
+        "mfa_enabled": False,
+        "mfa_secret_encrypted": None,
+        "mfa_pending_secret_encrypted": None,
+        "mfa_pending_expires_at": None,
+        "auth_version": User.auth_version + 1,
+    }
+    if step is not None:
+        values["mfa_last_verified_step"] = step
     disabled = db.execute(
         update(User)
-        .where(
-            User.id == user.id,
-            User.mfa_enabled.is_(True),
-            or_(User.mfa_last_verified_step.is_(None), User.mfa_last_verified_step < step),
-        )
-        .values(
-            mfa_enabled=False,
-            mfa_secret_encrypted=None,
-            mfa_pending_secret_encrypted=None,
-            mfa_pending_expires_at=None,
-            mfa_last_verified_step=step,
-            auth_version=User.auth_version + 1,
-        )
+        .where(*predicates)
+        .values(**values)
         .execution_options(synchronize_session=False)
     )
     if disabled.rowcount != 1:
