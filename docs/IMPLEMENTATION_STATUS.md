@@ -15,7 +15,7 @@
 - Optional Docker packaging that applies migrations before starting the API.
 
 ## Verification status
-CI run 175 passed lint, compilation, Alembic migration consistency, and 54 tests on Python 3.11, 3.12, and 3.13 after refresh-token rotation was added. CI run 197 passed lint, compilation, Alembic migration consistency, and 58 tests on Python 3.11, 3.12, and 3.13 for order expiry and multi-item cart behavior. Supplier procurement migration 0016, routes, and tests are now committed and awaiting their own completed CI run. One Starlette/httpx deprecation warning remains. No production deployment, live payment processing, or live paid AI request has occurred.
+CI run 175 passed lint, compilation, Alembic migration consistency, and 54 tests on Python 3.11, 3.12, and 3.13 after refresh-token rotation was added. CI run 197 passed lint, compilation, Alembic migration consistency, and 58 tests on Python 3.11, 3.12, and 3.13 for order expiry and multi-item cart behavior. CI run 214 passed lint, compilation, Alembic migration consistency, and 60 tests on Python 3.11, 3.12, and 3.13 for supplier procurement. The prior 54 SQLAlchemy foreign-key-cycle warnings were resolved by marking the migration-managed cycle explicitly; only the existing Starlette/httpx deprecation warning remains. One Starlette/httpx deprecation warning remains. No production deployment, live payment processing, or live paid AI request has occurred.
 
 ## Important remaining gaps
 - MFA, account lockout, expired-token cleanup, and stronger atomic/concurrency-safe auth throttling. Refresh tokens are hashed, rotated, and replay-protected; operational cleanup and broader concurrency testing remain open. Registration/login/password-reset/email-verification endpoints have database-backed request limits; proxy-aware client IP handling still needs deployment-specific review.
@@ -24,7 +24,7 @@ CI run 175 passed lint, compilation, Alembic migration consistency, and 54 tests
 - Period-specific reporting and accounting-date persistence; database-enforced non-overlap/concurrency handling; full financial statements, reconciliation, payments, refunds, tax, and seller settlement.
 - Shipping, tax, product variants, external scheduler provisioning, and concurrency testing of all inventory/order paths.
 - Multi-provider AI routing/fallback, provider-specific native APIs, monetary budgets, tool calls, and autonomous agent workflows.
-- Purchase-order generation, quote revisions/withdrawals, procurement approvals, supplier fulfilment, logistics, rentals, real estate, workforce, education, OAuth connectors, and webhooks.
+- Purchase-order generation, quote revisions/withdrawals, procurement approval thresholds, supplier fulfilment, logistics, rentals, real estate, workforce, education, OAuth connectors, and webhooks.
 - PostgreSQL concurrency/service integration tests, independent security review, monitoring, backup/restore exercises, and staged deployment.
 
 ## Next engineering gates
