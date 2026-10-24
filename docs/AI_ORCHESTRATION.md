@@ -2,14 +2,14 @@
 
 ## Current implementation
 - An OpenAI-compatible chat-completions HTTP adapter supports configured API endpoints and model names.
-- The adapter uses HTTPS except for loopback testing, refuses redirects, applies a bounded timeout, caps output tokens, makes no automatic retries, and never includes provider response bodies in public errors.
+- The adapter uses HTTPS except for loopback testing, refuses redirects, applies a bounded timeout, caps output tokens and provider response bytes, makes no automatic retries, and never includes provider response bodies in public errors.
 - `POST /api/v1/organizations/{organization_id}/ai/chat` is restricted to organization owners/admins.
 - The endpoint requires explicit configuration: live calls enabled, API key, base URL, model, a positive rolling 24-hour request limit, and PostgreSQL for serialized quota reservations.
 - Live calls are disabled by default. The daily request limit defaults to zero. No API keys are committed and no provider is contacted by CI tests.
 - AI request start/success/failure audit events omit prompt and response content.
 
 ## Configure explicitly
-Use environment variables documented in `.env.example`. Set `AI_LIVE_CALLS_ENABLED=true` only when the owner has intentionally enabled external provider calls and accepts any applicable charges. Configure `AI_DAILY_REQUEST_LIMIT` to a positive value and keep `AI_MAX_OUTPUT_TOKENS` low. Use a secret manager for API keys in deployed environments.
+Use environment variables documented in `.env.example`. Set `AI_LIVE_CALLS_ENABLED=true` only when the owner has intentionally enabled external provider calls and accepts any applicable charges. Configure `AI_DAILY_REQUEST_LIMIT` to a positive value and keep `AI_MAX_OUTPUT_TOKENS` low. `AI_MAX_RESPONSE_BYTES` bounds the provider response body (default 1 MiB). Use a secret manager for API keys in deployed environments.
 
 ## Current limitations
 - Only one OpenAI-compatible endpoint/model is selected by environment configuration per deployment.
