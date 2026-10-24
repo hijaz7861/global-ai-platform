@@ -443,6 +443,7 @@ class PasswordResetConfirm(BaseModel):
 class SecurityCleanupResponse(BaseModel):
     email_verification_tokens_deleted: int
     password_reset_tokens_deleted: int
+    membership_invitations_deleted: int
     expired_access_revocations_deleted: int
     expired_refresh_families_deleted: int
     auth_attempts_deleted: int
