@@ -8,13 +8,14 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import bearer_scheme, get_current_user
 from app.audit import record_audit_event
 from app.core.config import settings
+from app.core.mfa import decrypt_totp_secret, encrypt_totp_secret, generate_totp_secret, make_otpauth_uri, verify_totp
 from app.core.security import (
     create_access_token,
     decode_access_token,
@@ -24,13 +25,32 @@ from app.core.security import (
 )
 from app.db import get_db
 from app.models import AuthAttempt, EmailVerificationToken, PasswordResetToken, RefreshToken, TokenRevocation, User, utc_now
-from app.schemas import EmailVerificationConfirm, LoginRequest, PasswordResetConfirm, PasswordResetRequest, RefreshTokenRequest, RegisterRequest, TokenResponse
+from app.schemas import EmailVerificationConfirm, LoginRequest, MFAConfirmRequest, MFADisableRequest, MFAEnrollRequest, MFAEnrollmentResponse, PasswordResetConfirm, PasswordResetRequest, RefreshTokenRequest, RegisterRequest, TokenResponse
 from app.services.email import send_email_verification, send_password_reset_email
 
 router = APIRouter(prefix="/auth", tags=["identity"])
 logger = logging.getLogger(__name__)
 _RESET_ACCEPTED = {"message": "If the account exists, reset instructions will be sent."}
 _VERIFICATION_ACCEPTED = {"message": "If the account needs verification, instructions will be sent."}
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _consume_mfa_step(db: Session, user_id: str, step: int) -> bool:
+    consumed = db.execute(
+        update(User)
+        .where(
+            User.id == user_id,
+            User.mfa_enabled.is_(True),
+            or_(User.mfa_last_verified_step.is_(None), User.mfa_last_verified_step < step),
+        )
+        .values(mfa_last_verified_step=step)
+        .execution_options(synchronize_session=False)
+    )
+    return consumed.rowcount == 1
+
 
 
 def _rate_limit_subject(identifier: str, request: Request) -> str:
@@ -229,6 +249,21 @@ def login(payload: LoginRequest, request: Request, db: Annotated[Session, Depend
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password",
                             headers={"WWW-Authenticate": "Bearer"})
+    if user.mfa_enabled:
+        if not user.mfa_secret_encrypted or not payload.totp_code:
+            raise HTTPException(status_code=401, detail="Invalid email, password, or MFA code",
+                                headers={"WWW-Authenticate": "Bearer"})
+        try:
+            secret = decrypt_totp_secret(user.mfa_secret_encrypted)
+        except (RuntimeError, ValueError):
+            raise HTTPException(status_code=503, detail="MFA encryption configuration is unavailable") from None
+        step = verify_totp(secret, payload.totp_code, last_step=user.mfa_last_verified_step)
+        if step is None or not _consume_mfa_step(db, user.id, step):
+            db.rollback()
+            raise HTTPException(status_code=401, detail="Invalid email, password, or MFA code",
+                                headers={"WWW-Authenticate": "Bearer"})
+        db.commit()
+
     family_id = str(uuid4())
     raw_refresh_token = secrets.token_urlsafe(48)
     refresh_expires_at = utc_now() + timedelta(days=settings.refresh_token_expire_days)
@@ -258,6 +293,132 @@ def login(payload: LoginRequest, request: Request, db: Annotated[Session, Depend
         expires_in=settings.access_token_expire_minutes * 60,
         refresh_expires_in=settings.refresh_token_expire_days * 24 * 60 * 60,
     )
+
+
+@router.post("/mfa/enroll", response_model=MFAEnrollmentResponse)
+def enroll_mfa(
+    payload: MFAEnrollRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> MFAEnrollmentResponse:
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is required")
+    if user.mfa_enabled:
+        raise HTTPException(status_code=409, detail="MFA is already enabled")
+    if not signing_key_is_configured():
+        raise HTTPException(status_code=503, detail="MFA encryption configuration is unavailable")
+    secret = generate_totp_secret()
+    user.mfa_pending_secret_encrypted = encrypt_totp_secret(secret)
+    user.mfa_pending_expires_at = utc_now() + timedelta(minutes=settings.mfa_enrollment_expire_minutes)
+    record_audit_event(
+        db,
+        actor_user_id=user.id,
+        organization_id=None,
+        action="auth.mfa_enrollment_started",
+        entity_type="user",
+        entity_id=user.id,
+        details={"status": "pending"},
+    )
+    db.commit()
+    return MFAEnrollmentResponse(
+        secret=secret,
+        otpauth_uri=make_otpauth_uri(secret, issuer=settings.app_name, account_name=user.email),
+        expires_in_seconds=settings.mfa_enrollment_expire_minutes * 60,
+    )
+
+
+@router.post("/mfa/confirm", status_code=status.HTTP_204_NO_CONTENT)
+def confirm_mfa(
+    payload: MFAConfirmRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    if user.mfa_enabled or not user.mfa_pending_secret_encrypted or not user.mfa_pending_expires_at:
+        raise HTTPException(status_code=409, detail="No pending MFA enrollment")
+    if _as_utc(user.mfa_pending_expires_at) <= utc_now():
+        user.mfa_pending_secret_encrypted = None
+        user.mfa_pending_expires_at = None
+        db.commit()
+        raise HTTPException(status_code=400, detail="MFA enrollment expired; start again")
+    try:
+        secret = decrypt_totp_secret(user.mfa_pending_secret_encrypted)
+    except (RuntimeError, ValueError):
+        raise HTTPException(status_code=503, detail="MFA encryption configuration is unavailable") from None
+    step = verify_totp(secret, payload.code)
+    if step is None:
+        raise HTTPException(status_code=400, detail="Invalid MFA code")
+    user.mfa_secret_encrypted = user.mfa_pending_secret_encrypted
+    user.mfa_pending_secret_encrypted = None
+    user.mfa_pending_expires_at = None
+    user.mfa_enabled = True
+    user.mfa_last_verified_step = step
+    record_audit_event(
+        db,
+        actor_user_id=user.id,
+        organization_id=None,
+        action="auth.mfa_enabled",
+        entity_type="user",
+        entity_id=user.id,
+        details={"status": "enabled"},
+    )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/mfa/disable", status_code=status.HTTP_204_NO_CONTENT)
+def disable_mfa(
+    payload: MFADisableRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    if not user.mfa_enabled or not user.mfa_secret_encrypted:
+        raise HTTPException(status_code=409, detail="MFA is not enabled")
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is required")
+    try:
+        secret = decrypt_totp_secret(user.mfa_secret_encrypted)
+    except (RuntimeError, ValueError):
+        raise HTTPException(status_code=503, detail="MFA encryption configuration is unavailable") from None
+    step = verify_totp(secret, payload.code, last_step=user.mfa_last_verified_step)
+    if step is None:
+        raise HTTPException(status_code=401, detail="Invalid current password or MFA code")
+    now = utc_now()
+    disabled = db.execute(
+        update(User)
+        .where(
+            User.id == user.id,
+            User.mfa_enabled.is_(True),
+            or_(User.mfa_last_verified_step.is_(None), User.mfa_last_verified_step < step),
+        )
+        .values(
+            mfa_enabled=False,
+            mfa_secret_encrypted=None,
+            mfa_pending_secret_encrypted=None,
+            mfa_pending_expires_at=None,
+            mfa_last_verified_step=step,
+            auth_version=User.auth_version + 1,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if disabled.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=401, detail="Invalid current password or MFA code")
+    db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    record_audit_event(
+        db,
+        actor_user_id=user.id,
+        organization_id=None,
+        action="auth.mfa_disabled",
+        entity_type="user",
+        entity_id=user.id,
+        details={"status": "disabled"},
+    )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/refresh", response_model=TokenResponse)
