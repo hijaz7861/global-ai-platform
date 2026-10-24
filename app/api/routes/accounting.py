@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_membership
 from app.audit import record_audit_event
 from app.db import get_db
-from app.models import Account, AccountingPeriod, JournalEntry, JournalLine, Membership
+from app.models import Account, AccountingPeriod, JournalEntry, JournalLine, Membership, Organization
 from app.schemas import (
     AccountCreate,
     AccountLedgerEntryResponse,
@@ -62,6 +62,13 @@ def create_accounting_period(
     db: Annotated[Session, Depends(get_db)],
 ) -> AccountingPeriodResponse:
     _require_owner_or_admin(membership)
+    # Serialize period creation per tenant on PostgreSQL. The organization row is
+    # the stable lock target even when no accounting periods exist yet.
+    db.scalar(
+        select(Organization.id)
+        .where(Organization.id == membership.organization_id)
+        .with_for_update()
+    )
     overlap = db.scalar(
         select(AccountingPeriod.id).where(
             AccountingPeriod.organization_id == membership.organization_id,
