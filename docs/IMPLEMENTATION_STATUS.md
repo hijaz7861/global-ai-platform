@@ -20,7 +20,7 @@ CI run 283 passed lint, compilation, Alembic migration consistency, and 68 tests
 
 ## Important remaining gaps
 - proxy-aware IP handling. A PostgreSQL 16 CI service now verifies migrations and concurrent refresh-token replay behavior; broader PostgreSQL workload/concurrency coverage remains open. Signing-key rotation now supports configured previous keys for verification; operators must remove previous keys after the old access-token lifetime and planned rotation window. Persistent account lockout is configured by `AUTH_ACCOUNT_LOCKOUT_THRESHOLD` and `AUTH_ACCOUNT_LOCKOUT_MINUTES`; failed-password counts clear after a successful login once the lock has expired. Refresh tokens are hashed, rotated, replay-protected, and cleaned only after every token in a family expires. Registration/login/password-reset/email-verification endpoints have database-backed request limits; proxy-aware client IP handling still needs deployment-specific review.
-- Membership invitations and broader role administration.
+- Broader role administration and organization membership-role changes.
 - Audit tamper-evidence, retention controls, and external log export.
 - Period-specific reporting and accounting-date persistence; database-enforced non-overlap/concurrency handling; full financial statements, reconciliation, payments, refunds, tax, and seller settlement.
 - Shipping, tax, product variants, external scheduler provisioning, and concurrency testing of all inventory/order paths.
