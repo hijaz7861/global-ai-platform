@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./global_ai_platform.db"
     secret_key: str | None = None
     access_token_expire_minutes: int = Field(default=30, ge=5, le=1440)
+    refresh_token_expire_days: int = Field(default=30, ge=1, le=90)
     password_reset_token_expire_minutes: int = Field(default=30, ge=5, le=120)
     auth_login_attempt_limit: int = Field(default=10, ge=3, le=100)
     auth_login_window_minutes: int = Field(default=15, ge=1, le=1440)
