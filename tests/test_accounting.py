@@ -205,3 +205,94 @@ def test_journal_reversal_is_immutable_idempotent_and_offsets_trial_balance(clie
     )
     assert trial.status_code == 200
     assert all(row["normal_balance_minor"] == 0 for row in trial.json())
+
+
+def test_accounting_period_overlap_close_and_posting_guard(client):
+    from datetime import datetime, timedelta, timezone
+
+    token, org_id = owner_and_org(client, "period-control@example.com")
+    today = datetime.now(timezone.utc).date()
+    period_payload = {
+        "name": "Current Period",
+        "starts_on": (today - timedelta(days=1)).isoformat(),
+        "ends_on": (today + timedelta(days=1)).isoformat(),
+    }
+    headers = {"Authorization": f"Bearer {token}"}
+    created = client.post(
+        f"/api/v1/organizations/{org_id}/accounting-periods",
+        headers=headers,
+        json=period_payload,
+    )
+    assert created.status_code == 201, created.text
+    period = created.json()
+    assert period["status"] == "open"
+
+    overlap = client.post(
+        f"/api/v1/organizations/{org_id}/accounting-periods",
+        headers=headers,
+        json={
+            "name": "Overlapping Period",
+            "starts_on": today.isoformat(),
+            "ends_on": (today + timedelta(days=10)).isoformat(),
+        },
+    )
+    assert overlap.status_code == 409
+
+    cash = create_account(client, token, org_id, "1000", "asset")
+    revenue = create_account(client, token, org_id, "4000", "revenue")
+    journal_headers = {**headers, "Idempotency-Key": "period-posting-001"}
+    payload = {
+        "description": "Sale in open period",
+        "lines": [
+            {"account_id": cash, "debit_minor": 500, "credit_minor": 0},
+            {"account_id": revenue, "debit_minor": 0, "credit_minor": 500},
+        ],
+    }
+    posted = client.post(
+        f"/api/v1/organizations/{org_id}/journal-entries",
+        headers=journal_headers,
+        json=payload,
+    )
+    assert posted.status_code == 201, posted.text
+
+    closed = client.post(
+        f"/api/v1/organizations/{org_id}/accounting-periods/{period['id']}/close",
+        headers=headers,
+    )
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["status"] == "closed"
+    assert closed.json()["closed_at"] is not None
+
+    closed_again = client.post(
+        f"/api/v1/organizations/{org_id}/accounting-periods/{period['id']}/close",
+        headers=headers,
+    )
+    assert closed_again.status_code == 200
+    assert closed_again.json()["status"] == "closed"
+
+    new_entry = client.post(
+        f"/api/v1/organizations/{org_id}/journal-entries",
+        headers={**headers, "Idempotency-Key": "period-posting-002"},
+        json=payload,
+    )
+    assert new_entry.status_code == 409
+    assert "accounting period" in new_entry.json()["detail"].lower()
+
+    # A replay of a successfully posted request remains idempotent after closure.
+    replay = client.post(
+        f"/api/v1/organizations/{org_id}/journal-entries",
+        headers=journal_headers,
+        json=payload,
+    )
+    assert replay.status_code == 201
+    assert replay.json()["id"] == posted.json()["id"]
+
+
+def test_accounting_period_rejects_invalid_date_range(client):
+    token, org_id = owner_and_org(client, "period-invalid@example.com")
+    response = client.post(
+        f"/api/v1/organizations/{org_id}/accounting-periods",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": "Invalid Period", "starts_on": "2026-12-31", "ends_on": "2026-01-01"},
+    )
+    assert response.status_code == 422
