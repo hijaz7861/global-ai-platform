@@ -3,7 +3,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from app.models import (
     PurchaseOrder,
     SupplierProfile,
     SupplierQuote,
+    SupplierQuoteRevision,
     utc_now,
 )
 from app.schemas import (
@@ -25,6 +26,7 @@ from app.schemas import (
     ProcurementRequestResponse,
     SupplierQuoteCreate,
     SupplierQuoteResponse,
+    SupplierQuoteRevisionResponse,
 )
 
 router = APIRouter(tags=["procurement"])
@@ -169,6 +171,18 @@ def submit_supplier_quote(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="This supplier has already quoted on the request") from None
+    db.add(
+        SupplierQuoteRevision(
+            supplier_quote_id=quote.id,
+            revision_number=1,
+            status="submitted",
+            unit_price_minor=quote.unit_price_minor,
+            currency=quote.currency,
+            lead_time_days=quote.lead_time_days,
+            notes=quote.notes,
+            actor_user_id=membership.user_id,
+        )
+    )
     record_audit_event(
         db,
         actor_user_id=membership.user_id,
@@ -183,6 +197,188 @@ def submit_supplier_quote(
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="This supplier has already quoted on the request") from None
+    db.refresh(quote)
+    return SupplierQuoteResponse.model_validate(quote)
+
+
+
+
+@router.get(
+    "/organizations/{organization_id}/procurement-requests/{request_id}/quotes/{quote_id}/revisions",
+    response_model=list[SupplierQuoteRevisionResponse],
+)
+def list_supplier_quote_revisions(
+    request_id: str,
+    quote_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[SupplierQuoteRevisionResponse]:
+    _require_owner_or_admin(membership)
+    request = db.scalar(select(ProcurementRequestRecord).where(ProcurementRequestRecord.id == request_id))
+    quote = db.scalar(
+        select(SupplierQuote).where(
+            SupplierQuote.id == quote_id,
+            SupplierQuote.procurement_request_id == request_id,
+        )
+    )
+    if request is None or quote is None:
+        raise HTTPException(status_code=404, detail="Supplier quote not found")
+    if (
+        request.buyer_organization_id != membership.organization_id
+        and quote.supplier_organization_id != membership.organization_id
+    ):
+        raise HTTPException(status_code=404, detail="Supplier quote not found")
+    revisions = db.scalars(
+        select(SupplierQuoteRevision)
+        .where(SupplierQuoteRevision.supplier_quote_id == quote.id)
+        .order_by(SupplierQuoteRevision.revision_number)
+    ).all()
+    return [SupplierQuoteRevisionResponse.model_validate(item) for item in revisions]
+
+
+@router.post(
+    "/organizations/{organization_id}/procurement-requests/{request_id}/quotes/{quote_id}/revise",
+    response_model=SupplierQuoteResponse,
+)
+def revise_supplier_quote(
+    request_id: str,
+    quote_id: str,
+    payload: SupplierQuoteCreate,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> SupplierQuoteResponse:
+    _require_owner_or_admin(membership)
+    request = db.scalar(
+        select(ProcurementRequestRecord)
+        .where(ProcurementRequestRecord.id == request_id)
+        .with_for_update()
+    )
+    if request is None or request.status != "open":
+        raise HTTPException(status_code=409, detail="Only open procurement requests accept quote revisions")
+    if request.buyer_organization_id == membership.organization_id:
+        raise HTTPException(status_code=403, detail="Only the supplier can revise its quote")
+    quote = db.scalar(
+        select(SupplierQuote)
+        .where(
+            SupplierQuote.id == quote_id,
+            SupplierQuote.procurement_request_id == request.id,
+            SupplierQuote.supplier_organization_id == membership.organization_id,
+        )
+        .with_for_update()
+    )
+    if quote is None:
+        raise HTTPException(status_code=404, detail="Supplier quote not found")
+    if quote.status not in {"submitted", "withdrawn"}:
+        raise HTTPException(status_code=409, detail="Only submitted or withdrawn quotes can be revised")
+    if payload.currency != request.currency:
+        raise HTTPException(status_code=422, detail="Quote currency must match the procurement request")
+    latest_revision = db.scalar(
+        select(func.max(SupplierQuoteRevision.revision_number)).where(
+            SupplierQuoteRevision.supplier_quote_id == quote.id
+        )
+    ) or 0
+    now = utc_now()
+    quote.unit_price_minor = payload.unit_price_minor
+    quote.currency = payload.currency
+    quote.lead_time_days = payload.lead_time_days
+    quote.notes = payload.notes.strip()
+    quote.status = "submitted"
+    quote.updated_at = now
+    db.add(
+        SupplierQuoteRevision(
+            supplier_quote_id=quote.id,
+            revision_number=latest_revision + 1,
+            status="submitted",
+            unit_price_minor=quote.unit_price_minor,
+            currency=quote.currency,
+            lead_time_days=quote.lead_time_days,
+            notes=quote.notes,
+            actor_user_id=membership.user_id,
+            created_at=now,
+        )
+    )
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="supplier_quote.revised",
+        entity_type="supplier_quote",
+        entity_id=quote.id,
+        details={"status": quote.status, "revision_number": latest_revision + 1},
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Quote revision conflicted with another update") from None
+    db.refresh(quote)
+    return SupplierQuoteResponse.model_validate(quote)
+
+
+@router.post(
+    "/organizations/{organization_id}/procurement-requests/{request_id}/quotes/{quote_id}/withdraw",
+    response_model=SupplierQuoteResponse,
+)
+def withdraw_supplier_quote(
+    request_id: str,
+    quote_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> SupplierQuoteResponse:
+    _require_owner_or_admin(membership)
+    request = db.scalar(
+        select(ProcurementRequestRecord).where(ProcurementRequestRecord.id == request_id)
+    )
+    if request is None or request.status != "open":
+        raise HTTPException(status_code=409, detail="Only open procurement requests accept quote withdrawals")
+    quote = db.scalar(
+        select(SupplierQuote).where(
+            SupplierQuote.id == quote_id,
+            SupplierQuote.procurement_request_id == request.id,
+            SupplierQuote.supplier_organization_id == membership.organization_id,
+        )
+    )
+    if quote is None:
+        raise HTTPException(status_code=404, detail="Supplier quote not found")
+    if quote.status == "withdrawn":
+        return SupplierQuoteResponse.model_validate(quote)
+    if quote.status != "submitted":
+        raise HTTPException(status_code=409, detail="Only submitted quotes can be withdrawn")
+    latest_revision = db.scalar(
+        select(func.max(SupplierQuoteRevision.revision_number)).where(
+            SupplierQuoteRevision.supplier_quote_id == quote.id
+        )
+    ) or 0
+    now = utc_now()
+    quote.status = "withdrawn"
+    quote.updated_at = now
+    db.add(
+        SupplierQuoteRevision(
+            supplier_quote_id=quote.id,
+            revision_number=latest_revision + 1,
+            status="withdrawn",
+            unit_price_minor=quote.unit_price_minor,
+            currency=quote.currency,
+            lead_time_days=quote.lead_time_days,
+            notes=quote.notes,
+            actor_user_id=membership.user_id,
+            created_at=now,
+        )
+    )
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="supplier_quote.withdrawn",
+        entity_type="supplier_quote",
+        entity_id=quote.id,
+        details={"status": quote.status, "revision_number": latest_revision + 1},
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Quote withdrawal conflicted with another update") from None
     db.refresh(quote)
     return SupplierQuoteResponse.model_validate(quote)
 
