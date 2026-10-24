@@ -25,11 +25,14 @@ def signing_key_is_configured() -> bool:
     return bool(settings.secret_key and len(settings.secret_key) >= _MIN_SIGNING_KEY_LENGTH)
 
 
-def create_access_token(subject: str, auth_version: int = 0) -> str:
+def create_access_token(subject: str, auth_version: int = 0, session_id: str | None = None) -> str:
     if not signing_key_is_configured():
         raise RuntimeError("SECRET_KEY must contain at least 32 characters before issuing tokens")
     expires = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    return jwt.encode({"sub": subject, "exp": expires, "jti": str(uuid4()), "ver": auth_version}, settings.secret_key, algorithm=_ALGORITHM)
+    claims = {"sub": subject, "exp": expires, "jti": str(uuid4()), "ver": auth_version}
+    if session_id is not None:
+        claims["sid"] = session_id
+    return jwt.encode(claims, settings.secret_key, algorithm=_ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
