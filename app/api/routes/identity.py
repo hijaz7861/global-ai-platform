@@ -418,6 +418,7 @@ def confirm_mfa(
 @router.post("/mfa/recovery-codes", response_model=MFARecoveryCodesResponse)
 def regenerate_mfa_recovery_codes(
     payload: MFARecoveryCodesRequest,
+    response: Response,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> MFARecoveryCodesResponse:
@@ -454,6 +455,8 @@ def regenerate_mfa_recovery_codes(
         details={"count": len(raw_codes)},
     )
     db.commit()
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return MFARecoveryCodesResponse(codes=raw_codes)
 
 
