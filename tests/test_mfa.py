@@ -154,6 +154,8 @@ def test_mfa_recovery_codes_are_hash_only_single_use_and_regenerable(client, mon
         json={"password": password, "code": fresh_code},
     )
     assert generated.status_code == 200, generated.text
+    assert generated.headers["cache-control"] == "no-store"
+    assert generated.headers["pragma"] == "no-cache"
     codes = generated.json()["codes"]
     assert len(codes) == 10
     assert len(set(codes)) == 10
