@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str = "sqlite:///./global_ai_platform.db"
     secret_key: str | None = None
+    previous_secret_keys: str = ""
     access_token_expire_minutes: int = Field(default=30, ge=5, le=1440)
     refresh_token_expire_days: int = Field(default=30, ge=1, le=90)
     mfa_enrollment_expire_minutes: int = Field(default=10, ge=5, le=30)
