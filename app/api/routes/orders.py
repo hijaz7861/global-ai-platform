@@ -191,6 +191,29 @@ def cancel_my_order(
     if order.status != "pending_payment":
         raise HTTPException(status_code=409, detail="Order can no longer be cancelled")
 
+    # The conditional transition is the single-winner gate. FOR UPDATE alone is
+    # ignored by SQLite and does not protect against double stock restoration.
+    transitioned = db.execute(
+        update(Order)
+        .where(
+            Order.id == order.id,
+            Order.user_id == user.id,
+            Order.status == "pending_payment",
+        )
+        .values(status="cancelled")
+        .execution_options(synchronize_session=False)
+    )
+    if transitioned.rowcount != 1:
+        db.rollback()
+        current = db.scalar(
+            select(Order).where(Order.id == order_id, Order.user_id == user.id)
+        )
+        if current is None:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if current.status == "cancelled":
+            return _response(current)
+        raise HTTPException(status_code=409, detail="Order can no longer be cancelled")
+
     organization_id = order.items[0].listing_organization_id if order.items else None
     for item in order.items:
         db.execute(
