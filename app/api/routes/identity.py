@@ -9,6 +9,8 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -24,7 +26,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db import get_db
-from app.models import AuthAttempt, EmailVerificationToken, PasswordResetToken, RefreshToken, TokenRevocation, User, utc_now
+from app.models import AuthAttempt, AuthRateLimitLock, EmailVerificationToken, PasswordResetToken, RefreshToken, TokenRevocation, User, utc_now
 from app.schemas import EmailVerificationConfirm, LoginRequest, MFAConfirmRequest, MFADisableRequest, MFAEnrollRequest, MFAEnrollmentResponse, PasswordResetConfirm, PasswordResetRequest, RefreshTokenRequest, RegisterRequest, TokenResponse
 from app.services.email import send_email_verification, send_password_reset_email
 
@@ -63,10 +65,31 @@ def _rate_limit_subject(identifier: str, request: Request) -> str:
 def _record_auth_attempt(
     db: Session, *, scope: str, subject_hash: str, limit: int, window_minutes: int
 ) -> None:
-    """Enforce a database-backed sliding window shared by API workers."""
+    """Serialize each subject's sliding-window check and insert across workers."""
     now = utc_now()
     cutoff = now - timedelta(minutes=window_minutes)
+    lock_values = {"scope": scope, "subject_hash": subject_hash, "touched_at": now}
+    dialect = db.get_bind().dialect.name
+    if dialect == "sqlite":
+        lock_insert = sqlite_insert(AuthRateLimitLock)
+    elif dialect == "postgresql":
+        lock_insert = postgresql_insert(AuthRateLimitLock)
+    else:
+        raise RuntimeError("Auth rate limiting requires SQLite or PostgreSQL")
+
+    # Acquire a per-subject write/row lock before counting so concurrent requests
+    # cannot both pass the same limit based on the same prior count.
+    db.execute(
+        lock_insert.values(**lock_values).on_conflict_do_update(
+            index_elements=[AuthRateLimitLock.scope, AuthRateLimitLock.subject_hash],
+            set_={"touched_at": now},
+        )
+    )
+    db.execute(
+        delete(AuthRateLimitLock).where(AuthRateLimitLock.touched_at < now - timedelta(hours=24))
+    )
     db.execute(delete(AuthAttempt).where(AuthAttempt.created_at < now - timedelta(hours=24)))
+    db.flush()
     count = db.scalar(
         select(func.count()).select_from(AuthAttempt).where(
             AuthAttempt.scope == scope,
@@ -83,7 +106,6 @@ def _record_auth_attempt(
         )
     db.add(AuthAttempt(scope=scope, subject_hash=subject_hash, created_at=now))
     db.commit()
-
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
