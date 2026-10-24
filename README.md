@@ -12,7 +12,8 @@ A private, modular project for building a global business platform incrementally
 - Tenant-scoped catalog listings with owner/admin publication, plus public search, currency and price filters, and bounded pagination.
 - Organization-scoped supplier onboarding with draft/submitted/approved/rejected states and platform-admin review.
 - Owner/admin inventory adjustments with nonnegative stock checks, append-only before/after history, optional reason, and transaction-bound audit events.
-- Order creation with conditional stock reservation and per-buyer idempotency.
+- Order creation with conditional stock reservation, per-buyer idempotency, and a configurable unpaid-order expiry timestamp.
+- Platform-admin-only expiry sweep that marks overdue unpaid orders expired, restores stock once, and records an audit event; external scheduler setup is required for automatic recurring runs.
 - Buyer-only order reads, seller-scoped order summaries, and unpaid-order cancellation with one-time stock release.
 - Owner/admin chart of accounts, balanced idempotent journal posting, and a derived trial balance.
 - Transaction-bound allowlisted audit events for organization, catalog, order, and ledger operations.
@@ -37,7 +38,7 @@ python -m pytest -q
 uvicorn app.main:app --reload
 ```
 
-Set a unique random `SECRET_KEY` of at least 32 characters in `.env` before using login. `REFRESH_TOKEN_EXPIRE_DAYS` controls refresh-session lifetime (1–90 days); clients must replace refresh tokens after each successful `/api/v1/auth/refresh` response and discard the old token. Configure `SMTP_HOST`, `SMTP_FROM_EMAIL`, and SMTP credentials to deliver password-reset email; reset requests use the same response for known and unknown accounts. Set `PLATFORM_ADMIN_EMAILS` to a comma-separated allowlist for supplier review; leave it empty to disable platform-admin review access. Live AI calls stay disabled unless deliberately enabled in configuration. For PostgreSQL deployments, use `DATABASE_URL=postgresql+psycopg://...` and install `python -m pip install 'psycopg[binary]>=3.2,<4'`.
+Set a unique random `SECRET_KEY` of at least 32 characters in `.env` before using login. `REFRESH_TOKEN_EXPIRE_DAYS` controls refresh-session lifetime (1–90 days), and `ORDER_PAYMENT_EXPIRE_MINUTES` controls the unpaid-order reservation window (5–10080 minutes); clients must replace refresh tokens after each successful `/api/v1/auth/refresh` response and discard the old token. Configure `SMTP_HOST`, `SMTP_FROM_EMAIL`, and SMTP credentials to deliver password-reset email; reset requests use the same response for known and unknown accounts. Set `PLATFORM_ADMIN_EMAILS` to a comma-separated allowlist for supplier review; leave it empty to disable platform-admin review access. Live AI calls stay disabled unless deliberately enabled in configuration. For PostgreSQL deployments, use `DATABASE_URL=postgresql+psycopg://...` and install `python -m pip install 'psycopg[binary]>=3.2,<4'`.
 
 Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/health`.
 
