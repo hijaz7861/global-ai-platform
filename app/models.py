@@ -458,6 +458,30 @@ class SupplierQuote(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 
+class SupplierQuoteRevision(Base):
+    """Append-only snapshots of supplier quote submissions, revisions, and withdrawals."""
+    __tablename__ = "supplier_quote_revisions"
+    __table_args__ = (
+        UniqueConstraint("supplier_quote_id", "revision_number", name="uq_supplier_quote_revision_number"),
+        CheckConstraint("revision_number > 0", name="ck_supplier_quote_revision_number_positive"),
+        CheckConstraint("unit_price_minor > 0", name="ck_supplier_quote_revision_price_positive"),
+        CheckConstraint("lead_time_days >= 0", name="ck_supplier_quote_revision_lead_time_nonnegative"),
+        CheckConstraint("status IN ('submitted','withdrawn')", name="ck_supplier_quote_revisions_status"),
+        Index("ix_supplier_quote_revisions_quote_created", "supplier_quote_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    supplier_quote_id: Mapped[str] = mapped_column(ForeignKey("supplier_quotes.id", ondelete="RESTRICT"), nullable=False)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    unit_price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    lead_time_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    notes: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
+    actor_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
 class PurchaseOrder(Base):
     """Issued purchase commitment for the awarded supplier quote."""
     __tablename__ = "purchase_orders"
