@@ -145,3 +145,63 @@ def test_idempotency_key_mismatch_is_rejected(client):
     ]}
     response = client.post(f"/api/v1/organizations/{org_id}/journal-entries", headers=headers, json=changed)
     assert response.status_code == 409
+
+
+def test_journal_reversal_is_immutable_idempotent_and_offsets_trial_balance(client):
+    token, org_id = owner_and_org(client, "reversal@example.com")
+    cash = create_account(client, token, org_id, "1000", "asset")
+    revenue = create_account(client, token, org_id, "4000", "revenue")
+    headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "journal-original-01"}
+    payload = {
+        "description": "Sale to reverse",
+        "lines": [
+            {"account_id": cash, "debit_minor": 1250, "credit_minor": 0},
+            {"account_id": revenue, "debit_minor": 0, "credit_minor": 1250},
+        ],
+    }
+    original = client.post(
+        f"/api/v1/organizations/{org_id}/journal-entries",
+        headers=headers,
+        json=payload,
+    )
+    assert original.status_code == 201, original.text
+
+    reverse_headers = {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": "journal-reversal-01",
+    }
+    url = f"/api/v1/organizations/{org_id}/journal-entries/{original.json()['id']}/reverse"
+    reversal = client.post(url, headers=reverse_headers)
+    assert reversal.status_code == 201, reversal.text
+    assert reversal.json()["total_minor"] == 1250
+    assert {line["account_id"]: (line["debit_minor"], line["credit_minor"]) for line in reversal.json()["lines"]} == {
+        cash: (0, 1250),
+        revenue: (1250, 0),
+    }
+    replay = client.post(url, headers=reverse_headers)
+    assert replay.status_code == 201
+    assert replay.json()["id"] == reversal.json()["id"]
+
+    second_reversal = client.post(
+        url,
+        headers={**reverse_headers, "Idempotency-Key": "journal-reversal-02"},
+    )
+    assert second_reversal.status_code == 409
+    reverse_a_reversal = client.post(
+        f"/api/v1/organizations/{org_id}/journal-entries/{reversal.json()['id']}/reverse",
+        headers={**reverse_headers, "Idempotency-Key": "journal-reversal-03"},
+    )
+    assert reverse_a_reversal.status_code == 409
+
+    entries = client.get(
+        f"/api/v1/organizations/{org_id}/journal-entries",
+        headers=reverse_headers,
+    )
+    assert entries.status_code == 200
+    assert len(entries.json()) == 2
+    trial = client.get(
+        f"/api/v1/organizations/{org_id}/trial-balance",
+        headers=reverse_headers,
+    )
+    assert trial.status_code == 200
+    assert all(row["normal_balance_minor"] == 0 for row in trial.json())
