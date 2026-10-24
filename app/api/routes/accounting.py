@@ -647,7 +647,7 @@ def get_account_ledger(
         opening_conditions.append(
             or_(
                 JournalEntry.created_at < cursor_time,
-                and_(JournalEntry.created_at == cursor_time, JournalEntry.id < after_entry_id),
+                and_(JournalEntry.created_at == cursor_time, JournalEntry.id <= after_entry_id),
             )
         )
     elif starts_at is not None:
