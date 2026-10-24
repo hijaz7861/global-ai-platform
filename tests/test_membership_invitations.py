@@ -109,6 +109,34 @@ def test_membership_invitation_is_email_bound_single_use_and_audited(monkeypatch
             )
             assert replay.status_code == 400
 
+            revoked_invite = client.post(
+                f"/api/v1/organizations/{org_id}/invitations",
+                headers=owner_headers,
+                json={"email": "revoked-member@example.com", "role": "member"},
+            )
+            assert revoked_invite.status_code == 201, revoked_invite.text
+            revoked_token = delivered["token"]
+            revoked = client.post(
+                f"/api/v1/organizations/{org_id}/invitations/{revoked_invite.json()['id']}/revoke",
+                headers=owner_headers,
+            )
+            assert revoked.status_code == 204
+            assert client.post(
+                "/api/v1/auth/register",
+                json={"email": "revoked-member@example.com", "password": password},
+            ).status_code == 201
+            revoked_login = client.post(
+                "/api/v1/auth/token",
+                json={"email": "revoked-member@example.com", "password": password},
+            )
+            revoked_headers = {"Authorization": f"Bearer {revoked_login.json()['access_token']}"}
+            revoked_accept = client.post(
+                "/api/v1/invitations/accept",
+                headers=revoked_headers,
+                json={"token": revoked_token},
+            )
+            assert revoked_accept.status_code == 400
+
             members = client.get(
                 f"/api/v1/organizations/{org_id}/memberships",
                 headers=owner_headers,
@@ -126,6 +154,7 @@ def test_membership_invitation_is_email_bound_single_use_and_audited(monkeypatch
             actions = {row["action"] for row in audit.json()}
             assert "membership.invitation_created" in actions
             assert "membership.invitation_accepted" in actions
+            assert "membership.invitation_revoked" in actions
     finally:
         app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=engine)
