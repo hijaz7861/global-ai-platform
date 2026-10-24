@@ -75,6 +75,7 @@ def create_accounting_period(
         created_by_user_id=membership.user_id,
     )
     db.add(period)
+    db.flush()
     record_audit_event(
         db,
         actor_user_id=membership.user_id,
@@ -233,7 +234,6 @@ def post_journal_entry(
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)],
 ) -> JournalEntryResponse:
     _require_owner_or_admin(membership)
-    _ensure_open_period_for_today(db, membership.organization_id)
 
     normalized_lines = sorted(
         [
@@ -261,6 +261,7 @@ def post_journal_entry(
             raise HTTPException(status_code=409, detail="Idempotency-Key was used for a different journal entry")
         return _entry_response(existing)
 
+    _ensure_open_period_for_today(db, membership.organization_id)
     account_ids = {line.account_id for line in payload.lines}
     accounts = db.scalars(
         select(Account).where(
@@ -362,7 +363,6 @@ def reverse_journal_entry(
 ) -> JournalEntryResponse:
     """Post one immutable counter-entry; never mutate or delete the original."""
     _require_owner_or_admin(membership)
-    _ensure_open_period_for_today(db, membership.organization_id)
 
     fingerprint = hashlib.sha256(
         json.dumps({"reversal_of_id": entry_id}, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -378,6 +378,7 @@ def reverse_journal_entry(
             raise HTTPException(status_code=409, detail="Idempotency-Key was used for a different journal entry")
         return _entry_response(existing)
 
+    _ensure_open_period_for_today(db, membership.organization_id)
     source = db.scalar(
         select(JournalEntry).where(
             JournalEntry.id == entry_id,
