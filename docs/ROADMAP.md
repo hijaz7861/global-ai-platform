@@ -16,4 +16,4 @@
 14. **Expansion modules:** rentals, real estate, workforce, education and business operations.
 15. **Readiness:** threat model, integration/regression tests, observability, backup restore, staging review.
 
-Identity hardening now includes optional encrypted TOTP MFA and refresh-token rotation, with CI coverage. MFA recovery codes, account lockout, expired-token cleanup, safe key rotation, and concurrency-safe rate limiting remain open. Every phase needs acceptance criteria and automated tests. Production deployment requires explicit owner approval. CI passing is not equivalent to production readiness.
+Identity hardening now includes optional encrypted TOTP MFA and refresh-token rotation, with CI coverage. MFA recovery codes, account lockout, safe key rotation, PostgreSQL concurrency integration tests, and proxy-aware IP handling remain open. Atomic subject-lock rate limiting and an admin-triggered expired-record cleanup endpoint are implemented. Every phase needs acceptance criteria and automated tests. Production deployment requires explicit owner approval. CI passing is not equivalent to production readiness.
