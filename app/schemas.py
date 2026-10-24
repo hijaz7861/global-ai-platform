@@ -107,12 +107,27 @@ class ListingResponse(BaseModel):
 
 class InventoryAdjustmentRequest(BaseModel):
     delta: int = Field(ge=-2_000_000_000, le=2_000_000_000)
+    reason: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
     def reject_zero_adjustment(self):
         if self.delta == 0:
             raise ValueError("Inventory adjustment must not be zero")
         return self
+
+
+class InventoryAdjustmentResponse(BaseModel):
+    id: str
+    organization_id: str
+    listing_id: str
+    actor_user_id: str
+    delta: int
+    quantity_before: int
+    quantity_after: int
+    reason: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class OrderCreate(BaseModel):
