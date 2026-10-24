@@ -22,7 +22,7 @@ def upgrade() -> None:
         sa.Column("unit_price_minor", sa.BigInteger(), nullable=False),
         sa.Column("total_minor", sa.BigInteger(), nullable=False),
         sa.Column("currency", sa.String(length=3), nullable=False),
-        sa.Column("status", sa.String(length=16), server_default="issued", nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("created_by_user_id", sa.String(length=36), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
