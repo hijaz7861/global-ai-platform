@@ -22,13 +22,13 @@ from app.core.security import (
     verify_password,
 )
 from app.db import get_db
-from app.models import AuthAttempt, PasswordResetToken, TokenRevocation, User, utc_now
-from app.schemas import LoginRequest, PasswordResetConfirm, PasswordResetRequest, RegisterRequest, TokenResponse
-from app.services.email import send_password_reset_email
+from app.models import AuthAttempt, EmailVerificationToken, PasswordResetToken, TokenRevocation, User, utc_now
+from app.schemas import EmailVerificationConfirm, LoginRequest, PasswordResetConfirm, PasswordResetRequest, RegisterRequest, TokenResponse
+from app.services.email import send_email_verification, send_password_reset_email
 
 router = APIRouter(prefix="/auth", tags=["identity"])
 logger = logging.getLogger(__name__)
-_RESET_ACCEPTED = {"message": "If the account exists, reset instructions will be sent."}
+_RESET_ACCEPTED = {"message": "If the account exists, reset instructions will be sent."}\n_VERIFICATION_ACCEPTED = {"message": "If the account needs verification, instructions will be sent."}
 
 
 def _rate_limit_subject(identifier: str, request: Request) -> str:
@@ -64,19 +64,150 @@ def _record_auth_attempt(
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
+def register(payload: RegisterRequest, request: Request, db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
+    _record_auth_attempt(
+        db,
+        scope="register",
+        subject_hash=_rate_limit_subject(str(payload.email), request),
+        limit=settings.auth_register_attempt_limit,
+        window_minutes=settings.auth_register_window_minutes,
+    )
     existing = db.scalar(select(User).where(User.email == payload.email))
     if existing is not None:
         raise HTTPException(status_code=409, detail="An account with this email already exists")
-    user = User(email=str(payload.email), password_hash=hash_password(payload.password))
+    user = User(
+        email=str(payload.email),
+        password_hash=hash_password(payload.password),
+        email_verified=False,
+    )
     db.add(user)
     try:
+        db.flush()
+        raw_token = secrets.token_urlsafe(32)
+        token_record = EmailVerificationToken(
+            user_id=user.id,
+            token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+            expires_at=utc_now() + timedelta(minutes=settings.email_verification_token_expire_minutes),
+        )
+        db.add(token_record)
         db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail="An account with this email already exists") from None
-    db.refresh(user)
-    return {"id": user.id, "email": user.email, "status": "created"}
+    try:
+        send_email_verification(user.email, raw_token)
+    except Exception:
+        logger.warning("Email verification delivery failed; check SMTP configuration and service health")
+        db.execute(
+            update(EmailVerificationToken)
+            .where(EmailVerificationToken.id == token_record.id, EmailVerificationToken.used_at.is_(None))
+            .values(used_at=utc_now())
+        )
+        db.commit()
+        return {"id": user.id, "email": user.email, "status": "verification_email_pending"}
+    return {"id": user.id, "email": user.email, "status": "pending_verification"}
+
+
+@router.post("/email-verification/confirm", status_code=status.HTTP_204_NO_CONTENT)
+def confirm_email_verification(
+    payload: EmailVerificationConfirm,
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """Atomically consume a valid one-time token and verify the owning account."""
+    now = utc_now()
+    digest = hashlib.sha256(payload.token.encode("utf-8")).hexdigest()
+    record = db.scalar(
+        select(EmailVerificationToken).where(EmailVerificationToken.token_hash == digest)
+    )
+    if record is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+    consumed = db.execute(
+        update(EmailVerificationToken)
+        .where(
+            EmailVerificationToken.id == record.id,
+            EmailVerificationToken.used_at.is_(None),
+            EmailVerificationToken.expires_at > now,
+        )
+        .values(used_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if consumed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+    user = db.scalar(select(User).where(User.id == record.user_id, User.is_active.is_(True)))
+    if user is None:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+    user.email_verified = True
+    db.execute(
+        update(EmailVerificationToken)
+        .where(
+            EmailVerificationToken.user_id == user.id,
+            EmailVerificationToken.id != record.id,
+            EmailVerificationToken.used_at.is_(None),
+        )
+        .values(used_at=now)
+    )
+    record_audit_event(
+        db,
+        actor_user_id=user.id,
+        organization_id=None,
+        action="auth.email_verified",
+        entity_type="user",
+        entity_id=user.id,
+        details={"status": "verified"},
+    )
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/email-verification/request", status_code=status.HTTP_202_ACCEPTED)
+def request_email_verification(
+    payload: PasswordResetRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, str]:
+    """Resend verification without disclosing whether an account exists."""
+    _record_auth_attempt(
+        db,
+        scope="email_verification",
+        subject_hash=_rate_limit_subject(str(payload.email), request),
+        limit=settings.password_reset_request_limit,
+        window_minutes=settings.password_reset_window_minutes,
+    )
+    user = db.scalar(
+        select(User).where(User.email == str(payload.email), User.is_active.is_(True))
+    )
+    if user is None or user.email_verified:
+        return _VERIFICATION_ACCEPTED
+    now = utc_now()
+    db.execute(
+        update(EmailVerificationToken)
+        .where(
+            EmailVerificationToken.user_id == user.id,
+            EmailVerificationToken.used_at.is_(None),
+        )
+        .values(used_at=now)
+    )
+    raw_token = secrets.token_urlsafe(32)
+    record = EmailVerificationToken(
+        user_id=user.id,
+        token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+        expires_at=now + timedelta(minutes=settings.email_verification_token_expire_minutes),
+    )
+    db.add(record)
+    db.commit()
+    try:
+        send_email_verification(user.email, raw_token)
+    except Exception:
+        logger.warning("Email verification delivery failed; check SMTP configuration and service health")
+        db.execute(
+            update(EmailVerificationToken)
+            .where(EmailVerificationToken.id == record.id, EmailVerificationToken.used_at.is_(None))
+            .values(used_at=utc_now())
+        )
+        db.commit()
+    return _VERIFICATION_ACCEPTED
 
 
 @router.post("/token", response_model=TokenResponse)
@@ -91,6 +222,8 @@ def login(payload: LoginRequest, request: Request, db: Annotated[Session, Depend
     if not signing_key_is_configured():
         raise HTTPException(status_code=503, detail="A SECRET_KEY of at least 32 characters is required")
     user = db.scalar(select(User).where(User.email == str(payload.email)))
+    if user is not None and user.is_active and verify_password(payload.password, user.password_hash) and not user.email_verified:
+        raise HTTPException(status_code=403, detail="Email verification required")
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password",
                             headers={"WWW-Authenticate": "Bearer"})
