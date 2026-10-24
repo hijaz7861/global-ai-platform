@@ -47,11 +47,8 @@ def _existing_idempotent_order(
     )
     if existing is None:
         return None
-    if (
-        len(existing.items) != 1
-        or existing.items[0].listing_id != payload.listing_id
-        or existing.items[0].quantity != payload.quantity
-    ):
+    existing_lines = sorted((item.listing_id, item.quantity) for item in existing.items)
+    if existing_lines != payload.normalized_items():
         raise HTTPException(
             status_code=409,
             detail="Idempotency-Key was already used for a different order request",
@@ -70,57 +67,73 @@ def create_order(
     if existing is not None:
         return existing
 
-    listing = db.scalar(
-        select(Listing).where(Listing.id == payload.listing_id, Listing.status == "active")
-    )
-    if listing is None:
-        raise HTTPException(status_code=404, detail="Active listing not found")
+    requested_lines = payload.normalized_items()
+    listing_ids = [listing_id for listing_id, _ in requested_lines]
+    listings = db.scalars(
+        select(Listing).where(Listing.id.in_(listing_ids), Listing.status == "active")
+    ).all()
+    listing_by_id = {listing.id: listing for listing in listings}
+    if len(listing_by_id) != len(requested_lines):
+        raise HTTPException(status_code=404, detail="One or more active listings were not found")
 
-    stock_update = db.execute(
-        update(Listing)
-        .where(
-            Listing.id == listing.id,
-            Listing.status == "active",
-            Listing.inventory_quantity >= payload.quantity,
+    currencies = {listing_by_id[listing_id].currency for listing_id, _ in requested_lines}
+    if len(currencies) != 1:
+        raise HTTPException(status_code=422, detail="All items in one order must use the same currency")
+    total_minor = sum(listing_by_id[listing_id].price_minor * quantity for listing_id, quantity in requested_lines)
+    if total_minor <= 0 or total_minor > 9_000_000_000_000_000:
+        raise HTTPException(status_code=422, detail="Order total exceeds the supported monetary limit")
+
+    # Lock/decrement listings in stable order; every decrement is conditional and rolls back as a unit.
+    for listing_id, quantity in sorted(requested_lines):
+        stock_update = db.execute(
+            update(Listing)
+            .where(
+                Listing.id == listing_id,
+                Listing.status == "active",
+                Listing.inventory_quantity >= quantity,
+            )
+            .values(inventory_quantity=Listing.inventory_quantity - quantity)
+            .execution_options(synchronize_session=False)
         )
-        .values(inventory_quantity=Listing.inventory_quantity - payload.quantity)
-        .execution_options(synchronize_session=False)
-    )
-    if stock_update.rowcount != 1:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="Insufficient inventory")
+        if stock_update.rowcount != 1:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Insufficient inventory for one or more items")
 
     order = Order(
         id=str(uuid4()),
         user_id=user.id,
         idempotency_key=idempotency_key,
         status="pending_payment",
-        total_minor=listing.price_minor * payload.quantity,
+        total_minor=total_minor,
+        currency=next(iter(currencies)),
         expires_at=utc_now() + timedelta(minutes=settings.order_payment_expire_minutes),
-        currency=listing.currency,
     )
     db.add(order)
     db.flush()
-    db.add(
-        OrderItem(
-            id=str(uuid4()),
-            order_id=order.id,
-            listing_id=listing.id,
-            listing_organization_id=listing.organization_id,
-            title_snapshot=listing.title,
-            quantity=payload.quantity,
-            unit_price_minor=listing.price_minor,
-        )
+    db.add_all(
+        [
+            OrderItem(
+                id=str(uuid4()),
+                order_id=order.id,
+                listing_id=listing_id,
+                listing_organization_id=listing_by_id[listing_id].organization_id,
+                title_snapshot=listing_by_id[listing_id].title,
+                quantity=quantity,
+                unit_price_minor=listing_by_id[listing_id].price_minor,
+            )
+            for listing_id, quantity in requested_lines
+        ]
     )
+    organization_ids = {listing_by_id[listing_id].organization_id for listing_id, _ in requested_lines}
     record_audit_event(
         db,
         actor_user_id=user.id,
-        organization_id=listing.organization_id,
+        organization_id=next(iter(organization_ids)) if len(organization_ids) == 1 else None,
         action="order.created",
         entity_type="order",
         entity_id=order.id,
         details={
-            "quantity": payload.quantity,
+            "quantity": sum(quantity for _, quantity in requested_lines),
             "price_minor": order.total_minor,
             "currency": order.currency,
             "status": order.status,
@@ -136,7 +149,6 @@ def create_order(
         raise HTTPException(status_code=409, detail="Order could not be created") from None
     db.refresh(order)
     return _response(order)
-
 
 @router.get("", response_model=list[OrderResponse])
 def list_my_orders(
