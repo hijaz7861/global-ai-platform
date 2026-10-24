@@ -9,6 +9,8 @@ from uuid import uuid4
 import pytest
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import DBAPIError
 
 from app.main import app
 
@@ -201,3 +203,56 @@ def test_concurrent_overlapping_accounting_periods_are_serialized_per_tenant():
         )
     assert periods.status_code == 200, periods.text
     assert len(periods.json()) == 1
+
+
+
+def test_audit_events_are_database_enforced_append_only():
+    suffix = uuid4().hex
+    email = f"postgres-audit-{suffix}@example.com"
+    password = "correct-horse-battery-12"
+    with TestClient(app) as client:
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        organization = client.post(
+            "/api/v1/organizations",
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+            json={"name": f"Append-only audit {suffix[:8]}"},
+        )
+        assert organization.status_code == 201, organization.text
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    try:
+        with engine.connect() as connection:
+            event_id = connection.scalar(
+                text(
+                    "SELECT id FROM audit_events "
+                    "WHERE organization_id = :org_id AND action = 'organization.created' "
+                    "ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"org_id": organization.json()["id"]},
+            )
+        assert event_id
+
+        with pytest.raises(DBAPIError, match="audit_events are append-only"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("UPDATE audit_events SET action = 'tampered' WHERE id = :event_id"),
+                    {"event_id": event_id},
+                )
+
+        with pytest.raises(DBAPIError, match="audit_events are append-only"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("DELETE FROM audit_events WHERE id = :event_id"),
+                    {"event_id": event_id},
+                )
+    finally:
+        engine.dispose()
