@@ -3,7 +3,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -340,15 +340,6 @@ def create_purchase_order(
         entity_id=order.id,
         details={"total_minor": total_minor, "currency": order.currency, "status": order.status},
     )
-    record_audit_event(
-        db,
-        actor_user_id=membership.user_id,
-        organization_id=quote.supplier_organization_id,
-        action="purchase_order.received",
-        entity_type="purchase_order",
-        entity_id=order.id,
-        details={"status": order.status},
-    )
     try:
         db.commit()
     except IntegrityError:
@@ -472,6 +463,9 @@ def cancel_purchase_order(
     )
     if transitioned.rowcount != 1:
         db.rollback()
+        current = db.scalar(select(PurchaseOrder).where(PurchaseOrder.id == purchase_order_id))
+        if current is not None and current.status == "cancelled":
+            return PurchaseOrderResponse.model_validate(current)
         raise HTTPException(status_code=409, detail="Purchase order is no longer available for cancellation")
     order.status = "cancelled"
     order.updated_at = now
