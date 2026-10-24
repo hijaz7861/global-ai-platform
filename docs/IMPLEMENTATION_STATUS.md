@@ -16,7 +16,7 @@
 - Optional Docker packaging that applies migrations before starting the API.
 
 ## Verification status
-CI run 313 passed lint, compilation, Alembic migration consistency, and 69 tests (1 PostgreSQL-only test skipped) on Python 3.11, 3.12, and 3.13. Its PostgreSQL 16 job passed lint, all migrations, schema consistency, and 1 concurrent refresh-token replay integration test. The membership invitation lifecycle, cleanup, account lockout, and account-ledger pagination are included in this run. The prior 54 SQLAlchemy foreign-key-cycle warnings were resolved by marking the migration-managed cycle explicitly; only the existing Starlette/httpx deprecation warning remains. One Starlette/httpx deprecation warning remains. No production deployment, live payment processing, or live paid AI request has occurred.
+CI run 323 passed lint, compilation, Alembic migration consistency, and 69 tests (1 PostgreSQL-only test skipped) on Python 3.11, 3.12, and 3.13. Its PostgreSQL 16 job passed lint, all migrations, schema consistency, and 1 concurrent refresh-token replay integration test. The membership invitation lifecycle, cleanup, account lockout, account-ledger pagination, and purchase-order lifecycle are included in this run. The prior 54 SQLAlchemy foreign-key-cycle warnings were resolved by marking the migration-managed cycle explicitly; only the existing Starlette/httpx deprecation warning remains. One Starlette/httpx deprecation warning remains. No production deployment, live payment processing, or live paid AI request has occurred.
 
 ## Important remaining gaps
 - Deployment-specific proxy-aware client IP handling and broader PostgreSQL workload/concurrency coverage. CI now runs migrations and a concurrent refresh-token replay test against PostgreSQL 16.
