@@ -22,6 +22,7 @@ A private, modular project for building a global business platform incrementally
 - Orders remain `pending_payment`; no payment is charged or processed.
 - SQLAlchemy models and Alembic migrations for identity, rotating refresh-token families, tenants, catalog, inventory adjustment history, orders, audit, accounting periods, journal entries and reversals, token revocation, password reset, and supplier profiles.
 - GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks.
+- Platform-admin security cleanup endpoint for expired credentials and stale throttle records; schedule it through a trusted external scheduler.
 - Optional Docker packaging that applies migrations before starting the API.
 
 ## Run locally
@@ -75,4 +76,4 @@ Refresh-token behavior: login returns a short-lived access token plus a random r
 
 See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Catalog](docs/CATALOG.md), [Orders](docs/ORDERS.md), [Supplier Procurement](docs/PROCUREMENT.md), [Accounting](docs/ACCOUNTING.md), [AI Orchestration](docs/AI_ORCHESTRATION.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
 
-MFA recovery codes, account lockout, stronger concurrency-safe throttling, invitations, expanded role administration, payment processing, period-specific financial reporting, reconciliation, provider routing/fallback, native provider integrations, agent tools, external connectors, purchase orders and supplier fulfilment, logistics, rentals, real estate, workforce, and education remain future work. Do not expose this foundation publicly as a production service.
+MFA recovery codes, account lockout, PostgreSQL concurrency verification for throttling, invitations, expanded role administration, payment processing, period-specific financial reporting, reconciliation, provider routing/fallback, native provider integrations, agent tools, external connectors, purchase orders and supplier fulfilment, logistics, rentals, real estate, workforce, and education remain future work. Do not expose this foundation publicly as a production service.
