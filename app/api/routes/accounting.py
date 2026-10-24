@@ -226,6 +226,104 @@ def list_journal_entries(
 
 
 
+@router.post(
+    "/organizations/{organization_id}/journal-entries/{entry_id}/reverse",
+    response_model=JournalEntryResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def reverse_journal_entry(
+    entry_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)],
+) -> JournalEntryResponse:
+    """Post one immutable counter-entry; never mutate or delete the original."""
+    if membership.role not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Owner or admin role required")
+
+    fingerprint = hashlib.sha256(
+        json.dumps({"reversal_of_id": entry_id}, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    existing = db.scalar(
+        select(JournalEntry).where(
+            JournalEntry.organization_id == membership.organization_id,
+            JournalEntry.idempotency_key == idempotency_key,
+        )
+    )
+    if existing is not None:
+        if existing.request_fingerprint != fingerprint:
+            raise HTTPException(status_code=409, detail="Idempotency-Key was used for a different journal entry")
+        return _entry_response(existing)
+
+    source = db.scalar(
+        select(JournalEntry).where(
+            JournalEntry.id == entry_id,
+            JournalEntry.organization_id == membership.organization_id,
+        )
+    )
+    if source is None:
+        raise HTTPException(status_code=404, detail="Journal entry not found")
+    if source.reversal_of_id is not None:
+        raise HTTPException(status_code=409, detail="A reversal entry cannot itself be reversed")
+    prior_reversal = db.scalar(
+        select(JournalEntry.id).where(
+            JournalEntry.organization_id == membership.organization_id,
+            JournalEntry.reversal_of_id == source.id,
+        )
+    )
+    if prior_reversal is not None:
+        raise HTTPException(status_code=409, detail="Journal entry has already been reversed")
+
+    reversal = JournalEntry(
+        id=str(uuid4()),
+        organization_id=membership.organization_id,
+        created_by_user_id=membership.user_id,
+        idempotency_key=idempotency_key,
+        request_fingerprint=fingerprint,
+        reversal_of_id=source.id,
+        description=f"Reversal of {source.id}: {source.description}"[:500],
+        currency=source.currency,
+        total_minor=source.total_minor,
+        status="posted",
+    )
+    db.add(reversal)
+    db.flush()
+    for line in source.lines:
+        db.add(
+            JournalLine(
+                id=str(uuid4()),
+                journal_entry_id=reversal.id,
+                account_id=line.account_id,
+                debit_minor=line.credit_minor,
+                credit_minor=line.debit_minor,
+            )
+        )
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="journal_entry.reversed",
+        entity_type="journal_entry",
+        entity_id=reversal.id,
+        details={"reversal_of_id": source.id, "total_minor": source.total_minor, "currency": source.currency},
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(
+            select(JournalEntry).where(
+                JournalEntry.organization_id == membership.organization_id,
+                JournalEntry.idempotency_key == idempotency_key,
+            )
+        )
+        if existing is not None and existing.request_fingerprint == fingerprint:
+            return _entry_response(existing)
+        raise HTTPException(status_code=409, detail="Journal entry has already been reversed or could not be posted") from None
+    db.refresh(reversal)
+    return _entry_response(reversal)
+
+
 @router.get(
     "/organizations/{organization_id}/trial-balance",
     response_model=list[TrialBalanceLineResponse],
