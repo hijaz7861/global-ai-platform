@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     true,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -35,6 +36,11 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default=true(), nullable=False)
     auth_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    mfa_secret_encrypted: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    mfa_pending_secret_encrypted: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    mfa_pending_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    mfa_last_verified_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     memberships: Mapped[list["Membership"]] = relationship(
