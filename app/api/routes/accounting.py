@@ -1,12 +1,12 @@
 """Tenant-scoped chart of accounts and immutable balanced journal posting."""
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import func, select
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,8 @@ from app.db import get_db
 from app.models import Account, AccountingPeriod, JournalEntry, JournalLine, Membership
 from app.schemas import (
     AccountCreate,
+    AccountLedgerEntryResponse,
+    AccountLedgerResponse,
     AccountResponse,
     AccountingPeriodCreate,
     AccountingPeriodResponse,
@@ -585,3 +587,146 @@ def get_period_trial_balance(
             )
         )
     return result
+
+
+@router.get(
+    "/organizations/{organization_id}/accounts/{account_id}/ledger",
+    response_model=AccountLedgerResponse,
+)
+def get_account_ledger(
+    account_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    after_created_at: datetime | None = Query(default=None),
+    after_entry_id: str | None = Query(default=None, min_length=1, max_length=36),
+) -> AccountLedgerResponse:
+    """Return a bounded, cursor-paginated account ledger with a derived opening/running balance."""
+    _require_owner_or_admin(membership)
+    if start_date is not None and end_date is not None and end_date < start_date:
+        raise HTTPException(status_code=422, detail="end_date must not precede start_date")
+    if (after_created_at is None) != (after_entry_id is None):
+        raise HTTPException(status_code=422, detail="Both cursor fields must be supplied together")
+
+    account = db.scalar(
+        select(Account).where(
+            Account.id == account_id,
+            Account.organization_id == membership.organization_id,
+        )
+    )
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    starts_at = (
+        datetime.combine(start_date, time.min, tzinfo=timezone.utc)
+        if start_date is not None
+        else None
+    )
+    ends_before = (
+        datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=timezone.utc)
+        if end_date is not None
+        else None
+    )
+    cursor_time = after_created_at
+    if cursor_time is not None and cursor_time.tzinfo is None:
+        cursor_time = cursor_time.replace(tzinfo=timezone.utc)
+    if cursor_time is not None and starts_at is not None and cursor_time < starts_at:
+        raise HTTPException(status_code=422, detail="Cursor precedes start_date")
+    if cursor_time is not None and ends_before is not None and cursor_time >= ends_before:
+        raise HTTPException(status_code=422, detail="Cursor is outside the requested date range")
+
+    opening_boundary = cursor_time or starts_at
+    if opening_boundary is None:
+        opening_balance = 0
+    else:
+        signed_total = db.scalar(
+            select(
+                func.coalesce(
+                    func.sum(JournalLine.debit_minor - JournalLine.credit_minor),
+                    0,
+                )
+            )
+            .join(JournalEntry, JournalEntry.id == JournalLine.journal_entry_id)
+            .where(
+                JournalEntry.organization_id == membership.organization_id,
+                JournalEntry.status == "posted",
+                JournalLine.account_id == account.id,
+                JournalEntry.created_at < opening_boundary,
+            )
+        ) or 0
+        opening_balance = int(signed_total)
+        if account.account_type not in {"asset", "expense"}:
+            opening_balance = -opening_balance
+
+    conditions = [
+        JournalEntry.organization_id == membership.organization_id,
+        JournalEntry.status == "posted",
+        JournalLine.account_id == account.id,
+    ]
+    if starts_at is not None:
+        conditions.append(JournalEntry.created_at >= starts_at)
+    if ends_before is not None:
+        conditions.append(JournalEntry.created_at < ends_before)
+    if cursor_time is not None and after_entry_id is not None:
+        conditions.append(
+            or_(
+                JournalEntry.created_at > cursor_time,
+                and_(JournalEntry.created_at == cursor_time, JournalEntry.id > after_entry_id),
+            )
+        )
+
+    rows = db.execute(
+        select(
+            JournalEntry.id,
+            JournalEntry.created_at,
+            JournalEntry.description,
+            func.sum(JournalLine.debit_minor).label("debit_minor"),
+            func.sum(JournalLine.credit_minor).label("credit_minor"),
+        )
+        .join(JournalLine, JournalLine.journal_entry_id == JournalEntry.id)
+        .where(*conditions)
+        .group_by(JournalEntry.id, JournalEntry.created_at, JournalEntry.description)
+        .order_by(JournalEntry.created_at, JournalEntry.id)
+        .limit(limit + 1)
+    ).all()
+    has_more = len(rows) > limit
+    page_rows = rows[:limit]
+    running = opening_balance
+    entries: list[AccountLedgerEntryResponse] = []
+    for entry_id, created_at, description, debit, credit in page_rows:
+        debit_minor = int(debit)
+        credit_minor = int(credit)
+        delta = debit_minor - credit_minor
+        if account.account_type not in {"asset", "expense"}:
+            delta = -delta
+        running += delta
+        entries.append(
+            AccountLedgerEntryResponse(
+                journal_entry_id=entry_id,
+                created_at=created_at,
+                description=description,
+                debit_minor=debit_minor,
+                credit_minor=credit_minor,
+                running_balance_minor=running,
+            )
+        )
+
+    next_created_at = entries[-1].created_at if has_more and entries else None
+    next_entry_id = entries[-1].journal_entry_id if has_more and entries else None
+    return AccountLedgerResponse(
+        account_id=account.id,
+        code=account.code,
+        name=account.name,
+        account_type=account.account_type,
+        currency=account.currency,
+        start_date=start_date,
+        end_date=end_date,
+        opening_balance_minor=opening_balance,
+        closing_balance_minor=running,
+        entries=entries,
+        has_more=has_more,
+        next_cursor_created_at=next_created_at,
+        next_cursor_entry_id=next_entry_id,
+    )
