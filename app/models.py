@@ -392,7 +392,7 @@ class ProcurementRequestRecord(Base):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
-    awarded_quote_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    awarded_quote_id: Mapped[str | None] = mapped_column(ForeignKey("supplier_quotes.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
