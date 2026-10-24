@@ -518,6 +518,7 @@ def disable_mfa(
         .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
         .values(revoked_at=now)
     )
+    db.execute(delete(MFARecoveryCode).where(MFARecoveryCode.user_id == user.id))
     record_audit_event(
         db,
         actor_user_id=user.id,
