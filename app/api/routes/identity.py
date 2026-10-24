@@ -28,7 +28,8 @@ from app.services.email import send_email_verification, send_password_reset_emai
 
 router = APIRouter(prefix="/auth", tags=["identity"])
 logger = logging.getLogger(__name__)
-_RESET_ACCEPTED = {"message": "If the account exists, reset instructions will be sent."}\n_VERIFICATION_ACCEPTED = {"message": "If the account needs verification, instructions will be sent."}
+_RESET_ACCEPTED = {"message": "If the account exists, reset instructions will be sent."}
+_VERIFICATION_ACCEPTED = {"message": "If the account needs verification, instructions will be sent."}
 
 
 def _rate_limit_subject(identifier: str, request: Request) -> str:
