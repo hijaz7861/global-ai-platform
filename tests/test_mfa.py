@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app import models  # noqa: F401
 from app.core.config import settings
 from app.core.mfa import decrypt_totp_secret, encrypt_totp_secret, generate_totp_code
+from app.rotate_mfa_secrets import rotate_mfa_secrets
 from app.db import Base, get_db
 from app.main import app
 from app.models import User
@@ -264,3 +265,23 @@ def test_mfa_decryption_rejects_invalid_previous_key_configuration(monkeypatch):
     monkeypatch.setattr(settings, "previous_secret_keys", "short")
     with pytest.raises(ValueError, match="current/previous SECRET_KEY"):
         decrypt_totp_secret("bm90LWEtc2VjcmV0")
+
+
+
+def test_mfa_rotation_utility_reencrypts_secrets_under_current_key(client, monkeypatch):
+    old_key = settings.secret_key
+    password, access_token, secret = enroll_and_confirm(client, "mfa-rotate@example.com")
+    new_key = "new-current-signing-key-for-mfa-rotation-0001"
+    monkeypatch.setattr(settings, "secret_key", new_key)
+    monkeypatch.setattr(settings, "previous_secret_keys", old_key)
+
+    db = client.testing_sessions()
+    try:
+        assert rotate_mfa_secrets(db) == 1
+        db.commit()
+        user = db.scalar(select(User).where(User.email == "mfa-rotate@example.com"))
+        assert user is not None and user.mfa_secret_encrypted is not None
+        monkeypatch.setattr(settings, "previous_secret_keys", "")
+        assert decrypt_totp_secret(user.mfa_secret_encrypted) == secret
+    finally:
+        db.close()
