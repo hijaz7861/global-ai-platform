@@ -1,7 +1,7 @@
 # Delivery Roadmap
 
 1. **Foundation — in draft:** FastAPI API, health contract, CI, database migration workflow, linting.
-2. **Identity and initial tenancy — implemented, hardening remains:** users, password hashing, bearer tokens with logout revocation, organizations, owner/admin membership management, tenant-scoped access.
+2. **Identity and initial tenancy — implemented, hardening remains:** users, password hashing, bearer tokens with logout revocation, persistent login/password-reset request rate limits, organizations, owner/admin membership management, tenant-scoped access.
 3. **Catalog MVP — initial slice implemented:** listings, draft/active publication, public search and currency/price filters, bounded pagination, minor-unit pricing.
 4. **Order/inventory MVP — initial slice implemented:** single-listing orders, conditional stock reservation, per-buyer idempotency, buyer-scoped reads, unpaid-order cancellation, stock release, owner/admin inventory adjustments, seller-scoped order summaries.
 5. **Accounting ledger — initial slice implemented:** tenant-scoped chart of accounts, balanced journal posting, derived trial balance, currency/account checks, idempotency, and audit events.

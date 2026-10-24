@@ -5,9 +5,9 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,7 +22,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db import get_db
-from app.models import PasswordResetToken, TokenRevocation, User, utc_now
+from app.models import AuthAttempt, PasswordResetToken, TokenRevocation, User, utc_now
 from app.schemas import LoginRequest, PasswordResetConfirm, PasswordResetRequest, RegisterRequest, TokenResponse
 from app.services.email import send_password_reset_email
 

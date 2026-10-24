@@ -283,3 +283,17 @@ class SupplierProfile(Base):
     reviewed_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class AuthAttempt(Base):
+    """Privacy-minimized persistent rate-limit events for sensitive auth endpoints."""
+    __tablename__ = "auth_attempts"
+    __table_args__ = (
+        Index("ix_auth_attempt_scope_subject_created", "scope", "subject_hash", "created_at"),
+        Index("ix_auth_attempt_created", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
