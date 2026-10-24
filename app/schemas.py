@@ -18,11 +18,27 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
+    totp_code: str | None = Field(default=None, pattern=r"^\d{6}$")
 
     @field_validator("email")
     @classmethod
     def normalize_email(cls, value: EmailStr) -> str:
         return str(value).strip().lower()
+
+
+class MFAConfirmRequest(BaseModel):
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class MFADisableRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class MFAEnrollmentResponse(BaseModel):
+    secret: str
+    otpauth_uri: str
+    expires_in_seconds: int
 
 
 class EmailVerificationConfirm(BaseModel):
