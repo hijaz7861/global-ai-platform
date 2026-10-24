@@ -2,12 +2,20 @@
 
 These tests run only in the dedicated PostgreSQL CI job after Alembic migrations.
 """
+import os
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
+
+import pytest
 
 from fastapi.testclient import TestClient
 
 from app.main import app
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("DATABASE_URL", "").startswith("postgresql"),
+    reason="Dedicated PostgreSQL integration database is required",
+)
 
 
 def test_concurrent_refresh_replay_revokes_session_family():
