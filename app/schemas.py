@@ -378,6 +378,80 @@ class PasswordResetConfirm(BaseModel):
     new_password: str = Field(min_length=12, max_length=128)
 
 
+class ProcurementRequestCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=200)
+    description: str = Field(default="", max_length=3000)
+    quantity: int = Field(gt=0, le=2_000_000_000)
+    currency: str = Field(min_length=3, max_length=3)
+
+    @field_validator("title")
+    @classmethod
+    def normalize_procurement_title(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Title must contain at least two non-space characters")
+        return normalized
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_procurement_currency(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if len(normalized) != 3 or not normalized.isascii() or not normalized.isalpha():
+            raise ValueError("Currency must be a three-letter ASCII code")
+        return normalized
+
+
+class ProcurementRequestResponse(BaseModel):
+    id: str
+    buyer_organization_id: str
+    created_by_user_id: str
+    title: str
+    description: str
+    quantity: int
+    currency: str
+    status: str
+    awarded_quote_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SupplierQuoteCreate(BaseModel):
+    unit_price_minor: int = Field(gt=0, le=9_000_000_000_000_000)
+    currency: str = Field(min_length=3, max_length=3)
+    lead_time_days: int = Field(ge=0, le=3650)
+    notes: str = Field(default="", max_length=2000)
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_quote_currency(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if len(normalized) != 3 or not normalized.isascii() or not normalized.isalpha():
+            raise ValueError("Currency must be a three-letter ASCII code")
+        return normalized
+
+
+class SupplierQuoteResponse(BaseModel):
+    id: str
+    procurement_request_id: str
+    supplier_organization_id: str
+    created_by_user_id: str
+    unit_price_minor: int
+    currency: str
+    lead_time_days: int
+    notes: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProcurementAwardRequest(BaseModel):
+    quote_id: str = Field(min_length=1, max_length=36)
+
+
 class SupplierProfileCreate(BaseModel):
     legal_name: str = Field(min_length=2, max_length=200)
     business_type: Literal["manufacturer", "distributor", "wholesaler", "retailer", "service_provider", "other"]
