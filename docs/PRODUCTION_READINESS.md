@@ -4,6 +4,7 @@ This checklist is deliberately not marked complete merely because CI passes. Com
 
 ## Current verified automation
 - [x] Ruff lint and Python compilation in CI.
+- [x] Dependency vulnerability audit (`pip-audit`) in CI; latest run reports no known vulnerabilities for resolved requirements.
 - [x] Alembic upgrade consistency on Python 3.11, 3.12, and 3.13.
 - [x] PostgreSQL 16 full migration and schema-consistency job.
 - [x] PostgreSQL concurrent refresh-token replay integration test.
