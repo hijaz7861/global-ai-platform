@@ -9,7 +9,7 @@
 7. **AI adapter — guarded initial slice:** OpenAI-compatible endpoint adapter, output caps, timeout, audit events, opt-in and request quota. Multi-provider routing and agents remain future work.
 8. **Commerce hardening — partial:** multi-item carts and an idempotent expiry sweep are implemented and CI-verified. External scheduler provisioning, database concurrency tests, and full inventory/order race-condition coverage remain open.
 9. **Financial hardening — next:** period-specific account balances/reports, reconciliation, approvals, and payment sandbox.
-10. **Supplier operations — initial slice implemented:** organization-owned supplier profile, submission, platform-admin review, rejection reason and resubmission. Initial procurement requests, approved-supplier quotes, single-winner award and closure workflow are implemented and CI-verified; purchase orders and fulfilment remain next.
+10. **Supplier operations — initial slice implemented:** organization-owned supplier profile, submission, platform-admin review, rejection reason and resubmission. Initial procurement requests, approved-supplier quotes, single-winner award and closure, idempotent purchase-order issue, buyer cancellation, and supplier fulfilment are implemented and CI-verified; quote revisions/withdrawals and fulfilment integrations remain next.
 11. **Logistics and fulfilment:** shipping quotes, tracking, returns and disputes.
 12. **AI orchestration:** provider registry, budgets, tool permissions, audit, human approval and bounded retries.
 13. **Connector hub:** OAuth lifecycle, scoped tokens, webhook signature verification, retry handling and revocation.
