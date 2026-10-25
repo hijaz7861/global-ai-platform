@@ -11,6 +11,7 @@ This checklist is deliberately not marked complete merely because CI passes. Com
 - [x] PostgreSQL concurrent refresh-token replay integration test.
 - [x] PostgreSQL concurrent single-unit inventory reservation test.
 - [x] PostgreSQL concurrent cancellation test verifies inventory is released exactly once.
+- [x] PostgreSQL cancellation-versus-expiry race test verifies inventory is released exactly once.
 - [x] PostgreSQL concurrent overlapping accounting-period creation test.
 - [x] Database triggers reject UPDATE/DELETE of audit events on PostgreSQL and SQLite.
 - [x] API tests for authentication, tenant boundaries, orders, procurement, accounting, and security maintenance.
