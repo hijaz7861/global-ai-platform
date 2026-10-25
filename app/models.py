@@ -352,6 +352,26 @@ class BankReconciliationSession(Base):
     )
 
 
+class BankReconciliationImportBatch(Base):
+    """Auditable provenance record for one bounded statement CSV import."""
+    __tablename__ = "bank_reconciliation_import_batches"
+    __table_args__ = (
+        UniqueConstraint("session_id", "content_sha256", name="uq_recon_import_session_digest"),
+        Index("ix_recon_import_session_created", "session_id", "created_at"),
+        CheckConstraint("row_count >= 0", name="ck_recon_import_row_count"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("bank_reconciliation_sessions.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
 class BankReconciliationLine(Base):
     """A signed bank statement movement matched to at most one posted cash-account journal line."""
     __tablename__ = "bank_reconciliation_lines"
@@ -370,6 +390,9 @@ class BankReconciliationLine(Base):
     description: Mapped[str] = mapped_column(String(300), nullable=False)
     amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     external_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    import_batch_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bank_reconciliation_import_batches.id", ondelete="RESTRICT"), nullable=True
+    )
     matched_journal_line_id: Mapped[str | None] = mapped_column(
         ForeignKey("journal_lines.id", ondelete="RESTRICT"), nullable=True
     )
