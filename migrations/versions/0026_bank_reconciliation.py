@@ -62,7 +62,7 @@ def upgrade() -> None:
     if dialect == "postgresql":
         op.execute(
             """
-            CREATE FUNCTION reject_overlapping_bank_reconciliation() RETURNS trigger AS $
+            CREATE FUNCTION reject_overlapping_bank_reconciliation() RETURNS trigger AS $function$
             BEGIN
                 PERFORM id FROM accounts WHERE id = NEW.account_id FOR UPDATE;
                 IF EXISTS (
@@ -76,7 +76,7 @@ def upgrade() -> None:
                 END IF;
                 RETURN NEW;
             END;
-            $ LANGUAGE plpgsql
+            $function$ LANGUAGE plpgsql
             """
         )
         op.execute(
