@@ -1,44 +1,46 @@
 # Security Baseline
 
 ## Implemented controls in the draft foundation
-- Passwords are hashed using Argon2 via pwdlib; plaintext passwords are never stored.
-- Signed bearer-token login is disabled unless `SECRET_KEY` is at least 32 characters.
-- Short-lived access tokens are paired with hashed, rotating refresh tokens. Reuse of a consumed refresh token revokes its session family; logout revokes the family and its access tokens.
-- Optional TOTP MFA requires password reauthentication to enroll/disable, encrypts secrets with AES-GCM using a key derived from `SECRET_KEY`, and prevents reuse of the same TOTP time step.
-- Password reset uses random one-time tokens, stores only SHA-256 digests, expires tokens, and consumes them atomically.
-- Password-reset and email-verification requests return generic responses to reduce account enumeration; delivery uses configurable SMTP and does not log tokens.
-- Registration, login, password-reset, and email-verification request endpoints use persistent database-backed rate limits keyed by a digest of normalized account identifier and direct peer address; responses include `Retry-After` when limited. The current count-and-insert limiter is not fully concurrency-safe, and proxy-aware IP handling requires deployment review.
-- A successful password reset increments the user's authentication version and invalidates previously issued bearer tokens.
-- Supplier profile reads are organization-membership scoped; changes require owner/admin membership, while review requires an authenticated account in the explicit `PLATFORM_ADMIN_EMAILS` allowlist.
-- Organization and listing reads are scoped to authenticated membership.
-- Orders are visible only to their buyer; unpaid orders have a configurable expiry and a platform-admin-only idempotent sweep releases reserved stock once.
-- Procurement requests and quotes enforce buyer/supplier tenant boundaries, require approved suppliers to quote, and support a single awarded quote.
-- Order creation uses conditional inventory updates, per-user idempotency keys, and a transaction.
-- Audit records are written in the same transaction as selected organization, listing, and order operations.
-- Audit detail values are allowlisted; request bodies, passwords, tokens, and secret values are not copied into event details.
-- `.gitignore` excludes local environment files, virtual environments, caches, and build artifacts.
-- A platform-admin-only cleanup endpoint removes expired verification/reset tokens, expired access-token revocations, fully expired refresh-token families, and stale rate-limit rows. It retains refresh-token history while any token in that family remains unexpired.
-- CI checks compilation, database migrations, and tests on Python 3.11–3.13.
+- Passwords are hashed with Argon2; bearer-token issuance fails closed unless `SECRET_KEY` has at least 32 characters.
+- Short-lived access tokens use hashed, rotating refresh tokens. Reuse of a consumed refresh token revokes its session family; logout revokes the session family and access tokens.
+- TOTP MFA secrets are encrypted with AES-GCM using a key derived from `SECRET_KEY`; MFA supports hash-only single-use recovery codes, password reauthentication for enrollment/disable, and replay protection.
+- Previous signing keys can validate existing tokens during a controlled rotation. `python -m app.rotate_mfa_secrets` re-encrypts stored MFA secrets; this procedure still requires staging validation.
+- Email verification and password-reset tokens are random, single-use, expiring, and stored as SHA-256 digests. Generic responses reduce account enumeration; SMTP delivery is configurable.
+- Login, registration, password reset, email verification and related identity requests use persistent rate limiting. Atomic subject locks are implemented for SQLite/PostgreSQL; account lockout is persistent. Forwarded client IPs are accepted only when the direct peer matches explicitly configured `TRUSTED_PROXY_IPS`.
+- Organization, membership, supplier, procurement, order, inventory, and accounting endpoints enforce tenant-specific access checks; cross-tenant regression tests cover key flows.
+- Orders use conditional inventory updates, transaction boundaries, per-user idempotency, multi-item validation, cancellation and expiry stock release. PostgreSQL tests cover oversell prevention and concurrent cancellation.
+- Procurement enforces approved-supplier quote submission, tenant boundaries, a single awarded quote, and transactional purchase-order issue/fulfilment states.
+- Journal entries are balanced, idempotent and immutable; corrections use one-time reversing entries. Period overlap is blocked by application checks and PostgreSQL/SQLite triggers.
+- Audit events are allowlisted and transaction-bound for selected sensitive operations. Migration 0024 adds database triggers rejecting UPDATE/DELETE of audit rows on PostgreSQL and SQLite.
+- AI calls are disabled by default, restricted to organization owners/admins, require explicit configuration and PostgreSQL quota serialization, cap response sizes, reject redirects, and avoid logging prompts, credentials or provider response bodies.
+- Security maintenance and unpaid-order expiry are available through the bounded one-shot `python -m app.maintenance` runner. Recurring scheduling and alerting are operator-owned.
+- CI runs Ruff, compilation, Alembic consistency, pytest on Python 3.11–3.13, PostgreSQL 16 integration tests, dependency auditing, and Bandit.
+
+## Verification evidence
+- CI run 412 at commit `e8c4c871ddfecbb76d95d874f807aefce803635c`: 81 passed and 5 PostgreSQL-environment-dependent tests skipped on each Python matrix job; PostgreSQL 16 integration job 5 passed; dependency-audit job passed.
+- A new PostgreSQL concurrent-cancellation test was added after run 412 and must be treated as pending until a newer CI run passes.
+- Static checks and CI are not an independent security audit and do not prove production configuration or deployment readiness.
 
 ## Current limitations
-- MFA has no recovery-code flow yet. MFA secret decryption depends on retaining the same `SECRET_KEY`; rotating that key without a planned re-enrollment strategy makes existing MFA secrets unreadable.
-- MFA has no recovery-code flow yet. MFA secret decryption depends on retaining the same `SECRET_KEY`; rotating that key without a planned re-enrollment strategy makes existing MFA secrets unreadable.
-- Rate limiting supports SQLite/PostgreSQL atomic subject locks, but PostgreSQL concurrency testing and trusted-proxy/IP configuration remain unverified.
-- Audit records are application-level records; immutability against a database administrator, external log export, retention controls, and tamper-evidence are not implemented.
-- Tenant isolation is demonstrated on organization, catalog, supplier-profile, accounting, audit, and buyer-order routes; every new tenant-owned query must enforce its own authorization boundary.
-- No payment provider or real payment processing is connected.
-- PostgreSQL-specific concurrency, production secrets management, backups, and incident response have not been verified.
+- Multi-provider AI routing/fallback, monetary budgets, tool permissions, and autonomous agent workflows are not implemented.
+- Payment processing, refunds, tax, seller settlement and financial reconciliation are not implemented.
+- Audit triggers do not protect against a privileged database operator disabling them. Cryptographic hash chaining, external log export and retention policy remain open.
+- PostgreSQL concurrency coverage is improving but does not cover every order, inventory, accounting and procurement race.
+- Signing-key rotation and MFA secret re-encryption need staging validation.
+- SMTP, trusted proxy CIDRs, production secrets, scheduler, monitoring, backups and incident response are not configured by CI.
+- Tenant isolation must be reviewed for every newly added endpoint and connector.
 
 ## Required before production
-- Complete threat modeling and an independent security review.
-- Harden atomic rate limiting, add account lockout and MFA recovery codes, define safe secret-key rotation, and validate a complete secure session lifecycle.
-- Verify tenant scoping for every new endpoint and add cross-tenant regression tests.
-- Protect audit retention and export logs to a separate access-controlled destination.
-- Keep secrets in a secret manager; never commit real credentials.
-- Add dependency/security scanning, backup/restore exercises, and incident procedures.
-- Restrict connector scopes and outbound network access; apply timeouts and budgets.
-- Require explicit human approval for high-risk financial or irreversible actions.
-- Use sandbox payment credentials for integration tests.
-- Require explicit owner approval before paid services or production deployment.
+- Complete threat modeling and an independent security review, including MFA recovery, session revocation, admin allowlists, trusted proxies, tenant isolation and high-risk action approval.
+- Validate key rotation and MFA login in staging.
+- Configure managed PostgreSQL with TLS, least-privilege roles, connection limits and protected migration credentials.
+- Configure SMTP and verify email, password-reset and invitation delivery/failure behavior with real test mailboxes.
+- Keep live AI disabled until provider budget, permissions and approval controls are reviewed.
+- Configure HTTPS, ingress limits, log redaction, trusted proxy IPs/CIDRs, monitoring and alerting.
+- Schedule and monitor `python -m app.maintenance`; verify retry behavior and idempotency.
+- Configure encrypted backups, retention, isolated restore drills, RPO/RTO, rollback and incident procedures.
+- Review accounting semantics, reconciliation, payment/refund/tax scope and audit export/retention.
+- Run production-like PostgreSQL load/concurrency tests and verify privacy, terms, retention/deletion, support and incident ownership.
+- Require explicit owner approval before paid services, real payment processing or production deployment.
 
-Never call a system secure solely because these requirements are documented.
+Never call a system secure solely because these requirements are documented or CI passes.
