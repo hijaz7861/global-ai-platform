@@ -9,7 +9,6 @@ from app import models  # noqa: F401
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.api.routes import ai as ai_routes
 
 
 @pytest.fixture
