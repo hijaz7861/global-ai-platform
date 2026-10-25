@@ -546,11 +546,22 @@ class BankReconciliationLineResponse(BaseModel):
     description: str
     amount_minor: int
     external_reference: str | None
+    import_batch_id: str | None
     matched_journal_line_id: str | None
     matched_at: datetime | None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BankReconciliationImportResponse(BaseModel):
+    import_batch_id: str
+    session_id: str
+    content_sha256: str
+    row_count: int
+    source_filename: str | None
+    created_at: datetime
+    replayed: bool = False
 
 
 class BankReconciliationResponse(BaseModel):
