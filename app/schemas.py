@@ -400,6 +400,7 @@ class JournalEntryCreate(BaseModel):
 
 
 class JournalLineResponse(BaseModel):
+    id: str
     account_id: str
     debit_minor: int
     credit_minor: int
