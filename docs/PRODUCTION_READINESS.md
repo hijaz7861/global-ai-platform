@@ -48,3 +48,5 @@ A release owner must review the evidence above and explicitly approve the releas
 - [x] SQLite/API tests cover reconciliation correction, unmatch/rematch, and completed-session immutability.
 
 - [x] PostgreSQL integration test verifies concurrent reconciliation matches cannot reuse one journal line.
+
+- [ ] Verify CI for the new journal-entry period trigger and posting-versus-closure concurrency test (migration 0027).
