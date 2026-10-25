@@ -270,6 +270,7 @@ class SellerOrderResponse(BaseModel):
 class ChatRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=8000)
     max_output_tokens: int = Field(default=256, ge=1, le=2048)
+    provider: Literal["primary", "fallback"] = "primary"
 
     @field_validator("prompt")
     @classmethod
