@@ -323,9 +323,9 @@ def test_csv_import_is_atomic_provenanced_and_idempotent(client):
     assert created.status_code == 201, created.text
     session_id = created.json()["id"]
     csv_bytes = (
-        "statement_date,description,amount_minor,external_reference\\n"
-        f"{today},Deposit,500,BANK-CSV-001\\n"
-        f"{today},Withdrawal,-200,BANK-CSV-002\\n"
+        "statement_date,description,amount_minor,external_reference\n"
+        f"{today},Deposit,500,BANK-CSV-001\n"
+        f"{today},Withdrawal,-200,BANK-CSV-002\n"
     ).encode()
     import_url = f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines/import-csv"
     csv_headers = {**headers, "Content-Type": "text/csv", "X-Import-Filename": "../bank-statement.csv"}
@@ -356,9 +356,9 @@ def test_csv_import_is_atomic_provenanced_and_idempotent(client):
     ).json()) == 2
 
     bad_csv = (
-        "statement_date,description,amount_minor,external_reference\\n"
-        f"{today},Valid row,100,BANK-CSV-003\\n"
-        f"{today},Invalid zero,0,BANK-CSV-004\\n"
+        "statement_date,description,amount_minor,external_reference\n"
+        f"{today},Valid row,100,BANK-CSV-003\n"
+        f"{today},Invalid zero,0,BANK-CSV-004\n"
     ).encode()
     rejected = client.post(import_url, headers=csv_headers, content=bad_csv)
     assert rejected.status_code == 422
@@ -390,16 +390,16 @@ def test_csv_import_rejects_duplicate_references_and_malformed_headers(client):
     url = f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines/import-csv"
     csv_headers = {**headers, "Content-Type": "text/csv"}
     duplicate_refs = (
-        "statement_date,description,amount_minor,external_reference\\n"
-        f"{today},First,50,DUPLICATE\\n"
-        f"{today},Second,50,DUPLICATE\\n"
+        "statement_date,description,amount_minor,external_reference\n"
+        f"{today},First,50,DUPLICATE\n"
+        f"{today},Second,50,DUPLICATE\n"
     ).encode()
     rejected = client.post(url, headers=csv_headers, content=duplicate_refs)
     assert rejected.status_code == 422
     wrong_header = client.post(
         url,
         headers=csv_headers,
-        content=b"date,description,amount_minor,external_reference\\n2026-01-01,Wrong,100,REF-1\\n",
+        content=b"date,description,amount_minor,external_reference\n2026-01-01,Wrong,100,REF-1\n",
     )
     assert wrong_header.status_code == 422
     lines = client.get(
