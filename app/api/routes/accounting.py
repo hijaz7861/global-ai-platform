@@ -172,6 +172,7 @@ def _entry_response(entry: JournalEntry) -> JournalEntryResponse:
         created_at=entry.created_at,
         lines=[
             JournalLineResponse(
+                id=line.id,
                 account_id=line.account_id,
                 debit_minor=line.debit_minor,
                 credit_minor=line.credit_minor,
