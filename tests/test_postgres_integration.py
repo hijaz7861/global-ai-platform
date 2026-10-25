@@ -722,3 +722,121 @@ def test_concurrent_reconciliation_match_cannot_reuse_journal_line():
         )
     assert lines.status_code == 200, lines.text
     assert sum(line["matched_journal_line_id"] is not None for line in lines.json()) == 1
+
+
+def test_journal_posting_serializes_with_period_closure_and_trigger_blocks_closed_period():
+    from datetime import datetime, timedelta, timezone
+
+    suffix = uuid4().hex
+    email = f"postgres-period-post-{suffix}@example.com"
+    password = "correct-horse-battery-12"
+    with TestClient(app) as client:
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        organization = client.post(
+            "/api/v1/organizations",
+            headers=headers,
+            json={"name": f"Posting Closure Race {suffix[:8]}"},
+        )
+        assert organization.status_code == 201, organization.text
+        organization_id = organization.json()["id"]
+        cash = client.post(
+            f"/api/v1/organizations/{organization_id}/accounts",
+            headers=headers,
+            json={"code": "1000", "name": "Cash", "account_type": "asset", "currency": "PKR"},
+        )
+        revenue = client.post(
+            f"/api/v1/organizations/{organization_id}/accounts",
+            headers=headers,
+            json={"code": "4000", "name": "Revenue", "account_type": "revenue", "currency": "PKR"},
+        )
+        assert cash.status_code == 201 and revenue.status_code == 201
+        today = datetime.now(timezone.utc).date()
+        period = client.post(
+            f"/api/v1/organizations/{organization_id}/accounting-periods",
+            headers=headers,
+            json={
+                "name": "Current accounting period",
+                "starts_on": (today - timedelta(days=1)).isoformat(),
+                "ends_on": (today + timedelta(days=1)).isoformat(),
+            },
+        )
+        assert period.status_code == 201, period.text
+        period_id = period.json()["id"]
+
+    def post_journal():
+        with TestClient(app) as client:
+            return client.post(
+                f"/api/v1/organizations/{organization_id}/journal-entries",
+                headers={**headers, "Idempotency-Key": f"pg-close-race-{suffix}"},
+                json={
+                    "description": "Concurrent period posting",
+                    "lines": [
+                        {"account_id": cash.json()["id"], "debit_minor": 250, "credit_minor": 0},
+                        {"account_id": revenue.json()["id"], "debit_minor": 0, "credit_minor": 250},
+                    ],
+                },
+            )
+
+    def close_period():
+        with TestClient(app) as client:
+            return client.post(
+                f"/api/v1/organizations/{organization_id}/accounting-periods/{period_id}/close",
+                headers=headers,
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        post_future = pool.submit(post_journal)
+        close_future = pool.submit(close_period)
+        posted = post_future.result()
+        closed = close_future.result()
+
+    assert closed.status_code == 200, closed.text
+    assert posted.status_code in {201, 409}, posted.text
+    if posted.status_code == 201:
+        posted_at = datetime.fromisoformat(posted.json()["created_at"].replace("Z", "+00:00"))
+        closed_at = datetime.fromisoformat(closed.json()["closed_at"].replace("Z", "+00:00"))
+        assert posted_at <= closed_at, "Posting that succeeds in the race must commit before closure"
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    try:
+        with engine.connect() as connection:
+            user_id = connection.scalar(
+                text("SELECT id FROM users WHERE email = :email"),
+                {"email": email},
+            )
+        assert user_id
+        with pytest.raises(DBAPIError, match="no open accounting period covers journal entry date"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO journal_entries
+                            (id, organization_id, created_by_user_id, idempotency_key,
+                             request_fingerprint, description, currency, total_minor,
+                             status, created_at)
+                        VALUES
+                            (:id, :org_id, :user_id, :key, :fingerprint, 'Direct SQL after close',
+                             'PKR', 100, 'posted', CURRENT_TIMESTAMP)
+                        """
+                    ),
+                    {
+                        "id": str(uuid4()),
+                        "org_id": organization_id,
+                        "user_id": user_id,
+                        "key": f"pg-direct-after-close-{suffix}",
+                        "fingerprint": "a" * 64,
+                    },
+                )
+    finally:
+        engine.dispose()
