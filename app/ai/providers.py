@@ -12,6 +12,10 @@ import httpx
 class ProviderError(RuntimeError):
     """Safe-to-report provider error that does not contain secrets or response bodies."""
 
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
 
 class OpenAICompatibleProvider:
     def __init__(
