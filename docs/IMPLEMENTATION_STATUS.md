@@ -12,7 +12,7 @@
 - CI: Ruff, compilation, Alembic migration consistency, pytest on Python 3.11–3.13, PostgreSQL 16 integration tests, pip-audit, and Bandit.
 
 ## Verification status
-- CI run 472 at commit `82d0fbc8698e5b5a7748850ccef26b2316b2aa2b`: each Python 3.11/3.12/3.13 job reported 83 passed and 10 environment-dependent skips. PostgreSQL 16 integration reported 10 passed, including concurrent journal-line matching protection and posting-versus-period-closure serialization with a database-level guard against direct SQL posting into a closed period. Dependency audit found no known vulnerabilities and Bandit reported no issues at configured thresholds.
+- CI run 472 at commit `82d0fbc8698e5b5a7748850ccef26b2316b2aa2b`: each Python 3.11/3.12/3.13 job reported 83 passed and 10 environment-dependent skips. PostgreSQL 16 integration reported 10 passed, including concurrent journal-line matching protection and posting-versus-period-closure serialization with a database-level guard against direct SQL posting into a closed period. Dependency audit found no known vulnerabilities and Bandit reported no issues at configured thresholds. A PostgreSQL test for concurrent procurement quote awards was added afterward and is pending verification.
 - The automated checks are not an independent security audit and do not prove production configuration. No production deployment, live payment processing, or live paid AI request has occurred.
 
 ## Important remaining gaps
