@@ -17,8 +17,7 @@
 - CI runs Ruff, compilation, Alembic consistency, pytest on Python 3.11–3.13, PostgreSQL 16 integration tests, dependency auditing, and Bandit.
 
 ## Verification evidence
-- CI run 412 at commit `e8c4c871ddfecbb76d95d874f807aefce803635c`: 81 passed and 5 PostgreSQL-environment-dependent tests skipped on each Python matrix job; PostgreSQL 16 integration job 5 passed; dependency-audit job passed.
-- A new PostgreSQL concurrent-cancellation test was added after run 412 and must be treated as pending until a newer CI run passes.
+- CI run 416 at commit `d3227207307837e162b21e0069ae4740c78894d6`: 81 passed and 6 environment-dependent tests skipped on each Python matrix job; PostgreSQL 16 integration job 6 passed, including concurrent order cancellation; dependency audit found no known vulnerabilities and Bandit reported no issues at configured thresholds.
 - Static checks and CI are not an independent security audit and do not prove production configuration or deployment readiness.
 
 ## Current limitations
