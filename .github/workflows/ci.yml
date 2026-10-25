@@ -2,10 +2,9 @@ name: CI and Quality Checks
 
 on:
   # Run the full suite when a PR is opened/reopened or marked ready.
-  # For later PR commits, use workflow_dispatch to avoid burning minutes
-  # on every small commit while the branch is under active development.
+  # Keep CI on each PR update so the latest code is always verified.
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, synchronize]
   push:
     branches: [master, main]
   workflow_dispatch:
