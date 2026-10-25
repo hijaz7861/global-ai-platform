@@ -1,30 +1,27 @@
 # Identity and Tenant Foundation
 
-## Implemented in the foundation branch
-- Registration with normalized email and a minimum 12-character password.
-- Password hashing through pwdlib's recommended Argon2 configuration.
-- Short-lived signed bearer tokens; token issuance and validation fail closed unless `SECRET_KEY` contains at least 32 characters.
-- Logout revokes the current token server-side until its expiry; revocation events are audited without storing the token itself.
-- Password reset issues random one-time tokens, stores only SHA-256 digests, enforces expiry and single use, and audits successful resets.
-- Successful password reset increments an authentication version so existing bearer tokens are rejected. Reset request responses do not reveal whether an email is registered; SMTP delivery is configurable.
-- User, organization, and membership tables.
-- Organization creation makes the creator the initial owner.
-- Organization reads/lists and tenant resources require a membership record; non-members receive a non-disclosing 404.
-- Owner/admin can list organization members. Owner can assign admin/member roles; admin can add members only.
-- Membership removal is audited; owner memberships cannot be removed through the API.
-- Database schema managed through Alembic migrations.
+## Implemented
+- Registration normalizes email and requires a minimum 12-character password; passwords are hashed with Argon2.
+- Email verification uses expiring single-use tokens stored as SHA-256 digests. Verification is required by default and SMTP delivery is configurable.
+- Login issues short-lived signed access tokens and rotating refresh tokens. Only refresh-token digests are stored; replay revokes the session family. Logout revokes the current session family.
+- Password reset uses random, expiring, single-use tokens; successful reset increments the user's auth version and invalidates existing sessions. Responses do not disclose whether an account exists.
+- TOTP MFA supports encrypted secrets, enrollment confirmation, recovery codes stored as hashes, replay protection, and password reauthentication for enrollment/disable.
+- Persistent failed-login lockout and database-backed request throttling are implemented. Forwarded client IPs are trusted only when the direct peer is configured in `TRUSTED_PROXY_IPS`.
+- Invitation lifecycle supports owner/admin invite, recipient acceptance using a single-use token, and revocation of pending invitations. SMTP must be configured to deliver invitations.
+- Organization creation makes the creator owner. Membership and tenant-owned resources are scoped to organization membership; role-management operations are constrained and audited.
+- PostgreSQL CI covers concurrent refresh-token replay, and other PostgreSQL integration tests cover inventory reservation, cancellation, accounting-period creation and audit immutability.
 
-## Important limitations
-- Email ownership verification, MFA, refresh-token rotation, account lockout, and enterprise SSO are not implemented. Password-reset delivery requires SMTP configuration.
-- Rate limiting, refresh-token rotation, and scheduled cleanup of expired revocation/reset-token rows are not implemented.
-- There is no invitation email flow; the target user must already have a registered account.
-- Tenant isolation is demonstrated for organization, catalog, order, audit, and accounting endpoints only. Every future tenant-owned resource must scope queries to authorized membership.
-- Use a long random secret in a secret manager for deployed environments. Never use a test key or commit real secrets.
-- Before production, add security review, throttling, operational logging, migration/backup tests, and session revocation strategy.
+## Operational requirements and limitations
+- Set a unique random `SECRET_KEY` of at least 32 characters in a deployment secret manager. Never commit credentials or use test keys.
+- To rotate signing keys, configure `PREVIOUS_SECRET_KEYS`, run `python -m app.rotate_mfa_secrets` to re-encrypt stored MFA secrets, verify MFA login and the re-encryption count, keep the old key until prior access tokens expire, and remove it only after staging validation.
+- Configure `TRUSTED_PROXY_IPS` with exact proxy IPs/CIDRs only when deployed behind a trusted proxy; leave it empty for direct connections.
+- Email verification, password reset and invitations require working SMTP delivery.
+- Broader role administration, enterprise SSO/OAuth, full tenant-wide security audit, operational monitoring, backups and incident response remain incomplete.
+- Passing CI does not prove production readiness. See [Production Readiness Gate](PRODUCTION_READINESS.md).
 
 ## Local setup
 1. Copy `.env.example` to `.env`.
 2. Set a unique random `SECRET_KEY` of at least 32 characters.
 3. Install requirements.
-4. Run `alembic upgrade head`.
+4. Run `python -m alembic upgrade head`.
 5. Start the API with Uvicorn.
