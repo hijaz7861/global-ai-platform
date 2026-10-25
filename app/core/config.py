@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     ai_api_key: str | None = None
     ai_base_url: str | None = None
     ai_model: str | None = None
+    ai_fallback_api_key: str | None = None
+    ai_fallback_base_url: str | None = None
+    ai_fallback_model: str | None = None
     ai_timeout_seconds: int = Field(default=20, ge=1, le=120)
     ai_max_output_tokens: int = Field(default=512, ge=1, le=2048)
     ai_max_response_bytes: int = Field(default=1048576, ge=1024, le=10485760)
