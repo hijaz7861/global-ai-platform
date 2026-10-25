@@ -619,3 +619,106 @@ def test_concurrent_reconciliation_windows_and_database_overlap_trigger():
                 )
     finally:
         engine.dispose()
+
+
+def test_concurrent_reconciliation_match_cannot_reuse_journal_line():
+    from datetime import datetime, timezone
+
+    suffix = uuid4().hex
+    email = f"postgres-recon-match-{suffix}@example.com"
+    password = "correct-horse-battery-12"
+    with TestClient(app) as client:
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        organization = client.post(
+            "/api/v1/organizations",
+            headers=headers,
+            json={"name": f"Reconciliation Match Race {suffix[:8]}"},
+        )
+        assert organization.status_code == 201, organization.text
+        organization_id = organization.json()["id"]
+        cash = client.post(
+            f"/api/v1/organizations/{organization_id}/accounts",
+            headers=headers,
+            json={"code": "1000", "name": "Bank Cash", "account_type": "asset", "currency": "PKR"},
+        )
+        revenue = client.post(
+            f"/api/v1/organizations/{organization_id}/accounts",
+            headers=headers,
+            json={"code": "4000", "name": "Revenue", "account_type": "revenue", "currency": "PKR"},
+        )
+        assert cash.status_code == 201 and revenue.status_code == 201
+        entry = client.post(
+            f"/api/v1/organizations/{organization_id}/journal-entries",
+            headers={**headers, "Idempotency-Key": f"pg-recon-entry-{suffix}"},
+            json={
+                "description": "Bank receipt",
+                "lines": [
+                    {"account_id": cash.json()["id"], "debit_minor": 500, "credit_minor": 0},
+                    {"account_id": revenue.json()["id"], "debit_minor": 0, "credit_minor": 500},
+                ],
+            },
+        )
+        assert entry.status_code == 201, entry.text
+        cash_line_id = next(
+            line["id"] for line in entry.json()["lines"] if line["account_id"] == cash.json()["id"]
+        )
+        today = datetime.now(timezone.utc).date().isoformat()
+        session = client.post(
+            f"/api/v1/organizations/{organization_id}/reconciliations",
+            headers=headers,
+            json={
+                "account_id": cash.json()["id"],
+                "statement_start_date": today,
+                "statement_end_date": today,
+                "opening_balance_minor": 0,
+                "closing_balance_minor": 1000,
+            },
+        )
+        assert session.status_code == 201, session.text
+        session_id = session.json()["id"]
+        line_ids = []
+        for reference in ("MATCH-RACE-1", "MATCH-RACE-2"):
+            line = client.post(
+                f"/api/v1/organizations/{organization_id}/reconciliations/{session_id}/lines",
+                headers=headers,
+                json={
+                    "statement_date": today,
+                    "description": f"Bank receipt {reference}",
+                    "amount_minor": 500,
+                    "external_reference": reference,
+                },
+            )
+            assert line.status_code == 201, line.text
+            line_ids.append(line.json()["id"])
+
+    def match_once(line_id):
+        with TestClient(app) as client:
+            return client.post(
+                f"/api/v1/organizations/{organization_id}/reconciliations/{session_id}/lines/{line_id}/match",
+                headers=headers,
+                json={"journal_line_id": cash_line_id},
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(match_once, line_ids))
+    assert sorted(response.status_code for response in responses) == [200, 409], [
+        (response.status_code, response.text) for response in responses
+    ]
+    with TestClient(app) as client:
+        lines = client.get(
+            f"/api/v1/organizations/{organization_id}/reconciliations/{session_id}/lines",
+            headers=headers,
+        )
+    assert lines.status_code == 200, lines.text
+    assert sum(line["matched_journal_line_id"] is not None for line in lines.json()) == 1
