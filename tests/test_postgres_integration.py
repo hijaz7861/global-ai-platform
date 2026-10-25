@@ -329,3 +329,85 @@ def test_accounting_period_overlap_is_rejected_by_database_trigger():
                 )
     finally:
         engine.dispose()
+
+
+def test_concurrent_order_cancellation_releases_inventory_exactly_once():
+    suffix = uuid4().hex
+    password = "correct-horse-battery-12"
+    seller_email = f"postgres-cancel-seller-{suffix}@example.com"
+    buyer_email = f"postgres-cancel-buyer-{suffix}@example.com"
+
+    def register_and_login(client, email):
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        return login.json()["access_token"]
+
+    with TestClient(app) as client:
+        seller_token = register_and_login(client, seller_email)
+        organization = client.post(
+            "/api/v1/organizations",
+            headers={"Authorization": f"Bearer {seller_token}"},
+            json={"name": f"Concurrent Cancel {suffix[:8]}"},
+        )
+        assert organization.status_code == 201, organization.text
+        organization_id = organization.json()["id"]
+        listing = client.post(
+            f"/api/v1/organizations/{organization_id}/listings",
+            headers={"Authorization": f"Bearer {seller_token}"},
+            json={
+                "title": "Cancellation Race Inventory",
+                "description": "Stock must only be released once",
+                "price_minor": 500,
+                "currency": "PKR",
+                "inventory_quantity": 1,
+            },
+        )
+        assert listing.status_code == 201, listing.text
+        listing_id = listing.json()["id"]
+        published = client.post(
+            f"/api/v1/organizations/{organization_id}/listings/{listing_id}/publish",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        assert published.status_code == 200, published.text
+        buyer_token = register_and_login(client, buyer_email)
+        created = client.post(
+            "/api/v1/orders",
+            headers={
+                "Authorization": f"Bearer {buyer_token}",
+                "Idempotency-Key": f"pg-cancel-order-{suffix}",
+            },
+            json={"listing_id": listing_id, "quantity": 1},
+        )
+        assert created.status_code == 201, created.text
+        order_id = created.json()["id"]
+
+    def cancel_once():
+        with TestClient(app) as client:
+            return client.post(
+                f"/api/v1/orders/{order_id}/cancel",
+                headers={"Authorization": f"Bearer {buyer_token}"},
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(lambda _: cancel_once(), range(2)))
+
+    assert [response.status_code for response in responses] == [200, 200], [
+        (response.status_code, response.text) for response in responses
+    ]
+    assert all(response.json()["status"] == "cancelled" for response in responses)
+    with TestClient(app) as client:
+        listing_response = client.get(
+            f"/api/v1/organizations/{organization_id}/listings",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+    assert listing_response.status_code == 200, listing_response.text
+    inventory = next(item for item in listing_response.json() if item["id"] == listing_id)
+    assert inventory["inventory_quantity"] == 1, "Concurrent cancellation must not double-release inventory"
