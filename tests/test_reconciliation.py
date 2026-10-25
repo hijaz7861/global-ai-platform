@@ -1,7 +1,6 @@
 """Bank reconciliation tests for tenant isolation, exact matching, and completion rules."""
 from datetime import datetime, timezone
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -182,7 +181,6 @@ def test_reconciliation_rejects_cross_tenant_accounts_and_duplicate_matches(clie
     headers_b = {"Authorization": f"Bearer {token_b}"}
     cash_a = create_account(client, token_a, org_a, "1000", "asset")
     revenue_a = create_account(client, token_a, org_a, "4000", "revenue")
-    cash_b = create_account(client, token_b, org_b, "1000", "asset")
 
     today = datetime.now(timezone.utc).date().isoformat()
     cross_tenant = client.post(
