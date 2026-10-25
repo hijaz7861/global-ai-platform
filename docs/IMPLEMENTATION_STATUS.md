@@ -12,11 +12,11 @@
 - CI: Ruff, compilation, Alembic migration consistency, pytest on Python 3.11–3.13, PostgreSQL 16 integration tests, pip-audit, and Bandit.
 
 ## Verification status
-- CI run 465 at commit `32e3426c4598e7f933820762af6f25ccb603d11f`: each Python 3.11/3.12/3.13 job reported 83 passed and 9 environment-dependent skips. PostgreSQL 16 integration reported 9 passed, including concurrent attempts to match one journal line to two statement lines (one succeeds; the other receives HTTP 409). Dependency audit found no known vulnerabilities and Bandit reported no issues at configured thresholds.
+- CI run 472 at commit `82d0fbc8698e5b5a7748850ccef26b2316b2aa2b`: each Python 3.11/3.12/3.13 job reported 83 passed and 10 environment-dependent skips. PostgreSQL 16 integration reported 10 passed, including concurrent journal-line matching protection and posting-versus-period-closure serialization with a database-level guard against direct SQL posting into a closed period. Dependency audit found no known vulnerabilities and Bandit reported no issues at configured thresholds.
 - The automated checks are not an independent security audit and do not prove production configuration. No production deployment, live payment processing, or live paid AI request has occurred.
 
 ## Important remaining gaps
-- The concurrent matching test must pass; broader PostgreSQL workload/race coverage remains open across inventory, order expiry, accounting posting/closure, reconciliation, and procurement.
+- The concurrent matching and posting/closure tests passed; broader PostgreSQL workload/race coverage remains open across inventory, order expiry, accounting, reconciliation, and procurement.
 - Production validation is required for signing-key rotation, MFA re-encryption, SMTP, trusted proxy IP/CIDRs, managed PostgreSQL, secrets management, scheduler provisioning, monitoring/alerting, encrypted backup/restore, incident response, and staged load testing.
 - Independent security review, threat-model walkthrough, tenant-isolation review, audit retention/hash chaining/external log export, and accounting-domain validation remain open.
 - Accounting gaps include cash-flow statements, payment/bank-feed reconciliation, payment processing, refunds, tax, seller settlement, close/roll-forward workflow, and foreign exchange. The manual bank-statement reconciliation MVP does not connect to banks or move money.
