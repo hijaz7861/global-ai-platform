@@ -358,6 +358,7 @@ class BankReconciliationLine(Base):
     __table_args__ = (
         CheckConstraint("amount_minor != 0", name="ck_bank_reconciliation_line_nonzero_amount"),
         UniqueConstraint("matched_journal_line_id", name="uq_bank_reconciliation_matched_journal_line"),
+        UniqueConstraint("session_id", "external_reference", name="uq_bank_reconciliation_external_reference"),
         Index("ix_bank_reconciliation_lines_session_date", "session_id", "statement_date"),
     )
 
