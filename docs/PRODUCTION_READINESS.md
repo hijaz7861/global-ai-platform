@@ -46,3 +46,5 @@ A release owner must review the evidence above and explicitly approve the releas
 - [x] PostgreSQL CI verifies concurrent bank-reconciliation window creation and database-trigger rejection of overlapping statement windows; broader reconciliation race coverage remains required.
 
 - [x] SQLite/API tests cover reconciliation correction, unmatch/rematch, and completed-session immutability.
+
+- [x] PostgreSQL integration test verifies concurrent reconciliation matches cannot reuse one journal line.
