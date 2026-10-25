@@ -482,6 +482,82 @@ class TrialBalanceLineResponse(BaseModel):
     normal_balance_minor: int
 
 
+class BankReconciliationCreate(BaseModel):
+    account_id: str = Field(min_length=1, max_length=36)
+    statement_start_date: date
+    statement_end_date: date
+    opening_balance_minor: int = Field(ge=-9_000_000_000_000_000, le=9_000_000_000_000_000)
+    closing_balance_minor: int = Field(ge=-9_000_000_000_000_000, le=9_000_000_000_000_000)
+
+    @model_validator(mode="after")
+    def validate_statement_window(self):
+        if self.statement_end_date < self.statement_start_date:
+            raise ValueError("Statement end date must not precede its start date")
+        return self
+
+
+class BankReconciliationLineCreate(BaseModel):
+    statement_date: date
+    description: str = Field(min_length=2, max_length=300)
+    amount_minor: int = Field(ge=-9_000_000_000_000_000, le=9_000_000_000_000_000)
+    external_reference: str | None = Field(default=None, max_length=128)
+
+    @field_validator("description")
+    @classmethod
+    def normalize_reconciliation_description(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Statement line description must contain at least two non-space characters")
+        return normalized
+
+    @field_validator("external_reference")
+    @classmethod
+    def normalize_external_reference(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def require_nonzero_amount(self):
+        if self.amount_minor == 0:
+            raise ValueError("Statement line amount must not be zero")
+        return self
+
+
+class BankReconciliationMatch(BaseModel):
+    journal_line_id: str = Field(min_length=1, max_length=36)
+
+
+class BankReconciliationLineResponse(BaseModel):
+    id: str
+    session_id: str
+    statement_date: date
+    description: str
+    amount_minor: int
+    external_reference: str | None
+    matched_journal_line_id: str | None
+    matched_at: datetime | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BankReconciliationResponse(BaseModel):
+    id: str
+    organization_id: str
+    account_id: str
+    statement_start_date: date
+    statement_end_date: date
+    opening_balance_minor: int
+    closing_balance_minor: int
+    status: str
+    created_at: datetime
+    completed_at: datetime | None
+    line_count: int
+    matched_line_count: int
+    unmatched_line_count: int
+
 class PasswordResetRequest(BaseModel):
     email: EmailStr
 
