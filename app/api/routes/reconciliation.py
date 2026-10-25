@@ -20,8 +20,10 @@ from app.models import (
     Membership,
 )
 from app.schemas import (
+    BankReconciliationBalancesUpdate,
     BankReconciliationCreate,
     BankReconciliationLineCreate,
+    BankReconciliationLineUpdate,
     BankReconciliationLineResponse,
     BankReconciliationMatch,
     BankReconciliationResponse,
@@ -306,6 +308,180 @@ def match_statement_line(
         raise HTTPException(status_code=409, detail="Journal line is already matched to another statement line") from None
     db.refresh(statement_line)
     return BankReconciliationLineResponse.model_validate(statement_line)
+
+
+@router.put(
+    "/organizations/{organization_id}/reconciliations/{session_id}/balances",
+    response_model=BankReconciliationResponse,
+)
+def update_reconciliation_balances(
+    session_id: str,
+    payload: BankReconciliationBalancesUpdate,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> BankReconciliationResponse:
+    _require_owner_or_admin(membership)
+    session = _get_session(
+        db, organization_id=membership.organization_id, session_id=session_id, lock=True
+    )
+    if session.status != "open":
+        raise HTTPException(status_code=409, detail="Completed reconciliation sessions are immutable")
+    session.opening_balance_minor = payload.opening_balance_minor
+    session.closing_balance_minor = payload.closing_balance_minor
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="bank_reconciliation.balances_updated",
+        entity_type="bank_reconciliation",
+        entity_id=session.id,
+        details={
+            "opening_balance_minor": session.opening_balance_minor,
+            "closing_balance_minor": session.closing_balance_minor,
+        },
+    )
+    db.commit()
+    db.refresh(session)
+    return _session_response(db, session)
+
+
+@router.put(
+    "/organizations/{organization_id}/reconciliations/{session_id}/lines/{line_id}",
+    response_model=BankReconciliationLineResponse,
+)
+def update_statement_line(
+    session_id: str,
+    line_id: str,
+    payload: BankReconciliationLineUpdate,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> BankReconciliationLineResponse:
+    _require_owner_or_admin(membership)
+    session = _get_session(
+        db, organization_id=membership.organization_id, session_id=session_id, lock=True
+    )
+    if session.status != "open":
+        raise HTTPException(status_code=409, detail="Completed reconciliation sessions are immutable")
+    line = db.scalar(
+        select(BankReconciliationLine)
+        .where(
+            BankReconciliationLine.id == line_id,
+            BankReconciliationLine.session_id == session.id,
+        )
+        .with_for_update()
+    )
+    if line is None:
+        raise HTTPException(status_code=404, detail="Statement line not found")
+    if line.matched_journal_line_id is not None:
+        raise HTTPException(status_code=409, detail="Unmatch the statement line before editing it")
+    if not session.statement_start_date <= payload.statement_date <= session.statement_end_date:
+        raise HTTPException(status_code=422, detail="Statement line date is outside the reconciliation window")
+    line.statement_date = payload.statement_date
+    line.description = payload.description
+    line.amount_minor = payload.amount_minor
+    line.external_reference = payload.external_reference
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="bank_reconciliation.line_updated",
+        entity_type="bank_reconciliation_line",
+        entity_id=line.id,
+        details={"session_id": session.id, "amount_minor": line.amount_minor},
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="External statement reference already exists in this session") from None
+    db.refresh(line)
+    return BankReconciliationLineResponse.model_validate(line)
+
+
+@router.delete(
+    "/organizations/{organization_id}/reconciliations/{session_id}/lines/{line_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_statement_line(
+    session_id: str,
+    line_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    _require_owner_or_admin(membership)
+    session = _get_session(
+        db, organization_id=membership.organization_id, session_id=session_id, lock=True
+    )
+    if session.status != "open":
+        raise HTTPException(status_code=409, detail="Completed reconciliation sessions are immutable")
+    line = db.scalar(
+        select(BankReconciliationLine)
+        .where(
+            BankReconciliationLine.id == line_id,
+            BankReconciliationLine.session_id == session.id,
+        )
+        .with_for_update()
+    )
+    if line is None:
+        raise HTTPException(status_code=404, detail="Statement line not found")
+    if line.matched_journal_line_id is not None:
+        raise HTTPException(status_code=409, detail="Unmatch the statement line before deleting it")
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="bank_reconciliation.line_deleted",
+        entity_type="bank_reconciliation_line",
+        entity_id=line.id,
+        details={"session_id": session.id, "amount_minor": line.amount_minor},
+    )
+    db.delete(line)
+    db.commit()
+
+
+@router.post(
+    "/organizations/{organization_id}/reconciliations/{session_id}/lines/{line_id}/unmatch",
+    response_model=BankReconciliationLineResponse,
+)
+def unmatch_statement_line(
+    session_id: str,
+    line_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> BankReconciliationLineResponse:
+    _require_owner_or_admin(membership)
+    session = _get_session(
+        db, organization_id=membership.organization_id, session_id=session_id, lock=True
+    )
+    if session.status != "open":
+        raise HTTPException(status_code=409, detail="Completed reconciliation sessions are immutable")
+    line = db.scalar(
+        select(BankReconciliationLine)
+        .where(
+            BankReconciliationLine.id == line_id,
+            BankReconciliationLine.session_id == session.id,
+        )
+        .with_for_update()
+    )
+    if line is None:
+        raise HTTPException(status_code=404, detail="Statement line not found")
+    if line.matched_journal_line_id is None:
+        return BankReconciliationLineResponse.model_validate(line)
+    prior_journal_line_id = line.matched_journal_line_id
+    line.matched_journal_line_id = None
+    line.matched_at = None
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="bank_reconciliation.line_unmatched",
+        entity_type="bank_reconciliation_line",
+        entity_id=line.id,
+        details={"session_id": session.id, "journal_line_id": prior_journal_line_id},
+    )
+    db.commit()
+    db.refresh(line)
+    return BankReconciliationLineResponse.model_validate(line)
 
 
 @router.post(
