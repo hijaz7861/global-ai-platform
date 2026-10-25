@@ -35,11 +35,23 @@ async def chat(
             status_code=422,
             detail=f"max_output_tokens cannot exceed configured limit ({settings.ai_max_output_tokens})",
         )
-    if not all(
-        value and value.strip()
-        for value in (settings.ai_api_key, settings.ai_base_url, settings.ai_model)
-    ):
-        raise HTTPException(status_code=503, detail="AI provider configuration is incomplete")
+    primary_values = (settings.ai_api_key, settings.ai_base_url, settings.ai_model)
+    fallback_values = (
+        settings.ai_fallback_api_key,
+        settings.ai_fallback_base_url,
+        settings.ai_fallback_model,
+    )
+    fallback_configured = any(value and value.strip() for value in fallback_values)
+    if fallback_configured and not all(value and value.strip() for value in fallback_values):
+        raise HTTPException(status_code=503, detail="AI fallback provider configuration is incomplete")
+    if payload.provider == "fallback":
+        if not fallback_configured:
+            raise HTTPException(status_code=503, detail="AI fallback provider is not configured")
+        selected_values = fallback_values
+    else:
+        selected_values = primary_values
+    if not all(value and value.strip() for value in selected_values):
+        raise HTTPException(status_code=503, detail="Selected AI provider configuration is incomplete")
     if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
         raise HTTPException(
             status_code=503,
@@ -79,12 +91,17 @@ async def chat(
     db.commit()
 
     try:
+        if payload.provider == "fallback":
+            api_key, base_url, model = fallback_values
+        else:
+            api_key, base_url, model = primary_values
         provider = OpenAICompatibleProvider(
-            api_key=settings.ai_api_key or "",
-            base_url=settings.ai_base_url or "",
-            model=settings.ai_model or "",
+            api_key=api_key or "",
+            base_url=base_url or "",
+            model=model or "",
             timeout_seconds=settings.ai_timeout_seconds,
             max_response_bytes=settings.ai_max_response_bytes,
+            provider_name=payload.provider,
         )
         result = await provider.complete(payload.prompt, payload.max_output_tokens)
     except ValueError:
@@ -119,7 +136,7 @@ async def chat(
         action="ai.request.completed",
         entity_type="ai_request",
         entity_id=request_id,
-        details={"status": "completed", "quantity": result["output_tokens"]},
+        details={"status": "completed", "quantity": result["output_tokens"], "provider": result["provider"], "model": result["model"]},
     )
     db.commit()
     return ChatResponse(
