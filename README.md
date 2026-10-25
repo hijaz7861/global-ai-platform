@@ -11,12 +11,12 @@ A private, modular project for building a global business platform incrementally
 - Organization creation, membership-filtered access, and owner/admin member management.
 - Tenant-scoped catalog listings with owner/admin publication, plus public search, currency and price filters, and bounded pagination.
 - Organization-scoped supplier onboarding with draft/submitted/approved/rejected states and platform-admin review.
-- Initial procurement request and supplier quote workflow: approved suppliers quote once per request, buyers compare offers and award one quote, and state changes are audited.
+- Procurement requests and supplier quotes: approved suppliers quote once per request, buyers compare offers and award one quote; purchase orders can be issued idempotently, cancelled by the buyer, and fulfilled by the supplier.
 - Owner/admin inventory adjustments with nonnegative stock checks, append-only before/after history, optional reason, and transaction-bound audit events.
 - Order creation with conditional stock reservation, per-buyer idempotency, legacy single-line and multi-item carts (up to 50 unique listings), one-currency enforcement, bounded totals, and a configurable unpaid-order expiry timestamp.
 - Platform-admin-only expiry sweep that marks overdue unpaid orders expired, restores stock once, and records an audit event; external scheduler setup is required for automatic recurring runs.
 - Buyer-only order reads, seller-scoped order summaries, and unpaid-order cancellation with one-time stock release.
-- Owner/admin chart of accounts, balanced idempotent journal posting, and a derived trial balance.
+- Owner/admin chart of accounts, balanced idempotent journal posting, immutable reversals, accounting period controls, period trial balance, paginated account ledger, income statement, and balance sheet.
 - Transaction-bound allowlisted audit events for organization, catalog, order, and ledger operations.
 - Guarded OpenAI-compatible AI chat adapter; external calls are disabled by default, require explicit opt-in, a positive request limit, and PostgreSQL.
 - Orders remain `pending_payment`; no payment is charged or processed.
@@ -85,4 +85,4 @@ Refresh-token behavior: login returns a short-lived access token plus a random r
 
 See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Catalog](docs/CATALOG.md), [Orders](docs/ORDERS.md), [Supplier Procurement](docs/PROCUREMENT.md), [Accounting](docs/ACCOUNTING.md), [AI Orchestration](docs/AI_ORCHESTRATION.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
 
-MFA recovery codes, account lockout, PostgreSQL concurrency verification for throttling, invitations, expanded role administration, payment processing, period-specific financial reporting, reconciliation, provider routing/fallback, native provider integrations, agent tools, external connectors, purchase orders and supplier fulfilment, logistics, rentals, real estate, workforce, and education remain future work. Do not expose this foundation publicly as a production service.
+Remaining work includes broader role administration, production-validated signing-key rotation, broader PostgreSQL concurrency coverage, financial reconciliation and cash-flow statements, payment/refund/tax/seller-settlement workflows, multi-provider AI routing/fallback and monetary budgets, agent tool permissions and approval flows, OAuth/webhook connectors, logistics, rentals, real estate, workforce and education. An independent security review, production-like staging, monitoring, backup/restore drills, and operational configuration are also required. Do not expose this foundation publicly as a production service.
