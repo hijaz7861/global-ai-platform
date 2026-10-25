@@ -411,3 +411,116 @@ def test_concurrent_order_cancellation_releases_inventory_exactly_once():
     assert listing_response.status_code == 200, listing_response.text
     inventory = next(item for item in listing_response.json() if item["id"] == listing_id)
     assert inventory["inventory_quantity"] == 1, "Concurrent cancellation must not double-release inventory"
+
+
+def test_concurrent_cancel_and_expiry_release_inventory_exactly_once(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from app.core.config import settings
+
+    suffix = uuid4().hex
+    password = "correct-horse-battery-12"
+    admin_email = f"postgres-expiry-admin-{suffix}@example.com"
+    seller_email = f"postgres-expiry-seller-{suffix}@example.com"
+    buyer_email = f"postgres-expiry-buyer-{suffix}@example.com"
+    monkeypatch.setattr(settings, "platform_admin_emails", admin_email)
+
+    def register_and_login(client, email):
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        return login.json()["access_token"]
+
+    with TestClient(app) as client:
+        admin_token = register_and_login(client, admin_email)
+        seller_token = register_and_login(client, seller_email)
+        organization = client.post(
+            "/api/v1/organizations",
+            headers={"Authorization": f"Bearer {seller_token}"},
+            json={"name": f"Expiry Race {suffix[:8]}"},
+        )
+        assert organization.status_code == 201, organization.text
+        organization_id = organization.json()["id"]
+        listing = client.post(
+            f"/api/v1/organizations/{organization_id}/listings",
+            headers={"Authorization": f"Bearer {seller_token}"},
+            json={
+                "title": "Expiry Race Stock",
+                "description": "Cancel and expiry must release stock once",
+                "price_minor": 700,
+                "currency": "PKR",
+                "inventory_quantity": 1,
+            },
+        )
+        assert listing.status_code == 201, listing.text
+        listing_id = listing.json()["id"]
+        published = client.post(
+            f"/api/v1/organizations/{organization_id}/listings/{listing_id}/publish",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+        assert published.status_code == 200, published.text
+        buyer_token = register_and_login(client, buyer_email)
+        created = client.post(
+            "/api/v1/orders",
+            headers={
+                "Authorization": f"Bearer {buyer_token}",
+                "Idempotency-Key": f"pg-expiry-race-{suffix}",
+            },
+            json={"listing_id": listing_id, "quantity": 1},
+        )
+        assert created.status_code == 201, created.text
+        order_id = created.json()["id"]
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE orders SET expires_at = :expiry WHERE id = :order_id"),
+                {"expiry": datetime.now(timezone.utc) - timedelta(minutes=1), "order_id": order_id},
+            )
+    finally:
+        engine.dispose()
+
+    def cancel_order():
+        with TestClient(app) as client:
+            return client.post(
+                f"/api/v1/orders/{order_id}/cancel",
+                headers={"Authorization": f"Bearer {buyer_token}"},
+            )
+
+    def expire_orders():
+        with TestClient(app) as client:
+            return client.post(
+                "/api/v1/platform/orders/expire-pending",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        cancel_future = pool.submit(cancel_order)
+        expiry_future = pool.submit(expire_orders)
+        cancelled = cancel_future.result()
+        expired = expiry_future.result()
+
+    assert cancelled.status_code in {200, 409}, cancelled.text
+    assert expired.status_code == 200, expired.text
+    with TestClient(app) as client:
+        order = client.get(
+            f"/api/v1/orders/{order_id}",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+        )
+        seller_listings = client.get(
+            f"/api/v1/organizations/{organization_id}/listings",
+            headers={"Authorization": f"Bearer {seller_token}"},
+        )
+    assert order.status_code == 200, order.text
+    assert order.json()["status"] in {"cancelled", "expired"}
+    assert seller_listings.status_code == 200, seller_listings.text
+    inventory = next(item for item in seller_listings.json() if item["id"] == listing_id)
+    assert inventory["inventory_quantity"] == 1, "Cancellation and expiry race must not double-release stock"
