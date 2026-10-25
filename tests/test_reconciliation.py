@@ -1,4 +1,5 @@
 """Bank reconciliation tests for tenant isolation, exact matching, and completion rules."""
+import pytest
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
