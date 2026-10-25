@@ -526,6 +526,15 @@ class BankReconciliationLineCreate(BaseModel):
         return self
 
 
+class BankReconciliationBalancesUpdate(BaseModel):
+    opening_balance_minor: int = Field(ge=-9_000_000_000_000_000, le=9_000_000_000_000_000)
+    closing_balance_minor: int = Field(ge=-9_000_000_000_000_000, le=9_000_000_000_000_000)
+
+
+class BankReconciliationLineUpdate(BankReconciliationLineCreate):
+    """Full replacement for an unmatched statement line while its session is open."""
+
+
 class BankReconciliationMatch(BaseModel):
     journal_line_id: str = Field(min_length=1, max_length=36)
 
