@@ -8,7 +8,7 @@
 - Suppliers/procurement: supplier onboarding and admin review, approved-supplier quotes, quote revisions/withdrawals, single-winner award, purchase-order issue with idempotent replay, buyer cancellation, and supplier fulfilment.
 - Accounting: tenant-scoped chart of accounts, balanced idempotent double-entry journal posting, immutable one-time reversals, accounting periods with database-enforced non-overlap, period/all-time trial balances, paginated account ledger, income statement, and balance sheet grouped by currency.
 - Manual bank reconciliation: tenant-scoped statement sessions for active asset accounts, signed statement-line entry, exact one-to-one matching against posted journal lines, single-use journal-line matching, balance arithmetic validation, correction/unmatch/rematch/delete workflows while open, and immutable completed sessions. PostgreSQL/SQLite triggers prevent overlapping statement windows.
-- Guarded OpenAI-compatible adapter: explicit opt-in, output/time limits, response-size cap, no automatic retries, safe errors, audit events, PostgreSQL-serialized quota checks, and live calls disabled by default.
+- Guarded OpenAI-compatible adapter: explicit opt-in, primary/fallback endpoint selection, output/time limits, response-size cap, no automatic retries, safe errors, provider/model audit metadata, PostgreSQL-serialized request quotas, and live calls disabled by default.
 - CI: Ruff, compilation, Alembic migration consistency, pytest on Python 3.11–3.13, PostgreSQL 16 integration tests, pip-audit, and Bandit.
 
 ## Verification status
