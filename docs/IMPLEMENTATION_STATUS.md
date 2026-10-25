@@ -37,4 +37,12 @@ CI passing is not equivalent to production readiness. Production deployment and 
 - Added a strict UTF-8 raw-CSV endpoint with exact column order, ISO date parsing, integer minor-unit amounts, a 1 MB / 1,000-row limit, statement-window checks, duplicate-reference checks, and all-rows-validated-before-write behavior.
 - The batch and its statement lines are committed atomically; same-file replay returns the existing batch without duplicate lines. Manual lines remain distinguishable via nullable `import_batch_id`.
 - Tests cover import provenance, replay/idempotency, row-level validation rollback, duplicate references, and malformed headers.
-- CI run 483 passed on the previous head before this CSV change. The new import migration/code/tests are awaiting their own complete Python, PostgreSQL, dependency-audit and security-check run; do not consider this slice verified until that run passes.
+- CI run 493 passed: Python 3.11, 3.12 and 3.13 each reported 85 passed and 11 environment-dependent skips; PostgreSQL 16 integration reported 11 passed; dependency audit reported no known vulnerabilities and Bandit reported no issues at configured thresholds. The CSV import slice is CI-verified, but still needs bank-format validation, staging review, and finance-domain sign-off before production use.
+
+
+## CI run 493 verification
+- Head commit: `bf816cd7a872d67b5b774b85302ec8e6d41093fc`.
+- Python 3.11, 3.12 and 3.13: each 85 passed, 11 environment-dependent skips.
+- PostgreSQL 16 integration: 11 passed.
+- Ruff, compilation, Alembic consistency, dependency audit and Bandit passed at configured thresholds.
+- This verifies the CSV import code in CI, not production bank compatibility or independent accounting/security approval.
