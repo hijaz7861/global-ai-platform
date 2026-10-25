@@ -524,3 +524,98 @@ def test_concurrent_cancel_and_expiry_release_inventory_exactly_once(monkeypatch
     assert seller_listings.status_code == 200, seller_listings.text
     inventory = next(item for item in seller_listings.json() if item["id"] == listing_id)
     assert inventory["inventory_quantity"] == 1, "Cancellation and expiry race must not double-release stock"
+
+
+def test_concurrent_reconciliation_windows_and_database_overlap_trigger():
+    from datetime import datetime, timedelta, timezone
+
+    suffix = uuid4().hex
+    email = f"postgres-recon-{suffix}@example.com"
+    password = "correct-horse-battery-12"
+    with TestClient(app) as client:
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        organization = client.post(
+            "/api/v1/organizations",
+            headers=headers,
+            json={"name": f"Reconciliation Race {suffix[:8]}"},
+        )
+        assert organization.status_code == 201, organization.text
+        organization_id = organization.json()["id"]
+        account = client.post(
+            f"/api/v1/organizations/{organization_id}/accounts",
+            headers=headers,
+            json={"code": "1000", "name": "Bank Cash", "account_type": "asset", "currency": "PKR"},
+        )
+        assert account.status_code == 201, account.text
+        account_id = account.json()["id"]
+
+    today = datetime.now(timezone.utc).date()
+    windows = [
+        {"start": today, "end": today + timedelta(days=30)},
+        {"start": today + timedelta(days=1), "end": today + timedelta(days=31)},
+    ]
+
+    def create_window(window):
+        with TestClient(app) as client:
+            return client.post(
+                f"/api/v1/organizations/{organization_id}/reconciliations",
+                headers=headers,
+                json={
+                    "account_id": account_id,
+                    "statement_start_date": window["start"].isoformat(),
+                    "statement_end_date": window["end"].isoformat(),
+                    "opening_balance_minor": 0,
+                    "closing_balance_minor": 0,
+                },
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(create_window, windows))
+    assert sorted(response.status_code for response in responses) == [201, 409], [
+        (response.status_code, response.text) for response in responses
+    ]
+    created = next(response for response in responses if response.status_code == 201).json()
+    engine = create_engine(os.environ["DATABASE_URL"])
+    try:
+        with engine.connect() as connection:
+            user_id = connection.scalar(
+                text("SELECT id FROM users WHERE email = :email"),
+                {"email": email},
+            )
+        assert user_id
+        with pytest.raises(DBAPIError, match="bank reconciliation statement windows must not overlap"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO bank_reconciliation_sessions
+                            (id, organization_id, account_id, created_by_user_id,
+                             statement_start_date, statement_end_date,
+                             opening_balance_minor, closing_balance_minor, status, created_at)
+                        VALUES
+                            (:id, :org_id, :account_id, :user_id, :start_date, :end_date,
+                             0, 0, 'open', CURRENT_TIMESTAMP)
+                        """
+                    ),
+                    {
+                        "id": str(uuid4()),
+                        "org_id": organization_id,
+                        "account_id": account_id,
+                        "user_id": user_id,
+                        "start_date": created["statement_start_date"],
+                        "end_date": created["statement_end_date"],
+                    },
+                )
+    finally:
+        engine.dispose()
