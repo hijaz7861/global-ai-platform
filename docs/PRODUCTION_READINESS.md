@@ -50,3 +50,5 @@ A release owner must review the evidence above and explicitly approve the releas
 - [x] PostgreSQL integration test verifies concurrent reconciliation matches cannot reuse one journal line.
 
 - [x] PostgreSQL CI verifies migration 0027's journal-entry period trigger, posting-versus-closure race, and rejection of direct SQL inserts into a closed period.
+
+- [ ] Verify PostgreSQL concurrent procurement award test: only one supplier quote may be accepted.
