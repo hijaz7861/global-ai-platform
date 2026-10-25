@@ -39,9 +39,17 @@ def _require_owner_or_admin(membership: Membership) -> None:
 
 
 def _ensure_open_period_for_today(db: Session, organization_id: str) -> None:
-    """Preserve legacy posting until periods are configured; enforce them once configured."""
+    """Serialize posting against period closure; preserve legacy behavior until periods exist."""
+    # Lock the stable tenant row so posting and period closure share one lock order.
+    db.scalar(
+        select(Organization.id)
+        .where(Organization.id == organization_id)
+        .with_for_update()
+    )
     periods = db.scalars(
-        select(AccountingPeriod).where(AccountingPeriod.organization_id == organization_id)
+        select(AccountingPeriod)
+        .where(AccountingPeriod.organization_id == organization_id)
+        .with_for_update()
     ).all()
     if not periods:
         return
@@ -133,11 +141,19 @@ def close_accounting_period(
     db: Annotated[Session, Depends(get_db)],
 ) -> AccountingPeriodResponse:
     _require_owner_or_admin(membership)
+    # Match the posting lock order: tenant row first, then the period row.
+    db.scalar(
+        select(Organization.id)
+        .where(Organization.id == membership.organization_id)
+        .with_for_update()
+    )
     period = db.scalar(
-        select(AccountingPeriod).where(
+        select(AccountingPeriod)
+        .where(
             AccountingPeriod.id == period_id,
             AccountingPeriod.organization_id == membership.organization_id,
         )
+        .with_for_update()
     )
     if period is None:
         raise HTTPException(status_code=404, detail="Accounting period not found")
