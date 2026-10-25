@@ -94,7 +94,7 @@ def test_ai_fallback_requires_complete_configuration(client, monkeypatch):
     response = client.post(
         f"/api/v1/organizations/{org_id}/ai/chat",
         headers={"Authorization": f"Bearer {token}"},
-        json={"prompt": "hello", "provider": "fallback"},
+        json={"prompt": "hello", "provider": "fallback", "max_output_tokens": 8},
     )
     assert response.status_code == 503
     assert "fallback provider configuration is incomplete" in response.json()["detail"].lower()
