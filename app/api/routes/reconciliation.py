@@ -1,9 +1,13 @@
 """Tenant-scoped manual bank statement reconciliation."""
-from datetime import datetime, timezone
+import csv
+import hashlib
+import io
+import os
+from datetime import date, datetime, timezone
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -13,6 +17,7 @@ from app.audit import record_audit_event
 from app.db import get_db
 from app.models import (
     Account,
+    BankReconciliationImportBatch,
     BankReconciliationLine,
     BankReconciliationSession,
     JournalEntry,
@@ -25,6 +30,7 @@ from app.schemas import (
     BankReconciliationLineCreate,
     BankReconciliationLineUpdate,
     BankReconciliationLineResponse,
+    BankReconciliationImportResponse,
     BankReconciliationMatch,
     BankReconciliationResponse,
 )
@@ -239,6 +245,161 @@ def add_statement_line(
         raise HTTPException(status_code=409, detail="External statement reference already exists in this session") from None
     db.refresh(line)
     return BankReconciliationLineResponse.model_validate(line)
+
+
+@router.post(
+    "/organizations/{organization_id}/reconciliations/{session_id}/lines/import-csv",
+    response_model=BankReconciliationImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_statement_csv(
+    organization_id: str,
+    session_id: str,
+    request: Request,
+    response: Response,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> BankReconciliationImportResponse:
+    """Import a bounded, strict CSV atomically and retain content-hash provenance.
+
+    Required UTF-8 CSV columns: statement_date,description,amount_minor,external_reference.
+    Amounts are signed integer minor units; no locale-sensitive decimal parsing occurs.
+    """
+    _require_owner_or_admin(membership)
+    session = _get_session(
+        db, organization_id=membership.organization_id, session_id=session_id, lock=True
+    )
+    if session.status != "open":
+        raise HTTPException(status_code=409, detail="Completed reconciliation sessions are immutable")
+
+    raw = await request.body()
+    if not raw or len(raw) > 1_000_000:
+        raise HTTPException(status_code=413 if len(raw) > 1_000_000 else 422, detail="CSV must be non-empty and at most 1 MB")
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in {"text/csv", "text/plain", "application/csv", "application/octet-stream"}:
+        raise HTTPException(status_code=415, detail="Send the CSV as a raw UTF-8 request body")
+    try:
+        text = raw.decode("utf-8-sig", errors="strict")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=422, detail="CSV must be valid UTF-8") from None
+
+    required_columns = ["statement_date", "description", "amount_minor", "external_reference"]
+    reader = csv.DictReader(io.StringIO(text, newline=""))
+    if reader.fieldnames != required_columns:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "CSV header must match the required columns in the documented order", "required_columns": required_columns},
+        )
+
+    payloads: list[BankReconciliationLineCreate] = []
+    references: set[str] = set()
+    try:
+        for row_number, row in enumerate(reader, start=2):
+            if row_number > 1001:
+                raise HTTPException(status_code=413, detail="CSV may contain at most 1000 statement rows")
+            if None in row or any(value is None for value in row.values()):
+                raise HTTPException(status_code=422, detail=f"Malformed CSV row {row_number}")
+            if not any((value or "").strip() for value in row.values()):
+                continue
+            try:
+                parsed_date = date.fromisoformat((row["statement_date"] or "").strip())
+                parsed_amount = int((row["amount_minor"] or "").strip())
+                payload = BankReconciliationLineCreate(
+                    statement_date=parsed_date,
+                    description=row["description"],
+                    amount_minor=parsed_amount,
+                    external_reference=row["external_reference"] or None,
+                )
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(status_code=422, detail=f"Invalid CSV row {row_number}: {str(exc)[:160]}") from None
+            if not session.statement_start_date <= payload.statement_date <= session.statement_end_date:
+                raise HTTPException(status_code=422, detail=f"CSV row {row_number} date is outside the statement window")
+            if payload.external_reference:
+                if payload.external_reference in references:
+                    raise HTTPException(status_code=422, detail=f"Duplicate external reference in CSV row {row_number}")
+                references.add(payload.external_reference)
+            payloads.append(payload)
+    except csv.Error:
+        raise HTTPException(status_code=422, detail="Malformed CSV data") from None
+
+    if not payloads:
+        raise HTTPException(status_code=422, detail="CSV must contain at least one valid statement row")
+    digest = hashlib.sha256(raw).hexdigest()
+    existing_batch = db.scalar(
+        select(BankReconciliationImportBatch).where(
+            BankReconciliationImportBatch.session_id == session.id,
+            BankReconciliationImportBatch.content_sha256 == digest,
+        )
+    )
+    if existing_batch is not None:
+        response.status_code = status.HTTP_200_OK
+        return BankReconciliationImportResponse(
+            import_batch_id=existing_batch.id,
+            session_id=session.id,
+            content_sha256=existing_batch.content_sha256,
+            row_count=existing_batch.row_count,
+            source_filename=existing_batch.source_filename,
+            created_at=existing_batch.created_at,
+            replayed=True,
+        )
+
+    if references:
+        existing_reference = db.scalar(
+            select(BankReconciliationLine.id).where(
+                BankReconciliationLine.session_id == session.id,
+                BankReconciliationLine.external_reference.in_(references),
+            ).limit(1)
+        )
+        if existing_reference is not None:
+            raise HTTPException(status_code=409, detail="CSV contains an external reference already imported in this session")
+
+    filename_header = request.headers.get("x-import-filename", "").strip()
+    filename = os.path.basename(filename_header.replace("\\", "/"))[:255] or None
+    batch = BankReconciliationImportBatch(
+        id=str(uuid4()),
+        session_id=session.id,
+        created_by_user_id=membership.user_id,
+        content_sha256=digest,
+        source_filename=filename,
+        row_count=len(payloads),
+    )
+    db.add(batch)
+    for payload in payloads:
+        db.add(
+            BankReconciliationLine(
+                id=str(uuid4()),
+                session_id=session.id,
+                statement_date=payload.statement_date,
+                description=payload.description,
+                amount_minor=payload.amount_minor,
+                external_reference=payload.external_reference,
+                import_batch_id=batch.id,
+            )
+        )
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="bank_reconciliation.csv_imported",
+        entity_type="bank_reconciliation_import",
+        entity_id=batch.id,
+        details={"session_id": session.id, "row_count": len(payloads), "content_sha256": digest},
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="CSV import conflicts with existing statement references or import batch") from None
+    db.refresh(batch)
+    return BankReconciliationImportResponse(
+        import_batch_id=batch.id,
+        session_id=session.id,
+        content_sha256=batch.content_sha256,
+        row_count=batch.row_count,
+        source_filename=batch.source_filename,
+        created_at=batch.created_at,
+        replayed=False,
+    )
 
 
 @router.post(
