@@ -43,4 +43,4 @@ This checklist is deliberately not marked complete merely because CI passes. Com
 
 ## Release decision
 A release owner must review the evidence above and explicitly approve the release. Passing CI is necessary but not sufficient. Do not enable paid AI calls, real payment processing, or production deployment without explicit authorization.
-- [ ] Verify the bank-reconciliation window overlap trigger/concurrency integration test in CI and expand reconciliation race coverage.
+- [x] PostgreSQL CI verifies concurrent bank-reconciliation window creation and database-trigger rejection of overlapping statement windows; broader reconciliation race coverage remains required.
