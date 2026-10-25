@@ -27,6 +27,7 @@ class OpenAICompatibleProvider:
         timeout_seconds: float = 20.0,
         max_response_bytes: int = 1_048_576,
         transport: httpx.AsyncBaseTransport | None = None,
+        provider_name: str = "openai-compatible",
     ) -> None:
         parsed = urlsplit(base_url)
         if (
@@ -51,6 +52,9 @@ class OpenAICompatibleProvider:
         self._timeout = timeout_seconds
         self._max_response_bytes = max_response_bytes
         self._transport = transport
+        if not provider_name.strip():
+            raise ValueError("Provider name must not be empty")
+        self._provider_name = provider_name.strip()
 
     async def complete(self, prompt: str, max_output_tokens: int) -> dict[str, Any]:
         if not prompt.strip():
@@ -77,7 +81,10 @@ class OpenAICompatibleProvider:
                     json=payload,
                 ) as response:
                     if response.is_error:
-                        raise ProviderError(f"AI provider returned HTTP {response.status_code}")
+                        raise ProviderError(
+                            f"AI provider returned HTTP {response.status_code}",
+                            retryable=response.status_code == 429 or response.status_code >= 500,
+                        )
                     content_length = response.headers.get("content-length")
                     if content_length is not None:
                         try:
@@ -93,9 +100,9 @@ class OpenAICompatibleProvider:
             except ProviderError:
                 raise
             except httpx.TimeoutException as exc:
-                raise ProviderError("AI provider request timed out") from exc
+                raise ProviderError("AI provider request timed out", retryable=True) from exc
             except httpx.HTTPError as exc:
-                raise ProviderError("AI provider connection failed") from exc
+                raise ProviderError("AI provider connection failed", retryable=True) from exc
 
         try:
             body = json.loads(response_body)
@@ -112,7 +119,7 @@ class OpenAICompatibleProvider:
         if input_tokens < 0 or output_tokens < 0:
             raise ProviderError("AI provider response contains invalid token usage")
         return {
-            "provider": "openai-compatible",
+            "provider": self._provider_name,
             "model": self._model,
             "content": content,
             "input_tokens": input_tokens,
