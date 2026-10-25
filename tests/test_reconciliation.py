@@ -125,6 +125,31 @@ def test_reconciliation_matches_statement_lines_and_completes(client):
     assert deposit.status_code == 201, deposit.text
     assert withdrawal.status_code == 201, withdrawal.text
 
+    temporary = client.post(
+        f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines",
+        headers=headers,
+        json={"statement_date": today, "description": "Temporary import", "amount_minor": 100, "external_reference": "BANK-TEMP"},
+    )
+    assert temporary.status_code == 201, temporary.text
+    deleted = client.delete(
+        f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines/{temporary.json()['id']}",
+        headers=headers,
+    )
+    assert deleted.status_code == 204
+
+    corrected_balances = client.put(
+        f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/balances",
+        headers=headers,
+        json={"opening_balance_minor": 999, "closing_balance_minor": 1299},
+    )
+    assert corrected_balances.status_code == 200, corrected_balances.text
+    restored_balances = client.put(
+        f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/balances",
+        headers=headers,
+        json={"opening_balance_minor": 1000, "closing_balance_minor": 1300},
+    )
+    assert restored_balances.status_code == 200, restored_balances.text
+
     premature = client.post(
         f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/complete",
         headers=headers,
@@ -150,6 +175,30 @@ def test_reconciliation_matches_statement_lines_and_completes(client):
     )
     assert matched_deposit.status_code == 200, matched_deposit.text
     assert matched_withdrawal.status_code == 200, matched_withdrawal.text
+
+    cannot_edit_matched = client.put(
+        f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines/{deposit.json()['id']}",
+        headers=headers,
+        json={"statement_date": today, "description": "Edited while matched", "amount_minor": 500, "external_reference": "BANK-001"},
+    )
+    assert cannot_edit_matched.status_code == 409
+    unmatched = client.post(
+        f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines/{deposit.json()['id']}/unmatch",
+        headers=headers,
+    )
+    assert unmatched.status_code == 200, unmatched.text
+    corrected_line = client.put(
+        f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines/{deposit.json()['id']}",
+        headers=headers,
+        json={"statement_date": today, "description": "Corrected customer deposit", "amount_minor": 500, "external_reference": "BANK-001"},
+    )
+    assert corrected_line.status_code == 200, corrected_line.text
+    rematched = client.post(
+        f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines/{deposit.json()['id']}/match",
+        headers=headers,
+        json={"journal_line_id": deposit_line_id},
+    )
+    assert rematched.status_code == 200, rematched.text
 
     completed = client.post(
         f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/complete",
