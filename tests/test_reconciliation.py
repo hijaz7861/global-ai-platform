@@ -301,3 +301,110 @@ def test_reconciliation_rejects_cross_tenant_accounts_and_duplicate_matches(clie
         headers=headers_b,
     )
     assert other_org_read.status_code == 404
+
+
+
+def test_csv_import_is_atomic_provenanced_and_idempotent(client):
+    token, org_id = owner_and_org(client, "reconcile-csv@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    cash = create_account(client, token, org_id, "1000", "asset")
+    today = datetime.now(timezone.utc).date().isoformat()
+    created = client.post(
+        f"/api/v1/organizations/{org_id}/reconciliations",
+        headers=headers,
+        json={
+            "account_id": cash,
+            "statement_start_date": today,
+            "statement_end_date": today,
+            "opening_balance_minor": 0,
+            "closing_balance_minor": 300,
+        },
+    )
+    assert created.status_code == 201, created.text
+    session_id = created.json()["id"]
+    csv_bytes = (
+        "statement_date,description,amount_minor,external_reference\\n"
+        f"{today},Deposit,500,BANK-CSV-001\\n"
+        f"{today},Withdrawal,-200,BANK-CSV-002\\n"
+    ).encode()
+    import_url = f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines/import-csv"
+    csv_headers = {**headers, "Content-Type": "text/csv", "X-Import-Filename": "../bank-statement.csv"}
+
+    imported = client.post(import_url, headers=csv_headers, content=csv_bytes)
+    assert imported.status_code == 201, imported.text
+    body = imported.json()
+    assert body["row_count"] == 2
+    assert body["source_filename"] == "bank-statement.csv"
+    assert len(body["content_sha256"]) == 64
+    assert body["replayed"] is False
+
+    lines = client.get(
+        f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines",
+        headers=headers,
+    )
+    assert lines.status_code == 200
+    assert len(lines.json()) == 2
+    assert {line["import_batch_id"] for line in lines.json()} == {body["import_batch_id"]}
+
+    replay = client.post(import_url, headers=csv_headers, content=csv_bytes)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["replayed"] is True
+    assert replay.json()["import_batch_id"] == body["import_batch_id"]
+    assert len(client.get(
+        f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines",
+        headers=headers,
+    ).json()) == 2
+
+    bad_csv = (
+        "statement_date,description,amount_minor,external_reference\\n"
+        f"{today},Valid row,100,BANK-CSV-003\\n"
+        f"{today},Invalid zero,0,BANK-CSV-004\\n"
+    ).encode()
+    rejected = client.post(import_url, headers=csv_headers, content=bad_csv)
+    assert rejected.status_code == 422
+    after_rejection = client.get(
+        f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines",
+        headers=headers,
+    )
+    assert len(after_rejection.json()) == 2
+
+
+def test_csv_import_rejects_duplicate_references_and_malformed_headers(client):
+    token, org_id = owner_and_org(client, "reconcile-csv-invalid@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    cash = create_account(client, token, org_id, "1000", "asset")
+    today = datetime.now(timezone.utc).date().isoformat()
+    created = client.post(
+        f"/api/v1/organizations/{org_id}/reconciliations",
+        headers=headers,
+        json={
+            "account_id": cash,
+            "statement_start_date": today,
+            "statement_end_date": today,
+            "opening_balance_minor": 0,
+            "closing_balance_minor": 100,
+        },
+    )
+    assert created.status_code == 201, created.text
+    session_id = created.json()["id"]
+    url = f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines/import-csv"
+    csv_headers = {**headers, "Content-Type": "text/csv"}
+    duplicate_refs = (
+        "statement_date,description,amount_minor,external_reference\\n"
+        f"{today},First,50,DUPLICATE\\n"
+        f"{today},Second,50,DUPLICATE\\n"
+    ).encode()
+    rejected = client.post(url, headers=csv_headers, content=duplicate_refs)
+    assert rejected.status_code == 422
+    wrong_header = client.post(
+        url,
+        headers=csv_headers,
+        content=b"date,description,amount_minor,external_reference\\n2026-01-01,Wrong,100,REF-1\\n",
+    )
+    assert wrong_header.status_code == 422
+    lines = client.get(
+        f"/api/v1/organizations/{org_id}/reconciliations/{session_id}/lines",
+        headers=headers,
+    )
+    assert lines.status_code == 200
+    assert lines.json() == []
