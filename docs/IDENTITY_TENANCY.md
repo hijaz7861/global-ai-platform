@@ -9,7 +9,7 @@
 - Persistent failed-login lockout and database-backed request throttling are implemented. Forwarded client IPs are trusted only when the direct peer is configured in `TRUSTED_PROXY_IPS`.
 - Invitation lifecycle supports owner/admin invite, recipient acceptance using a single-use token, and revocation of pending invitations. SMTP must be configured to deliver invitations.
 - Organization creation makes the creator owner. Membership and tenant-owned resources are scoped to organization membership; role-management operations are constrained and audited.
-- PostgreSQL CI covers concurrent refresh-token replay, and other PostgreSQL integration tests cover inventory reservation, cancellation, accounting-period creation and audit immutability.
+- PostgreSQL CI covers concurrent refresh-token replay, inventory reservation, cancellation without double stock release, accounting-period creation, and audit immutability.
 
 ## Operational requirements and limitations
 - Set a unique random `SECRET_KEY` of at least 32 characters in a deployment secret manager. Never commit credentials or use test keys.
