@@ -322,6 +322,62 @@ class JournalLine(Base):
     account: Mapped[Account] = relationship(back_populates="lines")
 
 
+class BankReconciliationSession(Base):
+    """A manually imported bank statement window for one tenant-owned asset account."""
+    __tablename__ = "bank_reconciliation_sessions"
+    __table_args__ = (
+        CheckConstraint("status IN ('open','completed')", name="ck_bank_reconciliation_status"),
+        CheckConstraint("statement_end_date >= statement_start_date", name="ck_bank_reconciliation_dates"),
+        UniqueConstraint(
+            "organization_id", "account_id", "statement_start_date", "statement_end_date",
+            name="uq_bank_reconciliation_account_window",
+        ),
+        Index("ix_bank_reconciliation_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    statement_start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    statement_end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    opening_balance_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    closing_balance_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    lines: Mapped[list["BankReconciliationLine"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan", order_by="BankReconciliationLine.statement_date"
+    )
+
+
+class BankReconciliationLine(Base):
+    """A signed bank statement movement matched to at most one posted cash-account journal line."""
+    __tablename__ = "bank_reconciliation_lines"
+    __table_args__ = (
+        CheckConstraint("amount_minor != 0", name="ck_bank_reconciliation_line_nonzero_amount"),
+        UniqueConstraint("matched_journal_line_id", name="uq_bank_reconciliation_matched_journal_line"),
+        Index("ix_bank_reconciliation_lines_session_date", "session_id", "statement_date"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("bank_reconciliation_sessions.id", ondelete="RESTRICT"), nullable=False
+    )
+    statement_date: Mapped[date] = mapped_column(Date, nullable=False)
+    description: Mapped[str] = mapped_column(String(300), nullable=False)
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    external_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    matched_journal_line_id: Mapped[str | None] = mapped_column(
+        ForeignKey("journal_lines.id", ondelete="RESTRICT"), nullable=True
+    )
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    session: Mapped[BankReconciliationSession] = relationship(back_populates="lines")
+
+
 class TokenRevocation(Base):
     __tablename__ = "token_revocations"
     __table_args__ = (Index("ix_token_revocations_expires_at", "expires_at"),)
