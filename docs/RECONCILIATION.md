@@ -4,6 +4,7 @@
 This workflow records a bank statement window and manually entered statement movements, then matches each movement to one posted journal line for the same tenant-owned active asset account. It does not connect to a bank, import CSV files, move money, or provide accounting advice.
 
 ## API
+- `POST /api/v1/organizations/{organization_id}/reconciliations/{session_id}/lines/import-csv`: import a raw UTF-8 CSV request body with the exact header `statement_date,description,amount_minor,external_reference`. The parser accepts ISO dates and signed integer minor-unit amounts, validates all rows before writing, limits uploads to 1 MB / 1,000 rows, and inserts the batch atomically. It records a SHA-256 digest, sanitized optional source filename, actor, timestamp and row count; an exact same-file replay returns the prior batch without duplicating lines.
 - `POST /api/v1/organizations/{organization_id}/reconciliations`: owner/admin opens a statement window for an active asset account, with statement start/end dates and opening/closing balances in integer minor units.
 - `GET /api/v1/organizations/{organization_id}/reconciliations`: list sessions with bounded pagination.
 - `GET /api/v1/organizations/{organization_id}/reconciliations/{session_id}/lines`: list imported statement lines.
@@ -27,8 +28,9 @@ This workflow records a bank statement window and manually entered statement mov
 - Completed sessions cannot accept additional lines, edits, deletions, or new matches. Completion is idempotent.
 
 ## Known limitations
-- Statement lines are entered individually; there is no file upload/parser or bank connector.
+- CSV upload is supported, but there is still no bank connector or bank-feed synchronization. The upload is raw CSV, not multipart file upload.
 - Matching is exact one-to-one only. Split transactions, combined deposits, automatic suggestions, tolerances, fees, interest, and automatic adjusting journal entries are not supported.
 - Completion validates statement arithmetic and that every imported statement line has a journal match. It does not require every journal line in the window to appear on the bank statement; timing differences remain the operator's responsibility.
 - It is not payment reconciliation and does not mark orders paid, post settlements, or move funds.
+- CSV rows must use integer minor units, not decimal currency values. Validate the mapping and sign convention with each bank’s statement format before importing.
 - Production use requires independent accounting-domain review, controlled import provenance, backup/restore testing, and staging validation.
