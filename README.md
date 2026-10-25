@@ -21,7 +21,7 @@ A private, modular project for building a global business platform incrementally
 - Guarded OpenAI-compatible AI chat adapter with explicit primary/optional fallback provider selection per request; automatic failover and monetary budgets remain future work. External calls are disabled by default and require explicit opt-in, a positive request limit, and PostgreSQL.
 - Orders remain `pending_payment`; no payment is charged or processed.
 - SQLAlchemy models and Alembic migrations for identity, rotating refresh-token families, tenants, catalog, inventory adjustment history, orders, audit, accounting periods, journal entries and reversals, token revocation, password reset, and supplier profiles.
-- GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks.
+- GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks. The test requirements include `httpx2` for the current Starlette `TestClient` and `httpx` for the AI adapter's async provider client.
 - Platform-admin security cleanup endpoint for expired credentials and stale throttle records; schedule it through a trusted external scheduler.
 - Optional Docker packaging that applies migrations before starting the API.
 
