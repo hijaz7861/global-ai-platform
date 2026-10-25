@@ -840,3 +840,137 @@ def test_journal_posting_serializes_with_period_closure_and_trigger_blocks_close
                 )
     finally:
         engine.dispose()
+
+
+def test_concurrent_procurement_awards_accept_exactly_one_supplier_quote(monkeypatch):
+    from app.core.config import settings
+
+    suffix = uuid4().hex
+    password = "correct-horse-battery-12"
+    admin_email = f"postgres-proc-admin-{suffix}@example.com"
+    buyer_email = f"postgres-proc-buyer-{suffix}@example.com"
+    supplier_emails = [
+        f"postgres-proc-supplier-one-{suffix}@example.com",
+        f"postgres-proc-supplier-two-{suffix}@example.com",
+    ]
+    monkeypatch.setattr(settings, "platform_admin_emails", admin_email)
+
+    def register_and_login(client, email):
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        return login.json()["access_token"]
+
+    with TestClient(app) as client:
+        admin_token = register_and_login(client, admin_email)
+        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        buyer_token = register_and_login(client, buyer_email)
+        buyer_org = client.post(
+            "/api/v1/organizations",
+            headers={"Authorization": f"Bearer {buyer_token}"},
+            json={"name": f"Procurement Buyer {suffix[:8]}"},
+        )
+        assert buyer_org.status_code == 201, buyer_org.text
+        buyer_org_id = buyer_org.json()["id"]
+        buyer_headers = {"Authorization": f"Bearer {buyer_token}"}
+
+        supplier_tokens = []
+        supplier_org_ids = []
+        for index, email in enumerate(supplier_emails, start=1):
+            token = register_and_login(client, email)
+            supplier_tokens.append(token)
+            organization = client.post(
+                "/api/v1/organizations",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"name": f"Procurement Supplier {index} {suffix[:6]}"},
+            )
+            assert organization.status_code == 201, organization.text
+            supplier_org_id = organization.json()["id"]
+            supplier_org_ids.append(supplier_org_id)
+            profile = client.post(
+                f"/api/v1/organizations/{supplier_org_id}/supplier-profile",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "legal_name": f"Procurement Supplier {index} Ltd",
+                    "business_type": "manufacturer",
+                    "country_code": "PK",
+                    "contact_email": f"proc-supplier-{index}-{suffix}@example.com",
+                    "description": "PostgreSQL award concurrency test",
+                },
+            )
+            assert profile.status_code == 201, profile.text
+            submitted = client.post(
+                f"/api/v1/organizations/{supplier_org_id}/supplier-profile/submit",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert submitted.status_code == 200, submitted.text
+            reviewed = client.post(
+                f"/api/v1/platform/supplier-submissions/{profile.json()['id']}/review",
+                headers=admin_headers,
+                json={"decision": "approved", "notes": "CI test approval"},
+            )
+            assert reviewed.status_code == 200, reviewed.text
+
+        request = client.post(
+            f"/api/v1/organizations/{buyer_org_id}/procurement-requests",
+            headers=buyer_headers,
+            json={
+                "title": "Concurrent award request",
+                "description": "Only one quote may win",
+                "quantity": 10,
+                "currency": "PKR",
+            },
+        )
+        assert request.status_code == 201, request.text
+        request_id = request.json()["id"]
+        quote_ids = []
+        for index, (supplier_org_id, token) in enumerate(zip(supplier_org_ids, supplier_tokens), start=1):
+            quote = client.post(
+                f"/api/v1/organizations/{supplier_org_id}/procurement-requests/{request_id}/quotes",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "unit_price_minor": 100 + index,
+                    "currency": "PKR",
+                    "lead_time_days": index,
+                    "notes": f"Offer {index}",
+                },
+            )
+            assert quote.status_code == 201, quote.text
+            quote_ids.append(quote.json()["id"])
+
+    def award_once(quote_id):
+        with TestClient(app) as client:
+            return client.post(
+                f"/api/v1/organizations/{buyer_org_id}/procurement-requests/{request_id}/award",
+                headers=buyer_headers,
+                json={"quote_id": quote_id},
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(award_once, quote_ids))
+    assert sorted(response.status_code for response in responses) == [200, 409], [
+        (response.status_code, response.text) for response in responses
+    ]
+    with TestClient(app) as client:
+        quotes = client.get(
+            f"/api/v1/organizations/{buyer_org_id}/procurement-requests/{request_id}/quotes",
+            headers=buyer_headers,
+        )
+        requests = client.get(
+            f"/api/v1/organizations/{buyer_org_id}/procurement-requests",
+            headers=buyer_headers,
+        )
+    assert quotes.status_code == 200, quotes.text
+    assert requests.status_code == 200, requests.text
+    statuses = [quote["status"] for quote in quotes.json()]
+    assert statuses.count("accepted") == 1
+    assert statuses.count("rejected") == 1
+    awarded = [item for item in requests.json() if item["id"] == request_id]
+    assert len(awarded) == 1 and awarded[0]["status"] == "awarded"
