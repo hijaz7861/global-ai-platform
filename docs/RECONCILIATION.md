@@ -9,6 +9,10 @@ This workflow records a bank statement window and manually entered statement mov
 - `GET /api/v1/organizations/{organization_id}/reconciliations/{session_id}/lines`: list imported statement lines.
 - `POST /api/v1/organizations/{organization_id}/reconciliations/{session_id}/lines`: enter one statement movement; positive means a deposit/increase to the asset, negative means a withdrawal/decrease.
 - `POST /api/v1/organizations/{organization_id}/reconciliations/{session_id}/lines/{line_id}/match`: match the statement movement to a journal line.
+- `PUT /api/v1/organizations/{organization_id}/reconciliations/{session_id}/balances`: correct opening/closing balances while the session is open.
+- `PUT /api/v1/organizations/{organization_id}/reconciliations/{session_id}/lines/{line_id}`: correct an unmatched statement line.
+- `DELETE /api/v1/organizations/{organization_id}/reconciliations/{session_id}/lines/{line_id}`: remove an unmatched line with an audit event.
+- `POST /api/v1/organizations/{organization_id}/reconciliations/{session_id}/lines/{line_id}/unmatch`: unmatch a line before correcting it.
 - `POST /api/v1/organizations/{organization_id}/reconciliations/{session_id}/complete`: complete the session after all statement lines are matched and the statement arithmetic reconciles.
 
 ## Invariants
@@ -19,7 +23,8 @@ This workflow records a bank statement window and manually entered statement mov
 - A journal line can be matched only once across reconciliation sessions; a statement line can be matched only once.
 - Duplicate non-empty external references within one session are rejected.
 - A session cannot complete with no lines or unmatched lines. Opening balance plus all statement movements must equal the declared closing balance.
-- Completed sessions cannot accept additional lines or new matches. Completion is idempotent.
+- Open sessions support audited balance corrections, unmatched-line edits/deletion, and explicit unmatching so an operator can recover from import mistakes. Matched lines must be unmatched before editing/deletion.
+- Completed sessions cannot accept additional lines, edits, deletions, or new matches. Completion is idempotent.
 
 ## Known limitations
 - Statement lines are entered individually; there is no file upload/parser or bank connector.
