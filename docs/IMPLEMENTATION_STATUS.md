@@ -23,7 +23,7 @@ CI run 416 at commit `d3227207307837e162b21e0069ae4740c78894d6` passed Ruff, com
 - Signing-key rotation requires an operator-controlled procedure: configure `PREVIOUS_SECRET_KEYS`, run `python -m app.rotate_mfa_secrets` to re-encrypt stored MFA secrets, verify MFA login, retain old keys until prior access tokens expire, then remove them. This procedure still requires staging validation.
 - Broader role administration and organization membership-role changes.
 - Cryptographic audit hash chaining, retention policy, and external log export. Database-level UPDATE/DELETE protection is implemented; it does not by itself prevent a privileged database operator from disabling triggers.
-- Cash-flow statements, reconciliation workflows, payments, refunds, tax, seller settlement, and  The balance sheet includes accumulated net income as current earnings until a closing workflow is implemented.
+- Cash-flow statements, payment reconciliation, payments, refunds, tax, seller settlement, and closing workflows remain open. The new manual bank-statement reconciliation MVP is not a bank connector or payment reconciliation. The balance sheet includes accumulated net income as current earnings until a closing workflow is implemented.
 - External scheduler provisioning and operational alerting remain operator-owned; the one-shot runner is provided. Full inventory/order race-condition coverage remains open.
 - Multi-provider AI routing/fallback, provider-specific native APIs, monetary budgets, tool permissions, and autonomous agent workflows.
 - Procurement approval thresholds, logistics, rentals, real estate, workforce, education, OAuth connectors, and webhooks.
