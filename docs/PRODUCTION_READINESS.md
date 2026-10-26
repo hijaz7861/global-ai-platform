@@ -1,6 +1,6 @@
 # Production Readiness Gate
 
-> **Current verification note (2026-10-26):** PR #1 includes the environment-template correction and removal of the unused `httpx2` dependency. Recent CI runs (#517 and #518) failed before any job steps executed (job step details are absent); the exact runner-side cause remains unresolved. Historical green runs are evidence for their own commits only. The current head is not CI-verified.
+> **Current verification note (2026-10-26):** PR #1 includes the environment-template correction and removal of the unused `httpx2` dependency from both dependency manifests. CI run [40338699506](https://github.com/hijaz7861/global-ai-platform/actions/runs/40338699506) for commit `c3b0ad61fdd395ec98a0849bc31c1ef31d32863a` failed across all five jobs; the GitHub job responses expose no steps or runner details, and log retrieval returned `BlobNotFound`. A retry failed the same way. The exact cause remains unconfirmed; do not assume this proves a code failure or that quota is exhausted. Historical green runs apply only to their recorded commits. The current head is not CI-verified.
 
 This checklist is deliberately not marked complete merely because CI passes. Complete each gate in a staging environment with evidence before a production release.
 
