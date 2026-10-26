@@ -13,7 +13,7 @@
 
 ## Verification status
 
-> **Current head status (2026-10-26):** The environment-template correction and removal of the unused `httpx2` dependency are committed. CI run #517 for head `a83cdebe272fee939083c8792601b21006bc5185` failed before any workflow steps executed; the runner-side cause remains unresolved. Historical green runs verify only their recorded commits, not this head. Do not mark the current head as tested until the full workflow completes.
+> **Current head status (2026-10-26):** The environment-template correction and removal of the unused `httpx2` dependency are committed. Recent CI runs (#517 and #518) failed before any workflow steps executed; the runner-side cause remains unresolved. Historical green runs verify only their recorded commits, not the current head. Do not mark the current head as tested until the full workflow completes.
 - CI run 479 at commit `d11aa8dec6d95afedaed09c1e8e70f4933c22b96` passed Ruff, compilation, Alembic consistency, and 83 passed / 11 environment-dependent skips on each of Python 3.11, 3.12, and 3.13. PostgreSQL 16 integration reported 11 passed, including concurrent procurement quote awards with exactly one accepted quote. Dependency audit found no known vulnerabilities and Bandit reported no issues at configured thresholds.
 - The automated checks are not an independent security audit and do not prove production configuration. No production deployment, live payment processing, or live paid AI request has occurred.
 
