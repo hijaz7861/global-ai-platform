@@ -1,11 +1,13 @@
 # Production Readiness Gate
 
+> **Current verification note (2026-10-26):** PR #1 head `bb836e1f22e361e88f9fd37d9266df4be22fcff5` has not yet been validated by a successful CI run. The latest inspected run (#511) failed before any job steps executed, and a retry did not resolve it. Historical green runs are evidence for their own commits only; do not treat the current head as tested until CI completes.
+
 This checklist is deliberately not marked complete merely because CI passes. Complete each gate in a staging environment with evidence before a production release.
 
 ## Current verified automation
 - [x] Ruff lint and Python compilation in CI.
-- [x] Dependency vulnerability audit (`pip-audit`) in CI; latest run reports no known vulnerabilities for resolved requirements.
-- [x] Bandit static security analysis in CI; latest run reports no issues at configured thresholds.
+- [x] Dependency vulnerability audit (`pip-audit`) has passed in historical CI; the current PR head still requires a successful rerun.
+- [x] Bandit static security analysis has passed in historical CI at configured thresholds; the current PR head still requires a successful rerun.
 - [x] Alembic upgrade consistency on Python 3.11, 3.12, and 3.13.
 - [x] PostgreSQL 16 full migration and schema-consistency job.
 - [x] PostgreSQL concurrent refresh-token replay integration test.
