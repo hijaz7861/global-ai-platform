@@ -1,6 +1,6 @@
 # Production Readiness Gate
 
-> **Current verification note (2026-10-26):** PR #1 head `a83cdebe272fee939083c8792601b21006bc5185` includes the environment-template correction and removal of the unused `httpx2` dependency. CI run #517 failed before any job steps executed (job step details are absent); the exact runner-side cause remains unresolved. Historical green runs are evidence for their own commits only. The current head is not CI-verified.
+> **Current verification note (2026-10-26):** PR #1 includes the environment-template correction and removal of the unused `httpx2` dependency. Recent CI runs (#517 and #518) failed before any job steps executed (job step details are absent); the exact runner-side cause remains unresolved. Historical green runs are evidence for their own commits only. The current head is not CI-verified.
 
 This checklist is deliberately not marked complete merely because CI passes. Complete each gate in a staging environment with evidence before a production release.
 
