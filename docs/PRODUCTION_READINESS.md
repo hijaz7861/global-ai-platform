@@ -1,6 +1,6 @@
 # Production Readiness Gate
 
-> **Current verification note (2026-10-26):** The current PR #1 head has not yet been validated by a successful CI run. Recent PR runs and a retry have failed before any job steps executed; the exact cause remains unresolved. Historical green runs are evidence for their own commits only; do not treat the current head as tested until CI completes.
+> **Current verification note (2026-10-26):** PR #1 head `a83cdebe272fee939083c8792601b21006bc5185` includes the environment-template correction and removal of the unused `httpx2` dependency. CI run #517 failed before any job steps executed (job step details are absent); the exact runner-side cause remains unresolved. Historical green runs are evidence for their own commits only. The current head is not CI-verified.
 
 This checklist is deliberately not marked complete merely because CI passes. Complete each gate in a staging environment with evidence before a production release.
 
