@@ -1,6 +1,6 @@
 # Production Readiness Gate
 
-> **Current verification note (2026-10-26):** PR #1 head `bb836e1f22e361e88f9fd37d9266df4be22fcff5` has not yet been validated by a successful CI run. The latest inspected run (#511) failed before any job steps executed, and a retry did not resolve it. Historical green runs are evidence for their own commits only; do not treat the current head as tested until CI completes.
+> **Current verification note (2026-10-26):** The current PR #1 head has not yet been validated by a successful CI run. The latest inspected run (#511) failed before any job steps executed, and a retry did not resolve it. Historical green runs are evidence for their own commits only; do not treat the current head as tested until CI completes.
 
 This checklist is deliberately not marked complete merely because CI passes. Complete each gate in a staging environment with evidence before a production release.
 
