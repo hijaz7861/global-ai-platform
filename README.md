@@ -25,6 +25,10 @@ A private, modular project for building a global business platform incrementally
 - Platform-admin security cleanup endpoint for expired credentials and stale throttle records; schedule it through a trusted external scheduler.
 - Optional Docker packaging that applies migrations before starting the API.
 
+## Integration roadmap
+
+- [Own Automation Engine integration](docs/OWN_AUTOMATION_ENGINE_INTEGRATION.md) — phased connector contract, tenant boundaries, approvals, and release gates.
+
 ## Run locally
 
 Python 3.11 or newer is required.
