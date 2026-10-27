@@ -1,4 +1,4 @@
-"Environment-backed application settings."""
+"""Environment-backed application settings."""
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
