@@ -1,4 +1,4 @@
-"""Environment-backed application settings."""
+"Environment-backed application settings."""
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -50,6 +50,16 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+
+def validate_runtime_settings(config: "Settings") -> None:
+    """Fail closed on unsafe production configuration without exposing secret values."""
+    if config.environment.strip().lower() != "production":
+        return
+    if not config.secret_key or len(config.secret_key) < 32:
+        raise RuntimeError("Production requires a SECRET_KEY of at least 32 characters")
+    if not config.database_url.lower().startswith(("postgresql://", "postgresql+")):
+        raise RuntimeError("Production requires PostgreSQL; SQLite is for local development only")
 
 
 settings = Settings()
