@@ -52,3 +52,11 @@ CI passing is not equivalent to production readiness. Production deployment and 
 - PostgreSQL 16 integration: 11 passed.
 - Ruff, compilation, Alembic consistency, dependency audit and Bandit passed at configured thresholds.
 - This verifies the CSV import code in CI, not production bank compatibility or independent accounting/security approval.
+
+## Own Automation Engine integration (2026-10-27)
+
+- Added `docs/OWN_AUTOMATION_ENGINE_INTEGRATION.md` and linked it from the README.
+- Confirmed the engine's MCP PR #14 is merged to its `main` branch. Its MCP surface is local stdio and exposes discovery/inspection/design/proposal tools only; workflow apply/execute are intentionally unavailable.
+- Defined a phased integration contract: platform-owned identity/tenant scope, read-only discovery, proposal-only changes, secure tunnel transport, server-side approval records, audit redaction, idempotency, and later guarded execution.
+- **Not connected:** no live tunnel ID/runtime key or end-to-end handshake has been verified. No engine calls are made by Global AI Platform yet. This commit documents the integration boundary only; it does not claim runtime integration.
+- **Release gate:** do not merge/deploy or enable execution based on this document alone. Verify current-head CI and complete the secure transport and tenant-isolation tests first.
