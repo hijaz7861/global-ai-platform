@@ -27,7 +27,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db import get_db
-from app.models import AuthAttempt, AuthRateLimitLock, AuditEvent, EmailVerificationToken, MFARecoveryCode, Membership, Order, OrderItem, Organization, PasswordResetToken, RefreshToken, TokenRevocation, User, utc_now
+from app.models import AuthAttempt, AuthRateLimitLock, EmailVerificationToken, MFARecoveryCode, Membership, Order, OrderItem, Organization, PasswordResetToken, RefreshToken, TokenRevocation, User, utc_now
 from app.schemas import EmailVerificationConfirm, LoginRequest, MFAConfirmRequest, MFADisableRequest, MFAEnrollRequest, MFAEnrollmentResponse, MFARecoveryCodesRequest, MFARecoveryCodesResponse, PasswordResetConfirm, PasswordResetRequest, RefreshTokenRequest, RegisterRequest, TokenResponse
 from app.services.email import send_email_verification, send_password_reset_email
 
