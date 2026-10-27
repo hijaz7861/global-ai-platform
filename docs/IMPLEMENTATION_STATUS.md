@@ -11,6 +11,10 @@
 - Guarded OpenAI-compatible adapter: explicit opt-in, primary/fallback endpoint selection, output/time limits, response-size cap, no automatic retries, safe errors, provider/model audit metadata, PostgreSQL-serialized request quotas, and live calls disabled by default.
 - CI: Ruff, compilation, Alembic migration consistency, pytest on Python 3.11–3.13, PostgreSQL 16 integration tests, pip-audit, and Bandit.
 
+## Recent reliability improvement (pending CI)
+- Added `GET /api/v1/ready`, which executes a lightweight `SELECT 1` against the configured database and returns HTTP 503 with a generic message if SQLAlchemy reports a database error. The existing `/api/v1/health` remains process-level health only.
+- Added tests for successful readiness and fail-closed behavior without leaking database exception details. These changes are committed but remain unverified until the current-head test suite passes.
+
 ## Verification status
 
 > **Current head status (2026-10-26):** The environment-template correction and removal of the unused `httpx2` dependency from both dependency manifests are committed. CI run [40338699506](https://github.com/hijaz7861/global-ai-platform/actions/runs/40338699506) for commit `c3b0ad61fdd395ec98a0849bc31c1ef31d32863a` failed across all five jobs; job step and runner details were absent, log retrieval returned `BlobNotFound`, and a retry failed the same way. The exact cause remains unconfirmed; this does not establish whether the workflow failed because of runner infrastructure, account configuration, or code. Historical green runs verify only their recorded commits, not the current head. Do not mark the current head as tested until the full workflow completes.
