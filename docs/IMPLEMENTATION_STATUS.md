@@ -1,5 +1,11 @@
 # Implementation Status
 
+## Latest platform hardening (2026-10-27)
+- Added startup validation for production deployments: `ENVIRONMENT=production` now requires a `SECRET_KEY` of at least 32 characters and a PostgreSQL database URL. Local development remains compatible with SQLite.
+- Added four focused tests for development compatibility and production fail-closed behavior. The equivalent isolated test slice passed locally on Python 3.13.5 with Pydantic 2.13.5 and pytest 9.0.2; this is not a full-repository test run.
+- Removed the standalone Own Automation Engine integration scaffolding from this branch to keep the current delivery focused on the Global AI Platform core.
+- The new current-head commit has no reported workflow runs or commit statuses yet. The full repository suite, migration checks, dependency audit, and PostgreSQL integration tests remain unverified for this exact head.
+
 ## Implemented in the draft foundation branch
 - FastAPI application, OpenAPI, versioned health endpoint, SQLAlchemy models, Alembic migrations, and optional Docker packaging that applies migrations before startup.
 - Identity: normalized registration, Argon2 password hashing, email verification, password reset, rotating hashed refresh tokens with replay-family revocation, logout revocation, persistent request throttling, account lockout, encrypted TOTP MFA, single-use recovery codes, organization memberships, and expiring email invitations.
