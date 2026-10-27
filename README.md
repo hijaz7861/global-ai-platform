@@ -52,6 +52,74 @@ Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/healt
 
 A private-host Docker Compose setup for the API and PostgreSQL 16 is documented in [Local Deployment](docs/LOCAL_DEPLOYMENT.md). It requires a generated signing key and database password; it binds to loopback by default and keeps PostgreSQL unpublished. This is a deployment baseline, not proof of a live deployment or production readiness.
 
+
+## Test and verification inventory
+
+Run the full local verification sequence from the repository root:
+
+```bash
+python -m pip install -r requirements.txt
+python -m pip install ruff pip-audit bandit
+ruff check --select E4,E7,E9,F app tests migrations
+python -m compileall -q app tests migrations
+python -m alembic upgrade head
+python -m alembic check
+python -m pytest -q
+pip-audit -r requirements.txt
+bandit -r app -ll
+```
+
+For PostgreSQL-only race and database-trigger checks, configure a **disposable test database** using `DATABASE_URL=postgresql+psycopg://...`, apply migrations, and run:
+
+```bash
+python -m alembic upgrade head
+python -m alembic check
+python -m pytest -q tests/test_postgres_integration.py
+```
+
+Never point integration tests at a real or production database. The PostgreSQL suite creates and mutates test users, organizations, orders, journal entries, and reconciliation records.
+
+### Test files and coverage
+
+| Test file | Coverage area |
+|---|---|
+| `tests/test_health.py` | Health endpoint and basic service contract |
+| `tests/test_identity_tenancy.py` | Registration, login, organization access, and tenant isolation |
+| `tests/test_account_lockout.py` | Login lockout behavior |
+| `tests/test_auth_rate_limits.py` | Authentication request throttling |
+| `tests/test_email_verification.py` | Email verification lifecycle |
+| `tests/test_password_reset.py` | Password reset token lifecycle and session invalidation |
+| `tests/test_token_revocation.py` | Token revocation and refresh-session protections |
+| `tests/test_signing_key_rotation.py` | Signing-key rotation behavior |
+| `tests/test_mfa.py` | TOTP MFA and recovery codes |
+| `tests/test_memberships.py` | Membership and role authorization |
+| `tests/test_membership_invitations.py` | Invitation expiry, acceptance, and revocation |
+| `tests/test_listings.py` | Catalog creation, search, filtering, and listing authorization |
+| `tests/test_orders.py` | Order creation, idempotency, stock reservation/release, and expiry |
+| `tests/test_seller.py` | Seller-scoped order and inventory views |
+| `tests/test_suppliers.py` | Supplier onboarding and platform-admin review |
+| `tests/test_procurement.py` | Procurement requests, quotes, awards, purchase orders, and fulfilment |
+| `tests/test_accounting.py` | Double-entry journal, reports, reversals, and accounting periods |
+| `tests/test_reconciliation.py` | Manual bank-statement import and reconciliation |
+| `tests/test_audit.py` | Audit-event authorization and safe detail filtering |
+| `tests/test_ai_provider.py` | OpenAI-compatible provider adapter behavior |
+| `tests/test_ai_routes.py` | AI API authorization, limits, and provider selection |
+| `tests/test_maintenance_runner.py` | Bounded maintenance runner behavior |
+| `tests/test_security_maintenance.py` | Expired security-record cleanup |
+| `tests/test_production_config.py` | Fail-closed production configuration |
+| `tests/test_privacy_export.py` | Authenticated user data export, tenant privacy, and credential exclusion |
+| `tests/test_postgres_integration.py` | PostgreSQL-only concurrency and database enforcement |
+
+The GitHub Actions workflow additionally checks Ruff lint rules, Python compilation, Alembic migration consistency, declared dependency vulnerabilities, and Bandit findings. The PostgreSQL job runs migrations and the PostgreSQL-specific integration suite.
+
+### Verification status — read before relying on the code
+
+- A historical CI run on commit `bf816cd7a872d67b5b774b85302ec8e6d41093fc` reported 85 passed / 11 environment-dependent skips for each Python 3.11, 3.12, and 3.13 job, and 11 PostgreSQL integration tests passed, along with lint, compilation, migration, dependency-audit, and Bandit checks. This is historical evidence and does **not** validate newer commits.
+- Six production-configuration/startup tests passed in an isolated local slice. That was not a full repository test run.
+- The new privacy-export tests have been committed but have not yet been verified by a full suite.
+- Recent current-branch Actions runs have failed before any runner steps started (`runner_id: 0`, no runner name, zero steps). The cause is not confirmed; do not interpret those runs as application test failures or as passing tests.
+- No claim is made that every test currently passes. Check the latest [Pull Request checks](https://github.com/hijaz7861/global-ai-platform/pull/1) and run the commands above before merging.
+
 ## Core product requirements
 
 - Global B2B and B2C marketplace.
