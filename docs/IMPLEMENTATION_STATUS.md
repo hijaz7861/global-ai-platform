@@ -4,7 +4,7 @@
 - Added startup validation for production deployments: `ENVIRONMENT=production` now requires a `SECRET_KEY` of at least 32 characters and a PostgreSQL database URL. Local development remains compatible with SQLite.
 - Added six focused tests for development compatibility and production fail-closed behavior. The equivalent isolated test slice passed locally on Python 3.13.5 with Pydantic 2.13.5 and pytest 9.0.2; this is not a full-repository test run.
 - Removed the standalone Own Automation Engine integration scaffolding from this branch to keep the current delivery focused on the Global AI Platform core.
-- The new current-head commit has no reported workflow runs or commit statuses yet. The full repository suite, migration checks, dependency audit, and PostgreSQL integration tests remain unverified for this exact head.
+- CI run [527](https://github.com/hijaz7861/global-ai-platform/actions/runs/40540024932) for commit `2182cee7a7ca5517aa61ae1d5edb365e580cd14e` failed before any job steps executed: all five jobs report `runner_id: 0`, an empty runner name, and `steps: []`. This is consistent with a runner-allocation failure, not a test assertion; the exact account/platform cause remains unconfirmed. The branch is now synchronized with current `master` (0 commits behind). The full repository suite, migration checks, dependency audit, and PostgreSQL integration tests remain unverified for this exact head.
 
 ## Implemented in the draft foundation branch
 - FastAPI application, OpenAPI, versioned health endpoint, SQLAlchemy models, Alembic migrations, and optional Docker packaging that applies migrations before startup.
