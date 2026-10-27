@@ -27,7 +27,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db import get_db
-from app.models import AuthAttempt, AuthRateLimitLock, EmailVerificationToken, MFARecoveryCode, PasswordResetToken, RefreshToken, TokenRevocation, User, utc_now
+from app.models import AuthAttempt, AuthRateLimitLock, AuditEvent, EmailVerificationToken, MFARecoveryCode, Membership, Order, OrderItem, Organization, PasswordResetToken, RefreshToken, TokenRevocation, User, utc_now
 from app.schemas import EmailVerificationConfirm, LoginRequest, MFAConfirmRequest, MFADisableRequest, MFAEnrollRequest, MFAEnrollmentResponse, MFARecoveryCodesRequest, MFARecoveryCodesResponse, PasswordResetConfirm, PasswordResetRequest, RefreshTokenRequest, RegisterRequest, TokenResponse
 from app.services.email import send_email_verification, send_password_reset_email
 
@@ -805,3 +805,93 @@ def confirm_password_reset(payload: PasswordResetConfirm, db: Annotated[Session,
     record_audit_event(db, actor_user_id=user.id, organization_id=None, action="auth.password_reset", entity_type="user", entity_id=user.id, details={"status": "completed"})
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/me/export", tags=["privacy"])
+def export_my_data(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """Export the authenticated user's basic profile, memberships, and buyer orders.
+
+    Credential material, token digests, MFA secrets, and other users' records are
+    deliberately excluded. This is an export MVP, not a complete legal-compliance
+    or account-deletion workflow.
+    """
+    membership_rows = db.execute(
+        select(Membership, Organization.name)
+        .join(Organization, Organization.id == Membership.organization_id)
+        .where(Membership.user_id == current_user.id)
+        .order_by(Membership.created_at, Membership.organization_id)
+    ).all()
+    orders = db.scalars(
+        select(Order)
+        .where(Order.user_id == current_user.id)
+        .order_by(Order.created_at, Order.id)
+    ).all()
+    order_ids = [order.id for order in orders]
+    items_by_order: dict[str, list[dict]] = {order_id: [] for order_id in order_ids}
+    if order_ids:
+        items = db.scalars(
+            select(OrderItem)
+            .where(OrderItem.order_id.in_(order_ids))
+            .order_by(OrderItem.order_id, OrderItem.id)
+        ).all()
+        for item in items:
+            items_by_order[item.order_id].append(
+                {
+                    "id": item.id,
+                    "listing_id": item.listing_id,
+                    "listing_organization_id": item.listing_organization_id,
+                    "title": item.title_snapshot,
+                    "quantity": item.quantity,
+                    "unit_price_minor": item.unit_price_minor,
+                }
+            )
+
+    export = {
+        "schema_version": 1,
+        "generated_at": utc_now().isoformat(),
+        "user": {
+            "id": current_user.id,
+            "email": current_user.email,
+            "is_active": current_user.is_active,
+            "email_verified": current_user.email_verified,
+            "created_at": current_user.created_at.isoformat(),
+        },
+        "memberships": [
+            {
+                "organization_id": membership.organization_id,
+                "organization_name": organization_name,
+                "role": membership.role,
+                "created_at": membership.created_at.isoformat(),
+            }
+            for membership, organization_name in membership_rows
+        ],
+        "buyer_orders": [
+            {
+                "id": order.id,
+                "status": order.status,
+                "total_minor": order.total_minor,
+                "currency": order.currency,
+                "created_at": order.created_at.isoformat(),
+                "expires_at": order.expires_at.isoformat(),
+                "items": items_by_order[order.id],
+            }
+            for order in orders
+        ],
+    }
+    record_audit_event(
+        db,
+        actor_user_id=current_user.id,
+        organization_id=None,
+        action="privacy.data_exported",
+        entity_type="user",
+        entity_id=current_user.id,
+        details={
+            "membership_count": len(membership_rows),
+            "buyer_order_count": len(orders),
+        },
+    )
+    db.commit()
+    return export
