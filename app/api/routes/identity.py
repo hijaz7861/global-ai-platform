@@ -889,8 +889,8 @@ def export_my_data(
         entity_type="user",
         entity_id=current_user.id,
         details={
-            "membership_count": len(membership_rows),
-            "buyer_order_count": len(orders),
+            "status": "completed",
+            "quantity": len(membership_rows) + len(orders),
         },
     )
     db.commit()
