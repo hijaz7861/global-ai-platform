@@ -39,3 +39,7 @@ A global, modular, AI-powered business platform integrating commerce, suppliers,
 7. AI orchestration and agent permissions
 8. Rentals, real estate, employment and education
 9. Testing, security review and staged deployment
+
+## Project ownership
+
+Project owner and maintainer: **Muhammad Naeem Khan** (`hijaz7861`).
