@@ -48,6 +48,10 @@ Set a unique random `SECRET_KEY` of at least 32 characters in `.env` before usin
 
 Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/health`.
 
+## Docker Compose deployment
+
+A private-host Docker Compose setup for the API and PostgreSQL 16 is documented in [Local Deployment](docs/LOCAL_DEPLOYMENT.md). It requires a generated signing key and database password; it binds to loopback by default and keeps PostgreSQL unpublished. This is a deployment baseline, not proof of a live deployment or production readiness.
+
 ## Core product requirements
 
 - Global B2B and B2C marketplace.
