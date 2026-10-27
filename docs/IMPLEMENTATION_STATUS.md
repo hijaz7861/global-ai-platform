@@ -17,7 +17,7 @@ This branch is the reviewable foundation for the **Global AI Platform**. Project
 
 ## Verification evidence and limitations
 
-- Historical CI run [493](https://github.com/hijaz7861/global-ai-platform/actions/runs/40543287154) is **not** the historical run reference; use the exact run links below only when their commit and job results match. The previously recorded green run at commit `bf816cd7a872d67b5b774b85302ec8e6d41093fc` reported 85 passed / 11 environment-dependent skips on each Python 3.11, 3.12, and 3.13 job, plus 11 PostgreSQL integration tests passed, Ruff/compilation/migration checks, pip-audit, and Bandit. That evidence applies to that historical commit only.
+- Historical CI run [493](https://github.com/hijaz7861/global-ai-platform/actions/runs/40211511181) passed on commit `bf816cd7a872d67b5b774b85302ec8e6d41093fc`. It reported 85 passed / 11 environment-dependent skips on each Python 3.11, 3.12, and 3.13 job, plus 11 PostgreSQL integration tests passed, Ruff/compilation/migration checks, pip-audit, and Bandit. That evidence applies to that historical commit only.
 - Six production configuration/startup tests were also passed in an isolated local slice, not as a full-repository test run.
 - Current-head CI was not verified after the latest changes. Earlier runs [529](https://github.com/hijaz7861/global-ai-platform/actions/runs/40540168124) and [531](https://github.com/hijaz7861/global-ai-platform/actions/runs/40543287154) failed before any job steps executed; the job responses showed `runner_id: 0`, empty runner names, and no steps. The exact cause is unconfirmed.
 - The new privacy-export tests have been committed but have **not** been executed in a full repository run yet.
