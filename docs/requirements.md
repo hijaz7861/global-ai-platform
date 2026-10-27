@@ -16,6 +16,9 @@ Create a global AI-powered business ecosystem with a shared, secure backend and 
 10. AI Super Accounts Manager.
 11. AI Evolution and Research Lab.
 12. What-if simulation and analytics engine.
+
+## Current delivery note
+The current draft implements a limited authenticated self-service export for profile, organization memberships and buyer orders, with credential material excluded. The complete privacy lifecycle (consent, retention, deletion/anonymization) is not complete. See [Implementation Status](IMPLEMENTATION_STATUS.md) for the current code and test evidence.
 13. Developer APIs and authorized third-party plugins.
 
 ## Security Requirements
