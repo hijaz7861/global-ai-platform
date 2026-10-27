@@ -25,9 +25,9 @@ A private, modular project for building a global business platform incrementally
 - Platform-admin security cleanup endpoint for expired credentials and stale throttle records; schedule it through a trusted external scheduler.
 - Optional Docker packaging that applies migrations before starting the API.
 
-## Integration roadmap
+## Current delivery focus
 
-- [Own Automation Engine integration](docs/OWN_AUTOMATION_ENGINE_INTEGRATION.md) — phased connector contract, tenant boundaries, approvals, and release gates.
+The current branch prioritizes the Global AI Platform itself: secure identity and tenancy, commerce and supplier workflows, accounting integrity, guarded AI access, deployment safety, and reproducible verification. External workflow engines remain optional future integrations and are not required to run the core platform.
 
 ## Run locally
 
