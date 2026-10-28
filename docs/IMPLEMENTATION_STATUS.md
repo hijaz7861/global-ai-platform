@@ -17,10 +17,12 @@ This branch is the reviewable foundation for the **Global AI Platform**. Project
 
 ## Verification evidence and limitations
 
-- Historical CI run [493](https://github.com/hijaz7861/global-ai-platform/actions/runs/40211511181) passed on commit `bf816cd7a872d67b5b774b85302ec8e6d41093fc`. It reported 85 passed / 11 environment-dependent skips on each Python 3.11, 3.12, and 3.13 job, plus 11 PostgreSQL integration tests passed, Ruff/compilation/migration checks, pip-audit, and Bandit. That evidence applies to that historical commit only.
-- Six production configuration/startup tests were also passed in an isolated local slice, not as a full-repository test run.
-- Current-head CI was not verified after the latest changes. Recent runs [537](https://github.com/hijaz7861/global-ai-platform/actions/runs/40554852282) and [542](https://github.com/hijaz7861/global-ai-platform/actions/runs/40555895450), including the latest documentation commits, failed before any job steps executed; earlier examples include [529](https://github.com/hijaz7861/global-ai-platform/actions/runs/40540168124) and [531](https://github.com/hijaz7861/global-ai-platform/actions/runs/40543287154); the job responses showed `runner_id: 0`, empty runner names, and no steps. The exact cause is unconfirmed.
-- Four privacy-export tests are committed, including a buyer-order inclusion/exclusion regression. Their fixture explicitly disables email verification for token-based test setup; the tests have **not** been executed in a full repository run yet.
+- Current verified run: [CI Run #549](https://github.com/hijaz7861/global-ai-platform/actions/runs/40616367566) completed successfully on commit `8a54bf52b177b243eb106507687fe25e060f9789`.
+- Python 3.11, 3.12, and 3.13 each reported **98 passed, 11 skipped, 1 warning**. The 11 skips in these general test jobs are the PostgreSQL-only integration cases, which require the dedicated database job.
+- The dedicated PostgreSQL 16 integration job applied and checked migrations, then reported **11 passed, 1 warning**.
+- Ruff linting, Python compilation, Alembic migration consistency, dependency audit (`No known vulnerabilities found`), and Bandit checks passed in this run.
+- The warning is a Starlette deprecation warning related to using `httpx` with `starlette.testclient`; it did not fail the run and should be reviewed during dependency maintenance.
+- The CI run verifies the recorded commit only. Later code changes require a new successful run. CI success is not a production-readiness certification.
 - No live deployment, live payment processing, or paid AI-provider call has been performed. Hosting remains out of scope for the current engineering pass.
 
 ## Remaining implementation work
