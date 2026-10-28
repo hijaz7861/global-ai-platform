@@ -114,11 +114,12 @@ The GitHub Actions workflow additionally checks Ruff lint rules, Python compilat
 
 ### Verification status — read before relying on the code
 
-- A historical CI run on commit `bf816cd7a872d67b5b774b85302ec8e6d41093fc` reported 85 passed / 11 environment-dependent skips for each Python 3.11, 3.12, and 3.13 job, and 11 PostgreSQL integration tests passed, along with lint, compilation, migration, dependency-audit, and Bandit checks. This is historical evidence and does **not** validate newer commits.
-- Six production-configuration/startup tests passed in an isolated local slice. That was not a full repository test run.
-- Four privacy-export tests are committed, including buyer-order inclusion/exclusion coverage. Their fixture explicitly disables email verification for token-based test setup; they have not yet been verified by a full suite.
-- Recent current-branch Actions runs have failed before any runner steps started (`runner_id: 0`, no runner name, zero steps). The cause is not confirmed; do not interpret those runs as application test failures or as passing tests.
-- No claim is made that every test currently passes. Check the latest [Pull Request checks](https://github.com/hijaz7861/global-ai-platform/pull/1) and run the commands above before merging.
+- Latest verified CI: [Run #553](https://github.com/hijaz7861/global-ai-platform/actions/runs/40726076533) completed successfully on PR-head commit `e9f25405d80ab9443123b2d63a0a84190809880a`; that PR was subsequently merged as [PR #1](https://github.com/hijaz7861/global-ai-platform/pull/1).
+- All five jobs passed: Python 3.11, 3.12, and 3.13 test jobs; PostgreSQL 16 integration; and dependency/security audit. The jobs completed linting, compilation, migration checks, test execution, `pip-audit`, and Bandit.
+- The connector did not expose exact test counts for Run #553. A previous successful run #549 reported 98 passed / 11 skipped / 1 warning for each Python job and 11 passed / 1 warning for PostgreSQL; those counts must not be attributed to Run #553.
+- Four privacy-export tests are included in the successful CI history, including buyer-order inclusion/exclusion coverage.
+- The CI-run lookup did not surface a separate workflow run for the merge commit itself. The verified evidence is Run #553 on the PR-head tree, not a separate post-merge run.
+- CI success is not a production-readiness certification. No live deployment, live payment processing, or paid AI-provider call has been performed; hosting remains intentionally deferred.
 
 ## Core product requirements
 
