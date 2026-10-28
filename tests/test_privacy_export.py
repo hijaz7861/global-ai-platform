@@ -21,6 +21,7 @@ def client(monkeypatch):
     sessions = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
     monkeypatch.setattr(settings, "secret_key", "test-only-signing-key-not-for-production")
+    monkeypatch.setattr(settings, "require_email_verification", False)
 
     def override_get_db():
         db = sessions()
