@@ -1,44 +1,167 @@
 # Global AI-Powered Business Ecosystem
 
-## Description
-A global, modular, AI-powered business platform integrating commerce, suppliers, logistics, rentals, real estate, employment, education, business management, AI agents, external connectors, and financial operations.
+A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, a double-entry ledger foundation, audit events, and a guarded OpenAI-compatible AI adapter. It is not yet a complete business ecosystem.
 
-## Core Requirements
-- Global B2B and B2C marketplace
-- Supplier, manufacturer, wholesale and retail management
-- Logistics, freight, vehicle and equipment rentals
-- Real estate listings, rentals and sales
-- Employment, contractors, freelancers and services
-- Inventory, store management, marketing and education
-- Secure Universal Connector Hub for authorized APIs, OAuth and webhooks
-- Multi-provider AI orchestration and specialized AI agents
-- AI-powered accounting, double-entry ledger, invoices, commissions and reconciliation
-- Controlled AI research and experimentation laboratory
-- What-if simulations and business analytics
-- Strict tenant isolation, least privilege, audit logs and encrypted secrets
-- Web-first architecture with future mobile and desktop expansion
-- Low-cost, open-source-first development
-- Automated tests, security reviews, CI/CD and staged deployment
-- Private GitHub repository and documented development workflow
+## Current foundation
 
-## Engineering Rules
+- FastAPI application with OpenAPI docs.
+- Versioned process health endpoint: `GET /api/v1/health`.
+- Registration with Argon2 password hashing, email verification, signed short-lived bearer access tokens, hashed rotating refresh tokens, refresh replay detection, session-family revocation, server-side logout revocation, and optional encrypted TOTP MFA.
+- Email-based password reset with hashed, expiring, single-use tokens; successful reset invalidates existing sessions.
+- Organization creation, membership-filtered access, and owner/admin member management.
+- Tenant-scoped catalog listings with owner/admin publication, plus public search, currency and price filters, and bounded pagination.
+- Organization-scoped supplier onboarding with draft/submitted/approved/rejected states and platform-admin review.
+- Procurement requests and supplier quotes: approved suppliers quote once per request, buyers compare offers and award one quote; purchase orders can be issued idempotently, cancelled by the buyer, and fulfilled by the supplier.
+- Owner/admin inventory adjustments with nonnegative stock checks, append-only before/after history, optional reason, and transaction-bound audit events.
+- Order creation with conditional stock reservation, per-buyer idempotency, legacy single-line and multi-item carts (up to 50 unique listings), one-currency enforcement, bounded totals, and a configurable unpaid-order expiry timestamp.
+- Platform-admin-only expiry sweep that marks overdue unpaid orders expired, restores stock once, and records an audit event; external scheduler setup is required for automatic recurring runs.
+- Buyer-only order reads, seller-scoped order summaries, and unpaid-order cancellation with one-time stock release.
+- Owner/admin chart of accounts, balanced idempotent journal posting, immutable reversals, accounting period controls, period trial balance, paginated account ledger, income statement, balance sheet, and a manual bank reconciliation workflow.
+- Transaction-bound allowlisted audit events for organization, catalog, order, and ledger operations.
+- Guarded OpenAI-compatible AI chat adapter with explicit primary/optional fallback provider selection per request; automatic failover and monetary budgets remain future work. External calls are disabled by default and require explicit opt-in, a positive request limit, and PostgreSQL.
+- Orders remain `pending_payment`; no payment is charged or processed.
+- SQLAlchemy models and Alembic migrations for identity, rotating refresh-token families, tenants, catalog, inventory adjustment history, orders, audit, accounting periods, journal entries and reversals, token revocation, password reset, and supplier profiles.
+- GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks. The test requirements include `httpx2` for the current Starlette `TestClient` and `httpx` for the AI adapter's async provider client.
+- Platform-admin security cleanup endpoint for expired credentials and stale throttle records; schedule it through a trusted external scheduler.
+- Optional Docker packaging that applies migrations before starting the API.
+
+## Current delivery focus
+
+The current branch prioritizes the Global AI Platform itself: secure identity and tenancy, commerce and supplier workflows, accounting integrity, guarded AI access, deployment safety, and reproducible verification. External workflow engines remain optional future integrations and are not required to run the core platform.
+
+## Run locally
+
+Python 3.11 or newer is required.
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements.txt
+cp .env.example .env
+python -m alembic upgrade head
+python -m compileall -q app tests migrations
+python -m pytest -q
+uvicorn app.main:app --reload
+```
+
+Set a unique random `SECRET_KEY` of at least 32 characters in `.env` before using login. For planned key rotation, set the new `SECRET_KEY` and temporarily put the previous key in comma-separated `PREVIOUS_SECRET_KEYS`. Before removing an old key, run `python -m app.rotate_mfa_secrets` to re-encrypt stored active/pending MFA secrets under the current key; verify the reported count and MFA login, then keep the previous key until old access tokens expire and remove it. Every configured previous key must be at least 32 characters. If deployed behind a reverse proxy, set `TRUSTED_PROXY_IPS` to the exact proxy IPs/CIDRs; forwarded client-IP headers are ignored unless the direct peer is trusted. Do not configure broad or user-controlled networks; leave it empty when the API is directly exposed. `REFRESH_TOKEN_EXPIRE_DAYS` controls refresh-session lifetime (1–90 days), and `ORDER_PAYMENT_EXPIRE_MINUTES` controls the unpaid-order reservation window (5–10080 minutes); clients must replace refresh tokens after each successful `/api/v1/auth/refresh` response and discard the old token. Configure `SMTP_HOST`, `SMTP_FROM_EMAIL`, and SMTP credentials to deliver password-reset email; reset requests use the same response for known and unknown accounts. Set `PLATFORM_ADMIN_EMAILS` to a comma-separated allowlist for supplier review; leave it empty to disable platform-admin review access. Live AI calls stay disabled unless deliberately enabled in configuration. Optional provider selection uses `provider: "primary"` (default) or `provider: "fallback"` in the chat request; configure all three `AI_FALLBACK_API_KEY`, `AI_FALLBACK_BASE_URL`, and `AI_FALLBACK_MODEL` values to enable the fallback choice. This is explicit selection, not automatic failover. For PostgreSQL deployments, use `DATABASE_URL=postgresql+psycopg://...` and install `python -m pip install 'psycopg[binary]>=3.2,<4'`.
+
+Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/health`.
+
+## Docker Compose deployment
+
+A private-host Docker Compose setup for the API and PostgreSQL 16 is documented in [Local Deployment](docs/LOCAL_DEPLOYMENT.md). It requires a generated signing key and database password; it binds to loopback by default and keeps PostgreSQL unpublished. This is a deployment baseline, not proof of a live deployment or production readiness.
+
+
+## Test and verification inventory
+
+Run the full local verification sequence from the repository root:
+
+```bash
+python -m pip install -r requirements.txt
+python -m pip install ruff pip-audit bandit
+ruff check --select E4,E7,E9,F app tests migrations
+python -m compileall -q app tests migrations
+python -m alembic upgrade head
+python -m alembic check
+python -m pytest -q
+pip-audit -r requirements.txt
+bandit -r app -ll
+```
+
+For PostgreSQL-only race and database-trigger checks, configure a **disposable test database** using `DATABASE_URL=postgresql+psycopg://...`, apply migrations, and run:
+
+```bash
+python -m alembic upgrade head
+python -m alembic check
+python -m pytest -q tests/test_postgres_integration.py
+```
+
+Never point integration tests at a real or production database. The PostgreSQL suite creates and mutates test users, organizations, orders, journal entries, and reconciliation records.
+
+### Test files and coverage
+
+| Test file | Coverage area |
+|---|---|
+| `tests/test_health.py` | Health endpoint and basic service contract |
+| `tests/test_identity_tenancy.py` | Registration, login, organization access, and tenant isolation |
+| `tests/test_account_lockout.py` | Login lockout behavior |
+| `tests/test_auth_rate_limits.py` | Authentication request throttling |
+| `tests/test_email_verification.py` | Email verification lifecycle |
+| `tests/test_password_reset.py` | Password reset token lifecycle and session invalidation |
+| `tests/test_token_revocation.py` | Token revocation and refresh-session protections |
+| `tests/test_signing_key_rotation.py` | Signing-key rotation behavior |
+| `tests/test_mfa.py` | TOTP MFA and recovery codes |
+| `tests/test_memberships.py` | Membership and role authorization |
+| `tests/test_membership_invitations.py` | Invitation expiry, acceptance, and revocation |
+| `tests/test_listings.py` | Catalog creation, search, filtering, and listing authorization |
+| `tests/test_orders.py` | Order creation, idempotency, stock reservation/release, and expiry |
+| `tests/test_seller.py` | Seller-scoped order and inventory views |
+| `tests/test_suppliers.py` | Supplier onboarding and platform-admin review |
+| `tests/test_procurement.py` | Procurement requests, quotes, awards, purchase orders, and fulfilment |
+| `tests/test_accounting.py` | Double-entry journal, reports, reversals, and accounting periods |
+| `tests/test_reconciliation.py` | Manual bank-statement import and reconciliation |
+| `tests/test_audit.py` | Audit-event authorization and safe detail filtering |
+| `tests/test_ai_provider.py` | OpenAI-compatible provider adapter behavior |
+| `tests/test_ai_routes.py` | AI API authorization, limits, and provider selection |
+| `tests/test_maintenance_runner.py` | Bounded maintenance runner behavior |
+| `tests/test_security_maintenance.py` | Expired security-record cleanup |
+| `tests/test_production_config.py` | Fail-closed production configuration |
+| `tests/test_privacy_export.py` | Authenticated user data export, tenant privacy, and credential exclusion |
+| `tests/test_postgres_integration.py` | PostgreSQL-only concurrency and database enforcement |
+
+The GitHub Actions workflow additionally checks Ruff lint rules, Python compilation, Alembic migration consistency, declared dependency vulnerabilities, and Bandit findings. The PostgreSQL job runs migrations and the PostgreSQL-specific integration suite.
+
+### Verification status — read before relying on the code
+
+- A historical CI run on commit `bf816cd7a872d67b5b774b85302ec8e6d41093fc` reported 85 passed / 11 environment-dependent skips for each Python 3.11, 3.12, and 3.13 job, and 11 PostgreSQL integration tests passed, along with lint, compilation, migration, dependency-audit, and Bandit checks. This is historical evidence and does **not** validate newer commits.
+- Six production-configuration/startup tests passed in an isolated local slice. That was not a full repository test run.
+- Four privacy-export tests are committed, including buyer-order inclusion/exclusion coverage. Their fixture explicitly disables email verification for token-based test setup; they have not yet been verified by a full suite.
+- Recent current-branch Actions runs have failed before any runner steps started (`runner_id: 0`, no runner name, zero steps). The cause is not confirmed; do not interpret those runs as application test failures or as passing tests.
+- No claim is made that every test currently passes. Check the latest [Pull Request checks](https://github.com/hijaz7861/global-ai-platform/pull/1) and run the commands above before merging.
+
+## Core product requirements
+
+- Global B2B and B2C marketplace.
+- Supplier, manufacturer, wholesale and retail management.
+- Logistics, freight, vehicle and equipment rentals.
+- Real estate listings, rentals and sales.
+- Employment, contractors, freelancers and services.
+- Inventory, store management, marketing and education.
+- Secure Universal Connector Hub for authorized APIs, OAuth and webhooks.
+- Multi-provider AI orchestration and specialized AI agents.
+- AI-powered accounting, double-entry ledger, invoices, commissions and reconciliation.
+- Controlled AI research and experimentation laboratory.
+- What-if simulations and business analytics.
+- Strict tenant isolation, least privilege, audit logs and encrypted secrets.
+- Web-first architecture with future mobile and desktop expansion.
+
+## Engineering rules
+
 - Never claim a test passed unless it was executed and verified.
-- Never commit API keys, passwords, tokens or .env files.
+- Never commit API keys, passwords, tokens or `.env` files.
 - Require authorization before paid services or production deployment.
 - Use modular architecture and implement incrementally.
 - Require human approval for sensitive financial and irreversible actions.
 - Verify external integrations and permissions before relying on them.
+- Documentation and scaffolding are not proof that a feature is implemented.
 
-## Initial Roadmap
-1. Master blueprint and product requirements
-2. Secure architecture and repository setup
-3. Authentication, tenant isolation and database foundation
-4. Marketplace MVP
-5. Supplier and logistics integrations
-6. Financial ledger and payment sandbox
-7. AI orchestration and agent permissions
-8. Rentals, real estate, employment and education
-9. Testing, security review and staged deployment
+## Production readiness
+
+A bounded one-shot maintenance batch is available via `python -m app.maintenance`; schedule it with the platform's cron/CronJob runner (for example, every minute) and monitor its exit status/output. It expires due unpaid orders, restores inventory transactionally, and cleans expired authentication records. The runner is not an always-on in-process scheduler.
+
+
+See [Production Readiness Gate](docs/PRODUCTION_READINESS.md) for the evidence-based staging and release checklist. CI success does not mean deployment, SMTP, scheduler, backups, security review, or payment processing are configured.
+
+## Roadmap and limitations
+
+Organization invitations: owners/admins can invite a registered or future account by email using `POST /api/v1/organizations/{organization_id}/invitations`; the recipient signs in to the matching account and accepts the emailed single-use token at `POST /api/v1/invitations/accept`. Tokens are stored as SHA-256 digests and expire after seven days. Owners/admins can revoke pending invitations at `POST /api/v1/organizations/{organization_id}/invitations/{invitation_id}/revoke`. SMTP must be configured; raw invitation tokens are never returned by the API.
+
+Refresh-token behavior: login returns a short-lived access token plus a random refresh token whose SHA-256 digest is stored server-side. `POST /api/v1/auth/refresh` rotates the refresh token; clients must persist the newly returned token and discard the old one. Reuse of a consumed token revokes the session family and invalidates that family’s access tokens. Logout revokes the current access token and its refresh-token family. Deploy behind HTTPS and never log or expose tokens.
+
+See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Catalog](docs/CATALOG.md), [Orders](docs/ORDERS.md), [Supplier Procurement](docs/PROCUREMENT.md), [Accounting](docs/ACCOUNTING.md), [Bank Reconciliation](docs/RECONCILIATION.md), [AI Orchestration](docs/AI_ORCHESTRATION.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
+
+Remaining work includes broader role administration, production-validated signing-key rotation, broader PostgreSQL concurrency coverage, financial reconciliation and cash-flow statements, payment/refund/tax/seller-settlement workflows, multi-provider AI routing/fallback and monetary budgets, agent tool permissions and approval flows, OAuth/webhook connectors, logistics, rentals, real estate, workforce and education. An independent security review, production-like staging, monitoring, backup/restore drills, and operational configuration are also required. Do not expose this foundation publicly as a production service.
 
 ## Project ownership
 

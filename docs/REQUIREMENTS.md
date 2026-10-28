@@ -24,7 +24,7 @@ Roles are requirements, not implemented permissions.
 8. Auditable accounting ledger and reconciliation.
 9. AI provider routing with budget and usage limits.
 10. Connector registry with scoped permissions.
-11. Consent, privacy, retention and data export/deletion workflows.
+11. Consent, privacy, retention and data export/deletion workflows. **Partial:** authenticated self-service export covers basic profile data, organization memberships and buyer orders; it excludes credential material and other users' records. Four focused export tests are included in successful CI run [#549](https://github.com/hijaz7861/global-ai-platform/actions/runs/40616367566). Consent, retention and safe deletion/anonymization remain open.
 12. Regional tax, consumer protection and compliance review.
 13. Monitoring, backups, recovery and automated tests.
 

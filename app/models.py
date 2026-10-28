@@ -1,0 +1,638 @@
+"""Identity, commerce, audit, accounting, and security data models."""
+from datetime import date, datetime, timezone
+from typing import Any
+from uuid import uuid4
+
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    true,
+    false,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db import Base
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default=true(), nullable=False)
+    auth_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
+    mfa_secret_encrypted: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    mfa_pending_secret_encrypted: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    mfa_pending_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    mfa_last_verified_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    memberships: Mapped[list["Membership"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    orders: Mapped[list["Order"]] = relationship(back_populates="user")
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    memberships: Mapped[list["Membership"]] = relationship(
+        back_populates="organization", cascade="all, delete-orphan"
+    )
+    listings: Mapped[list["Listing"]] = relationship(
+        back_populates="organization", cascade="all, delete-orphan"
+    )
+
+
+class MembershipInvitation(Base):
+    """Single-use, expiring invitation for an organization membership."""
+    __tablename__ = "membership_invitations"
+    __table_args__ = (
+        Index("ix_membership_invites_org_email", "organization_id", "email"),
+        Index("ix_membership_invites_expiry", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class Membership(Base):
+    __tablename__ = "memberships"
+    __table_args__ = (UniqueConstraint("user_id", "organization_id", name="uq_membership_user_org"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(32), default="member", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    user: Mapped[User] = relationship(back_populates="memberships")
+    organization: Mapped[Organization] = relationship(back_populates="memberships")
+
+
+class Listing(Base):
+    __tablename__ = "listings"
+    __table_args__ = (
+        CheckConstraint("price_minor > 0", name="ck_listings_price_positive"),
+        CheckConstraint("length(currency) = 3", name="ck_listings_currency_length"),
+        CheckConstraint("inventory_quantity >= 0", name="ck_listings_inventory_nonnegative"),
+        Index("ix_listings_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(String(5000), nullable=False)
+    price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    inventory_quantity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    organization: Mapped[Organization] = relationship(back_populates="listings")
+
+
+class Order(Base):
+    __tablename__ = "orders"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_orders_user_idempotency"),
+        CheckConstraint("total_minor > 0", name="ck_orders_total_positive"),
+        Index("ix_orders_user_created", "user_id", "created_at"),
+        Index("ix_orders_status_expires", "status", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending_payment", nullable=False)
+    total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    user: Mapped[User] = relationship(back_populates="orders")
+    items: Mapped[list["OrderItem"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan", order_by="OrderItem.id"
+    )
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_order_items_quantity_positive"),
+        CheckConstraint("unit_price_minor > 0", name="ck_order_items_price_positive"),
+        Index("ix_order_items_order_id", "order_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), nullable=False)
+    listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id", ondelete="RESTRICT"), nullable=False)
+    listing_organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    title_snapshot: Mapped[str] = mapped_column(String(200), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit_price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    order: Mapped[Order] = relationship(back_populates="items")
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        Index("ix_audit_events_org_created", "organization_id", "created_at"),
+        Index("ix_audit_events_actor_created", "actor_user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    actor_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    organization_id: Mapped[str | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class Account(Base):
+    __tablename__ = "accounts"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "code", "currency", name="uq_accounts_org_code_currency"),
+        CheckConstraint("length(currency) = 3", name="ck_accounts_currency_length"),
+        CheckConstraint(
+            "account_type IN ('asset','liability','equity','revenue','expense')",
+            name="ck_accounts_type",
+        ),
+        Index("ix_accounts_org_active", "organization_id", "is_active"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    account_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    lines: Mapped[list["JournalLine"]] = relationship(back_populates="account")
+
+
+class InventoryAdjustmentHistory(Base):
+    """Append-only record of each explicit stock correction."""
+    __tablename__ = "inventory_adjustments"
+    __table_args__ = (
+        CheckConstraint("delta != 0", name="ck_inventory_adjustments_nonzero_delta"),
+        CheckConstraint("quantity_before >= 0 AND quantity_after >= 0", name="ck_inventory_adjustments_nonnegative_quantities"),
+        Index("ix_inventory_adjustments_listing_created", "listing_id", "created_at"),
+        Index("ix_inventory_adjustments_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    listing_id: Mapped[str] = mapped_column(ForeignKey("listings.id", ondelete="RESTRICT"), nullable=False)
+    actor_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    delta: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantity_before: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantity_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class AccountingPeriod(Base):
+    """Organization-scoped accounting window; closed periods cannot be reopened."""
+    __tablename__ = "accounting_periods"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_accounting_period_org_name"),
+        CheckConstraint("ends_on >= starts_on", name="ck_accounting_period_date_order"),
+        CheckConstraint("status IN ('open','closed')", name="ck_accounting_period_status"),
+        Index("ix_accounting_period_org_dates", "organization_id", "starts_on", "ends_on"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    starts_on: Mapped[date] = mapped_column(Date, nullable=False)
+    ends_on: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    closed_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_journal_org_idempotency"),
+        CheckConstraint("total_minor > 0", name="ck_journal_total_positive"),
+        CheckConstraint("status = 'posted'", name="ck_journal_posted_only"),
+        UniqueConstraint("reversal_of_id", name="uq_journal_reversal_source"),
+        Index("ix_journal_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    reversal_of_id: Mapped[str | None] = mapped_column(ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=True)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="posted", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    lines: Mapped[list["JournalLine"]] = relationship(
+        back_populates="entry", cascade="all, delete-orphan", order_by="JournalLine.id"
+    )
+
+
+class JournalLine(Base):
+    __tablename__ = "journal_lines"
+    __table_args__ = (
+        CheckConstraint("debit_minor >= 0 AND credit_minor >= 0", name="ck_journal_lines_nonnegative"),
+        CheckConstraint(
+            "(debit_minor > 0 AND credit_minor = 0) OR (credit_minor > 0 AND debit_minor = 0)",
+            name="ck_journal_lines_one_side",
+        ),
+        Index("ix_journal_lines_entry", "journal_entry_id"),
+        Index("ix_journal_lines_account", "account_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    journal_entry_id: Mapped[str] = mapped_column(
+        ForeignKey("journal_entries.id", ondelete="RESTRICT"), nullable=False
+    )
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False
+    )
+    debit_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    credit_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+
+    entry: Mapped[JournalEntry] = relationship(back_populates="lines")
+    account: Mapped[Account] = relationship(back_populates="lines")
+
+
+class BankReconciliationSession(Base):
+    """A manually imported bank statement window for one tenant-owned asset account."""
+    __tablename__ = "bank_reconciliation_sessions"
+    __table_args__ = (
+        CheckConstraint("status IN ('open','completed')", name="ck_bank_reconciliation_status"),
+        CheckConstraint("statement_end_date >= statement_start_date", name="ck_bank_reconciliation_dates"),
+        UniqueConstraint(
+            "organization_id", "account_id", "statement_start_date", "statement_end_date",
+            name="uq_bank_reconciliation_account_window",
+        ),
+        Index("ix_bank_reconciliation_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    statement_start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    statement_end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    opening_balance_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    closing_balance_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    lines: Mapped[list["BankReconciliationLine"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan", order_by="BankReconciliationLine.statement_date"
+    )
+
+
+class BankReconciliationImportBatch(Base):
+    """Auditable provenance record for one bounded statement CSV import."""
+    __tablename__ = "bank_reconciliation_import_batches"
+    __table_args__ = (
+        UniqueConstraint("session_id", "content_sha256", name="uq_recon_import_session_digest"),
+        Index("ix_recon_import_session_created", "session_id", "created_at"),
+        CheckConstraint("row_count >= 0", name="ck_recon_import_row_count"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("bank_reconciliation_sessions.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class BankReconciliationLine(Base):
+    """A signed bank statement movement matched to at most one posted cash-account journal line."""
+    __tablename__ = "bank_reconciliation_lines"
+    __table_args__ = (
+        CheckConstraint("amount_minor != 0", name="ck_bank_reconciliation_line_nonzero_amount"),
+        UniqueConstraint("matched_journal_line_id", name="uq_bank_reconciliation_matched_journal_line"),
+        UniqueConstraint("session_id", "external_reference", name="uq_bank_reconciliation_external_reference"),
+        Index("ix_bank_reconciliation_lines_session_date", "session_id", "statement_date"),
+        Index("ix_recon_lines_import_batch", "import_batch_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("bank_reconciliation_sessions.id", ondelete="RESTRICT"), nullable=False
+    )
+    statement_date: Mapped[date] = mapped_column(Date, nullable=False)
+    description: Mapped[str] = mapped_column(String(300), nullable=False)
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    external_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    import_batch_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bank_reconciliation_import_batches.id", ondelete="RESTRICT"), nullable=True
+    )
+    matched_journal_line_id: Mapped[str | None] = mapped_column(
+        ForeignKey("journal_lines.id", ondelete="RESTRICT"), nullable=True
+    )
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    session: Mapped[BankReconciliationSession] = relationship(back_populates="lines")
+
+
+class TokenRevocation(Base):
+    __tablename__ = "token_revocations"
+    __table_args__ = (Index("ix_token_revocations_expires_at", "expires_at"),)
+
+    jti: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class RefreshToken(Base):
+    """Hashed, rotating refresh credentials grouped into revocable session families."""
+    __tablename__ = "refresh_tokens"
+    __table_args__ = (
+        Index("ix_refresh_tokens_family", "family_id"),
+        Index("ix_refresh_tokens_user_expires", "user_id", "expires_at"),
+    )
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    family_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    auth_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class EmailVerificationToken(Base):
+    """Single-use email ownership token; only its digest is persisted."""
+    __tablename__ = "email_verification_tokens"
+    __table_args__ = (
+        Index("ix_email_verification_user_expiry", "user_id", "expires_at"),
+        Index("ix_email_verification_expiry", "expires_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class PasswordResetToken(Base):
+    """One-time reset token; only a SHA-256 digest is stored."""
+    __tablename__ = "password_reset_tokens"
+    __table_args__ = (Index("ix_password_reset_user_expiry", "user_id", "expires_at"), Index("ix_password_reset_expiry", "expires_at"))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class SupplierProfile(Base):
+    """Tenant-owned supplier onboarding profile with an explicit review state."""
+    __tablename__ = "supplier_profiles"
+    __table_args__ = (
+        UniqueConstraint("organization_id", name="uq_supplier_profiles_organization"),
+        CheckConstraint("status IN ('draft','submitted','approved','rejected')", name="ck_supplier_profiles_status"),
+        CheckConstraint("length(country_code) = 2", name="ck_supplier_profiles_country_code"),
+        Index("ix_supplier_profiles_status_created", "status", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    legal_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    business_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    country_code: Mapped[str] = mapped_column(String(2), nullable=False)
+    contact_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    website_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    description: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    reviewer_notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class ProcurementRequestRecord(Base):
+    """A buyer organization's bounded request for supplier quotations."""
+    __tablename__ = "procurement_requests"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_procurement_requests_quantity_positive"),
+        CheckConstraint("length(currency) = 3", name="ck_procurement_requests_currency_length"),
+        CheckConstraint("status IN ('open','awarded','closed')", name="ck_procurement_requests_status"),
+        Index("ix_procurement_requests_org_status_created", "buyer_organization_id", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    buyer_organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(String(3000), default="", nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
+    awarded_quote_id: Mapped[str | None] = mapped_column(
+        ForeignKey(
+            "supplier_quotes.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_procurement_requests_awarded_quote_id_supplier_quotes",
+        ),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class SupplierQuote(Base):
+    """A supplier's one quote per procurement request."""
+    __tablename__ = "supplier_quotes"
+    __table_args__ = (
+        UniqueConstraint("procurement_request_id", "supplier_organization_id", name="uq_supplier_quote_request_supplier"),
+        CheckConstraint("unit_price_minor > 0", name="ck_supplier_quotes_price_positive"),
+        CheckConstraint("lead_time_days >= 0", name="ck_supplier_quotes_lead_time_nonnegative"),
+        CheckConstraint("status IN ('submitted','accepted','rejected','withdrawn')", name="ck_supplier_quotes_status"),
+        Index("ix_supplier_quotes_request_status", "procurement_request_id", "status"),
+        Index("ix_supplier_quotes_supplier_created", "supplier_organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    procurement_request_id: Mapped[str] = mapped_column(ForeignKey("procurement_requests.id", ondelete="RESTRICT"), nullable=False)
+    supplier_organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    unit_price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    lead_time_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    notes: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="submitted", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class SupplierQuoteRevision(Base):
+    """Append-only snapshots of supplier quote submissions, revisions, and withdrawals."""
+    __tablename__ = "supplier_quote_revisions"
+    __table_args__ = (
+        UniqueConstraint("supplier_quote_id", "revision_number", name="uq_supplier_quote_revision_number"),
+        CheckConstraint("revision_number > 0", name="ck_supplier_quote_revision_number_positive"),
+        CheckConstraint("unit_price_minor > 0", name="ck_supplier_quote_revision_price_positive"),
+        CheckConstraint("lead_time_days >= 0", name="ck_supplier_quote_revision_lead_time_nonnegative"),
+        CheckConstraint("status IN ('submitted','withdrawn')", name="ck_supplier_quote_revisions_status"),
+        Index("ix_supplier_quote_revisions_quote_created", "supplier_quote_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    supplier_quote_id: Mapped[str] = mapped_column(ForeignKey("supplier_quotes.id", ondelete="RESTRICT"), nullable=False)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    unit_price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    lead_time_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    notes: Mapped[str] = mapped_column(String(2000), default="", nullable=False)
+    actor_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class PurchaseOrder(Base):
+    """Issued purchase commitment for the awarded supplier quote."""
+    __tablename__ = "purchase_orders"
+    __table_args__ = (
+        UniqueConstraint("procurement_request_id", name="uq_purchase_order_request"),
+        UniqueConstraint("supplier_quote_id", name="uq_purchase_order_quote"),
+        CheckConstraint("quantity > 0", name="ck_purchase_orders_quantity_positive"),
+        CheckConstraint("unit_price_minor > 0", name="ck_purchase_orders_unit_price_positive"),
+        CheckConstraint("total_minor > 0", name="ck_purchase_orders_total_positive"),
+        CheckConstraint("status IN ('issued','fulfilled','cancelled')", name="ck_purchase_orders_status"),
+        Index("ix_purchase_orders_buyer_created", "buyer_organization_id", "created_at"),
+        Index("ix_purchase_orders_supplier_status", "supplier_organization_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    procurement_request_id: Mapped[str] = mapped_column(
+        ForeignKey("procurement_requests.id", ondelete="RESTRICT"), nullable=False
+    )
+    supplier_quote_id: Mapped[str] = mapped_column(
+        ForeignKey("supplier_quotes.id", ondelete="RESTRICT"), nullable=False
+    )
+    buyer_organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    supplier_organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit_price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="issued", nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class MFARecoveryCode(Base):
+    """One-time, hash-only recovery credentials for MFA-protected accounts."""
+    __tablename__ = "mfa_recovery_codes"
+    __table_args__ = (
+        Index("ix_mfa_recovery_codes_user_used", "user_id", "used_at"),
+        Index("ix_mfa_recovery_codes_created", "created_at"),
+    )
+
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class AuthRateLimitLock(Base):
+    """Per-subject serialization row for atomic auth rate-limit accounting."""
+    __tablename__ = "auth_rate_limit_locks"
+    __table_args__ = (Index("ix_auth_rate_limit_locks_touched", "touched_at"),)
+
+    scope: Mapped[str] = mapped_column(String(32), primary_key=True)
+    subject_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    touched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class AuthAttempt(Base):
+    """Privacy-minimized persistent rate-limit events for sensitive auth endpoints."""
+    __tablename__ = "auth_attempts"
+    __table_args__ = (
+        Index("ix_auth_attempt_scope_subject_created", "scope", "subject_hash", "created_at"),
+        Index("ix_auth_attempt_created", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

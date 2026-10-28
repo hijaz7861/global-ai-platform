@@ -1,0 +1,110 @@
+name: CI and Quality Checks
+
+on:
+  # Run the full suite when a PR is opened/reopened or marked ready.
+  # Keep CI on each PR update so the latest code is always verified.
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+# Cancel older runs when a newer run for the same PR/branch is started.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install ruff
+      - name: Lint
+        run: ruff check --select E4,E7,E9,F app tests migrations
+      - name: Compile source
+        run: python -m compileall -q app tests migrations
+      - name: Verify database migration
+        env:
+          DATABASE_URL: sqlite:///./ci_migration.db
+        run: |
+          python -m alembic upgrade head
+          python -m alembic check
+      - name: Run tests
+        run: python -m pytest -q
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Audit declared dependencies
+        run: |
+          python -m pip install --upgrade pip pip-audit bandit
+          pip-audit -r requirements.txt
+      - name: Run Bandit security checks
+        run: bandit -r app -ll
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: platform_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d platform_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/platform_test
+      SECRET_KEY: postgres-integration-test-key-0123456789abcdef
+      REQUIRE_EMAIL_VERIFICATION: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install ruff
+      - name: Lint
+        run: ruff check --select E4,E7,E9,F app tests migrations
+      - name: Apply PostgreSQL migrations
+        run: python -m alembic upgrade head
+      - name: Verify PostgreSQL schema
+        run: python -m alembic check
+      - name: Run PostgreSQL integration tests
+        run: python -m pytest -q tests/test_postgres_integration.py
