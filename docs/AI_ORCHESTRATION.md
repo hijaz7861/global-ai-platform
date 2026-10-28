@@ -12,6 +12,12 @@
 ## Configure explicitly
 Use environment variables documented in `.env.example`. Set `AI_LIVE_CALLS_ENABLED=true` only when the owner has intentionally enabled external provider calls and accepts any applicable charges. Configure `AI_DAILY_REQUEST_LIMIT` to a positive value and keep `AI_MAX_OUTPUT_TOKENS` low. `AI_MAX_RESPONSE_BYTES` bounds the provider response body (default 1 MiB). Use a secret manager for API keys in deployed environments.
 
+## Planned Universal AI Connector Hub
+
+The next architecture increment is specified in [Universal AI Connector Hub](UNIVERSAL_AI_CONNECTOR_HUB.md). It separates outbound provider API calls from inbound MCP tools for compatible AI clients. It adds a provider/connector registry, secret references, capability-aware routing, per-tenant cost budgets, scoped tool permissions, OAuth/webhook lifecycle, audit/observability, and human approval for high-impact actions. The rollout starts with a documented contract and mocked tests; live calls and a public MCP endpoint remain disabled until security and staging gates pass.
+
+This design is not implemented by this document alone. The current runtime remains the guarded adapter described above.
+
 ## Current limitations
 - Provider selection is explicit per request; there is no automatic retry or failover between providers.
 - Provider-specific native APIs, automatic multi-provider routing/fallback, pricing-aware monetary budgets, token usage reconciliation, user consent screens, tool calls, agent memory, and human approval workflows are not implemented.
