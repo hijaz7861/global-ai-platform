@@ -1,8 +1,4 @@
-"""Authenticate sandbox evidence with HMAC-SHA-256 and replay-aware verification.
-
-The caller must provide a durable, atomic nonce-consumption function in production.
-This module deliberately does not implement storage or execute sandbox jobs.
-"""
+"""Authenticate sandbox evidence with HMAC-SHA-256 and replay-aware verification."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
@@ -12,6 +8,8 @@ import json
 import re
 import time
 from typing import Callable
+
+from sqlalchemy.orm import Session, sessionmaker
 
 
 @dataclass(frozen=True)
@@ -33,19 +31,16 @@ class SignedAttestation:
 
 
 def _canonical_bytes(payload: SandboxAttestation) -> bytes:
-    return json.dumps(
-        asdict(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=True
-    ).encode("utf-8")
+    return json.dumps(asdict(payload), sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=True).encode("utf-8")
 
 
 def sign_attestation(payload: SandboxAttestation, key: bytes) -> SignedAttestation:
     """Sign evidence; call only inside the trusted sandbox controller."""
     if len(key) < 32:
         raise ValueError("HMAC key must contain at least 32 bytes")
-    return SignedAttestation(
-        payload=payload,
-        signature_hex=hmac.new(key, _canonical_bytes(payload), sha256).hexdigest(),
-    )
+    return SignedAttestation(payload=payload,
+                             signature_hex=hmac.new(key, _canonical_bytes(payload), sha256).hexdigest())
 
 
 def verify_attestation(
@@ -58,10 +53,10 @@ def verify_attestation(
     max_age_seconds: int = 900,
     max_future_skew_seconds: int = 30,
 ) -> tuple[bool, str]:
-    """Verify authenticity, binding, freshness and single-use nonce.
+    """Verify authenticity, artifact binding, freshness, and single-use nonce.
 
-    consume_nonce must atomically persist a nonce as consumed and return False
-    for any previously consumed nonce. Storage errors must raise and fail closed.
+    The nonce callback must use durable atomic storage in production. Storage
+    errors must raise so the caller can fail closed.
     """
     if len(key) < 32:
         return False, "hmac_key_too_short"
@@ -82,18 +77,47 @@ def verify_attestation(
         return False, "signature_invalid"
 
     current_time = int(time.time()) if now is None else now
+    if max_age_seconds < 1 or max_future_skew_seconds < 0 or payload.issued_at < 0:
+        return False, "invalid_time_policy"
     if payload.issued_at > current_time + max_future_skew_seconds:
         return False, "attestation_from_future"
     if current_time - payload.issued_at > max_age_seconds:
         return False, "attestation_expired"
-    if payload.issued_at < 0 or max_age_seconds < 1 or max_future_skew_seconds < 0:
-        return False, "invalid_time_policy"
-
-    if not payload.tests_passed or not payload.security_scan_passed or not payload.regression_suite_passed:
+    if not (payload.tests_passed and payload.security_scan_passed
+            and payload.regression_suite_passed):
         return False, "required_check_failed"
-
-    # A durable implementation must atomically reject re-use across workers.
     if not consume_nonce(payload.nonce):
         return False, "nonce_replayed"
-
     return True, "attestation_verified"
+
+
+def verify_attestation_with_database(
+    signed: SignedAttestation,
+    *,
+    key: bytes,
+    expected_artifact_sha256: str,
+    session_factory: sessionmaker[Session],
+    now: int | None = None,
+    max_age_seconds: int = 900,
+    max_future_skew_seconds: int = 30,
+    nonce_ttl_seconds: int = 1800,
+) -> tuple[bool, str]:
+    """Verify evidence using the SQL-backed atomic nonce store.
+
+    The caller must configure migrations before using this in production. A
+    database outage propagates as an exception and must fail the request closed.
+    """
+    from app.ai.nonce_store import make_durable_nonce_consumer
+
+    consume_nonce = make_durable_nonce_consumer(
+        session_factory, ttl_seconds=nonce_ttl_seconds
+    )
+    return verify_attestation(
+        signed,
+        key=key,
+        expected_artifact_sha256=expected_artifact_sha256,
+        consume_nonce=consume_nonce,
+        now=now,
+        max_age_seconds=max_age_seconds,
+        max_future_skew_seconds=max_future_skew_seconds,
+    )
