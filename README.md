@@ -116,7 +116,7 @@ The GitHub Actions workflow additionally checks Ruff lint rules, Python compilat
 
 - A historical CI run on commit `bf816cd7a872d67b5b774b85302ec8e6d41093fc` reported 85 passed / 11 environment-dependent skips for each Python 3.11, 3.12, and 3.13 job, and 11 PostgreSQL integration tests passed, along with lint, compilation, migration, dependency-audit, and Bandit checks. This is historical evidence and does **not** validate newer commits.
 - Six production-configuration/startup tests passed in an isolated local slice. That was not a full repository test run.
-- The new privacy-export tests have been committed but have not yet been verified by a full suite.
+- Four privacy-export tests are committed, including buyer-order inclusion/exclusion coverage. Their fixture explicitly disables email verification for token-based test setup; they have not yet been verified by a full suite.
 - Recent current-branch Actions runs have failed before any runner steps started (`runner_id: 0`, no runner name, zero steps). The cause is not confirmed; do not interpret those runs as application test failures or as passing tests.
 - No claim is made that every test currently passes. Check the latest [Pull Request checks](https://github.com/hijaz7861/global-ai-platform/pull/1) and run the commands above before merging.
 
