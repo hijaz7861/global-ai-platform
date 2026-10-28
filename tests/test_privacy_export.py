@@ -101,6 +101,56 @@ def test_self_service_export_never_includes_credential_material(client):
     assert "token_hash" not in serialized
 
 
+
+def test_self_service_export_includes_only_the_buyers_own_orders(client):
+    seller_token = register_and_login(client, "privacy-export-seller@example.com")
+    seller_org_id = create_organization(client, seller_token, "Export Seller Org")
+    seller_headers = {"Authorization": f"Bearer {seller_token}"}
+    listing = client.post(
+        f"/api/v1/organizations/{seller_org_id}/listings",
+        headers=seller_headers,
+        json={
+            "title": "Export Test Item",
+            "description": "Privacy export regression fixture",
+            "price_minor": 725,
+            "currency": "PKR",
+            "inventory_quantity": 2,
+        },
+    )
+    assert listing.status_code == 201, listing.text
+    listing_id = listing.json()["id"]
+    published = client.post(
+        f"/api/v1/organizations/{seller_org_id}/listings/{listing_id}/publish",
+        headers=seller_headers,
+    )
+    assert published.status_code == 200, published.text
+
+    buyer_token = register_and_login(client, "privacy-export-buyer@example.com")
+    order = client.post(
+        "/api/v1/orders",
+        headers={
+            "Authorization": f"Bearer {buyer_token}",
+            "Idempotency-Key": "privacy-export-order-001",
+        },
+        json={"listing_id": listing_id, "quantity": 1},
+    )
+    assert order.status_code == 201, order.text
+
+    buyer_export = client.get(
+        "/api/v1/auth/me/export",
+        headers={"Authorization": f"Bearer {buyer_token}"},
+    )
+    assert buyer_export.status_code == 200, buyer_export.text
+    buyer_orders = buyer_export.json()["buyer_orders"]
+    assert len(buyer_orders) == 1
+    assert buyer_orders[0]["id"] == order.json()["id"]
+    assert buyer_orders[0]["items"][0]["listing_id"] == listing_id
+    assert buyer_orders[0]["items"][0]["title"] == "Export Test Item"
+
+    seller_export = client.get("/api/v1/auth/me/export", headers=seller_headers)
+    assert seller_export.status_code == 200, seller_export.text
+    assert seller_export.json()["buyer_orders"] == []
+
 def test_self_service_export_requires_authentication(client):
     response = client.get("/api/v1/auth/me/export")
     assert response.status_code in {401, 403}
