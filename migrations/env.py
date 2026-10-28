@@ -7,6 +7,7 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import settings
 from app.db import Base
 from app import models  # noqa: F401 - registers model metadata
+from app.ai import nonce_store  # noqa: F401 - registers AI nonce table metadata
 
 config = context.config
 if config.config_file_name is not None:
