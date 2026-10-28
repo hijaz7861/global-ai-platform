@@ -17,13 +17,12 @@ This branch is the reviewable foundation for the **Global AI Platform**. Project
 
 ## Verification evidence and limitations
 
-- Current verified run: [CI Run #549](https://github.com/hijaz7861/global-ai-platform/actions/runs/40616367566) completed successfully on commit `8a54bf52b177b243eb106507687fe25e060f9789`.
-- Python 3.11, 3.12, and 3.13 each reported **98 passed, 11 skipped, 1 warning**. The 11 skips in these general test jobs are the PostgreSQL-only integration cases, which require the dedicated database job.
-- The dedicated PostgreSQL 16 integration job applied and checked migrations, then reported **11 passed, 1 warning**.
-- Ruff linting, Python compilation, Alembic migration consistency, dependency audit (`No known vulnerabilities found`), and Bandit checks passed in this run.
-- The warning is a Starlette deprecation warning related to using `httpx` with `starlette.testclient`; it did not fail the run and should be reviewed during dependency maintenance.
-- The CI run verifies the recorded commit only. Later code changes require a new successful run. CI success is not a production-readiness certification.
-- No live deployment, live payment processing, or paid AI-provider call has been performed. Hosting remains out of scope for the current engineering pass.
+- Latest verified CI: [Run #553](https://github.com/hijaz7861/global-ai-platform/actions/runs/40726076533) completed successfully on PR-head commit `e9f25405d80ab9443123b2d63a0a84190809880a`, which was subsequently merged by PR #1. The merged PR is [Global AI Platform foundation](https://github.com/hijaz7861/global-ai-platform/pull/1).
+- All five jobs in Run #553 completed successfully: Python 3.11, 3.12, and 3.13 test jobs; PostgreSQL 16 integration; and dependency/security audit.
+- The test jobs completed linting, Python compilation, migration consistency checks, and the full test suite; the PostgreSQL job applied/checked migrations and ran the dedicated integration suite; the audit job completed `pip-audit` and Bandit.
+- The previous detailed count from Run #549 was **98 passed, 11 skipped, 1 warning** for each Python matrix job and **11 passed, 1 warning** for PostgreSQL. Run #553's job summaries confirm success, but the connector did not expose its exact test counts; do not assume the #549 counts are #553 counts.
+- CI success validates the recorded PR-head tree, not production readiness. The merge commit itself has no separate run surfaced by the connected workflow-run lookup, so do not describe a separate post-merge run as verified.
+- No live deployment, live payment processing, or paid AI-provider call has been performed. Hosting remains intentionally deferred.
 
 ## Remaining implementation work
 
