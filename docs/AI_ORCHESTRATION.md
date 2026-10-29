@@ -1,7 +1,8 @@
 # AI Orchestration Foundation
 
 ## Current implementation
-- An OpenAI-compatible chat-completions HTTP adapter supports a primary endpoint/model and an optional explicitly selected fallback endpoint/model.
+- The core chat API has a guarded OpenAI-compatible chat-completions HTTP adapter with primary and explicitly selected fallback endpoint/model.
+- A separate optional provider registry allowlists OpenAI API, Groq, OpenRouter, Together AI, and explicitly enabled local loopback endpoints. Native Anthropic Messages and Google Gemini `generateContent` adapters are also present with provider-specific authentication and bounded HTTP behavior.
 - The adapter uses HTTPS except for loopback testing, refuses redirects, applies a bounded timeout, caps output tokens and provider response bytes, makes no automatic retries, and never includes provider response bodies in public errors.
 - `POST /api/v1/organizations/{organization_id}/ai/chat` is restricted to organization owners/admins.
 - The request accepts `provider: primary|fallback`; `primary` is the default. Fallback selection requires all three `AI_FALLBACK_API_KEY`, `AI_FALLBACK_BASE_URL`, and `AI_FALLBACK_MODEL` values. Partial fallback configuration fails closed.
@@ -14,13 +15,14 @@ Use environment variables documented in `.env.example`. Set `AI_LIVE_CALLS_ENABL
 
 ## Planned Universal AI Connector Hub
 
-The next architecture increment is specified in [Universal AI Connector Hub](UNIVERSAL_AI_CONNECTOR_HUB.md). It separates outbound provider API calls from inbound MCP tools for compatible AI clients. It adds a provider/connector registry, secret references, capability-aware routing, per-tenant cost budgets, scoped tool permissions, OAuth/webhook lifecycle, audit/observability, and human approval for high-impact actions. The rollout starts with a documented contract and mocked tests; live calls and a public MCP endpoint remain disabled until security and staging gates pass.
+The wider architecture is specified in [Universal AI Connector Hub](UNIVERSAL_AI_CONNECTOR_HUB.md) and the fail-closed admission design in [Security Gateway](SECURITY_GATEWAY.md). Outbound provider configuration and native Anthropic/Gemini adapters now exist; signed autonomy evidence, a SQLite nonce store, and a constrained Docker sandbox runner are also implemented as separate components. The inbound MCP endpoint, runtime security gateway, encrypted secret-manager integration, capability-aware routing, tenant cost budgets, scoped tool permissions, OAuth/webhook lifecycle, persistent audit integration, signed human approvals, and staged release automation remain incomplete. Live provider calls remain disabled unless explicitly configured; no public MCP endpoint or production deployment is enabled.
 
 This design is not implemented by this document alone. The current runtime remains the guarded adapter described above.
 
 ## Current limitations
 - Provider selection is explicit per request; there is no automatic retry or failover between providers.
-- Provider-specific native APIs, automatic multi-provider routing/fallback, pricing-aware monetary budgets, token usage reconciliation, user consent screens, tool calls, agent memory, and human approval workflows are not implemented.
+- Native Anthropic and Gemini adapters are available as separate provider components, but they are not yet fully integrated into the core chat route or automatic router. Automatic multi-provider routing/fallback, pricing-aware monetary budgets, token usage reconciliation, user consent screens, tool calls, agent memory, and human approval workflows remain incomplete.
+- The Docker sandbox runner has not been exercised against a real rootless Docker daemon in this project; CI unit tests are not proof of runtime isolation.
 - Request quotas count started requests over a rolling 24-hour window. Failed calls count toward the limit, intentionally conservative.
 - Live calls require PostgreSQL row locking; SQLite deployments are deliberately refused for live AI calls.
 - CI tests exercise the HTTP adapter using a local mock transport; no real provider credentials or paid API calls are used.
