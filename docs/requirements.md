@@ -33,6 +33,18 @@ The current draft implements a limited authenticated self-service export for pro
 
 See [Universal AI Connector Hub design](UNIVERSAL_AI_CONNECTOR_HUB.md). This is a requirement, not a claim that all connectors are already implemented.
 
+## Security Gateway Requirements
+- Route every external connector request through a fail-closed admission pipeline before business logic.
+- Authenticate the caller, derive tenant identity from trusted credentials, and enforce object-level authorization on every operation.
+- Validate bounded, versioned schemas; reject malformed, ambiguous, oversized, or unsupported requests.
+- Inspect suspicious content and tool intent using deterministic controls; AI-based detection must never be the sole security boundary.
+- Use SHA-256 digests for content integrity fingerprints where useful, and protocol-correct HMAC-SHA-256 or digital signatures for authenticity. A plain hash alone does not authenticate a sender or prevent replay.
+- Verify webhook signatures over the exact raw body as required by the provider; use timestamps, nonces/event IDs, and durable idempotency records for replay protection.
+- Quarantine uncertain files or scanner failures; never execute untrusted code in the application process.
+- Enforce outbound destination allowlists, SSRF protections, request/response limits, timeouts, budgets, audit redaction, and a connector kill switch.
+- Default to read-only tools. Require action-bound human approval for high-impact financial, destructive, permission, and external messaging actions.
+- Test that denied or quarantined requests produce no business side effects. See [Security Gateway design](SECURITY_GATEWAY.md).
+
 ## Security Requirements
 - Enforce tenant isolation in every data access path.
 - Apply least privilege and role-based authorization.
