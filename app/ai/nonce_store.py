@@ -19,6 +19,7 @@ class SQLiteNonceStore:
         if retention_seconds < 930:
             raise ValueError("Nonce retention must be at least 930 seconds")
         self._path = str(database_path)
+        self._retention_seconds = retention_seconds
         if self._path == ":memory:":
             raise ValueError("Nonce store requires a persistent SQLite database file")
         Path(self._path).parent.mkdir(parents=True, exist_ok=True)
