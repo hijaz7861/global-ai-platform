@@ -7,6 +7,7 @@ A global, modular business ecosystem with shared identity, trusted transactions,
 - Identity, organizations, memberships, roles, invitations, email verification, MFA, session controls, and tenant isolation.
 - Search, catalog, messaging/notifications, files, audit trail, and localization.
 - Universal AI Connector Hub with two directions: outbound provider adapters (OpenAI, Anthropic, Gemini, approved compatible/local endpoints) and an inbound, separately authenticated MCP interface for compatible AI clients.
+- Fail-closed Security Gateway for external connector requests: authentication, tenant authorization, strict schema validation, content inspection, protocol-specific signature verification, replay protection, and bounded execution. See [Security Gateway](SECURITY_GATEWAY.md).
 - Connector registry with explicit user authorization, scoped permissions, encrypted secret references, OAuth lifecycle, signed/replay-protected webhooks, and revocation.
 - AI orchestration with capability-aware provider selection, budgets, task policies, tool allowlists, audit trails, and human approval. See [Universal AI Connector Hub](UNIVERSAL_AI_CONNECTOR_HUB.md) for the staged design.
 - Financial ledger, accounting periods, reporting, invoicing, commissions, refunds, reconciliation, and settlement.
