@@ -13,6 +13,7 @@ import re
 import selectors
 import subprocess
 import time
+import uuid
 
 
 _PINNED_IMAGE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
@@ -29,17 +30,12 @@ class SandboxResult:
 
 
 class DockerSandboxRunner:
-    """Run an allowlisted command in a rootless, no-network, resource-limited container."""
+    """Run an argv command in a rootless, no-network, resource-limited container."""
 
     def __init__(
-        self,
-        *,
-        image: str,
-        docker_binary: str = "docker",
-        timeout_seconds: int = 120,
-        memory_limit: str = "512m",
-        cpu_limit: str = "1.0",
-        pids_limit: int = 128,
+        self, *, image: str, docker_binary: str = "docker",
+        timeout_seconds: int = 120, memory_limit: str = "512m",
+        cpu_limit: str = "1.0", pids_limit: int = 128,
         max_output_bytes: int = 1_048_576,
     ) -> None:
         if not _PINNED_IMAGE.fullmatch(image):
@@ -54,12 +50,9 @@ class DockerSandboxRunner:
             raise ValueError("Sandbox pids limit must be between 16 and 512")
         if not 1024 <= max_output_bytes <= 10_485_760:
             raise ValueError("Output limit must be between 1024 and 10485760 bytes")
-        self.image = image
-        self.docker_binary = docker_binary
-        self.timeout_seconds = timeout_seconds
-        self.memory_limit = memory_limit
-        self.cpu_limit = cpu_limit
-        self.pids_limit = pids_limit
+        self.image, self.docker_binary = image, docker_binary
+        self.timeout_seconds, self.memory_limit = timeout_seconds, memory_limit
+        self.cpu_limit, self.pids_limit = cpu_limit, pids_limit
         self.max_output_bytes = max_output_bytes
 
     def _require_rootless_daemon(self) -> None:
@@ -73,6 +66,17 @@ class DockerSandboxRunner:
         if result.returncode != 0 or "rootless" not in result.stdout.lower():
             raise RuntimeError("Rootless Docker daemon is required; sandbox execution refused")
 
+    def _cleanup_container(self, name: str) -> None:
+        # Killing the Docker CLI alone may leave a container running in the daemon.
+        for action in ("kill", "rm"):
+            try:
+                subprocess.run(
+                    [self.docker_binary, action, "--force", name],
+                    check=False, capture_output=True, text=True, timeout=10,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise RuntimeError("Sandbox cleanup could not be confirmed") from exc
+
     def run(self, *, artifact_directory: str | Path, command: list[str]) -> SandboxResult:
         """Execute a command in isolation. Command is argv, never a shell string."""
         artifact = Path(artifact_directory).resolve(strict=True)
@@ -85,9 +89,10 @@ class DockerSandboxRunner:
             raise ValueError("Command arguments must be non-empty bounded strings")
         self._require_rootless_daemon()
 
+        container_name = "gai-sandbox-" + uuid.uuid4().hex
         docker_command = [
-            self.docker_binary, "run", "--rm", "--pull=never",
-            "--network=none", "--read-only", "--cap-drop=ALL",
+            self.docker_binary, "run", "--rm", "--name", container_name,
+            "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL",
             "--security-opt=no-new-privileges:true",
             "--pids-limit", str(self.pids_limit),
             "--memory", self.memory_limit, "--cpus", self.cpu_limit,
@@ -126,7 +131,6 @@ class DockerSandboxRunner:
                     break
                 events = selector.select(min(remaining, 0.25))
                 if process.poll() is not None and not events:
-                    # Drain any remaining pipe data before returning.
                     events = selector.select(0)
                     if not events:
                         for key in list(selector.get_map().values()):
@@ -152,6 +156,8 @@ class DockerSandboxRunner:
             process.wait(timeout=5)
             process.stdout.close()
             process.stderr.close()
+            if timed_out or output_limit_exceeded:
+                self._cleanup_container(container_name)
 
         return SandboxResult(
             exit_code=process.returncode if process.returncode is not None else -1,
