@@ -6,8 +6,9 @@ A global, modular business ecosystem with shared identity, trusted transactions,
 ## Shared platform capabilities
 - Identity, organizations, memberships, roles, invitations, email verification, MFA, session controls, and tenant isolation.
 - Search, catalog, messaging/notifications, files, audit trail, and localization.
-- Connector registry with explicit user authorization, scoped permissions, and revocation.
-- AI orchestration with provider selection, budgets, task policies, tool allowlists, and human approval.
+- Universal AI Connector Hub with two directions: outbound provider adapters (OpenAI, Anthropic, Gemini, approved compatible/local endpoints) and an inbound, separately authenticated MCP interface for compatible AI clients.
+- Connector registry with explicit user authorization, scoped permissions, encrypted secret references, OAuth lifecycle, signed/replay-protected webhooks, and revocation.
+- AI orchestration with capability-aware provider selection, budgets, task policies, tool allowlists, audit trails, and human approval. See [Universal AI Connector Hub](UNIVERSAL_AI_CONNECTOR_HUB.md) for the staged design.
 - Financial ledger, accounting periods, reporting, invoicing, commissions, refunds, reconciliation, and settlement.
 - Monitoring, backups, incident handling, privacy workflows, and compliance evidence.
 
@@ -26,7 +27,7 @@ Marketplace and commerce; suppliers and procurement; logistics and freight; vehi
 - Financial workflows use integer minor-unit amounts, idempotency, audit records, and explicit state transitions.
 
 ## Remaining gates
-Multi-provider AI routing, monetary budgets, agent tool permissions, OAuth/webhooks, full reconciliation/cash-flow reporting, payments/refunds/tax/settlement, logistics and other business domains remain incomplete. Independent security review, staging validation, monitoring, encrypted backup/restore drills, operational scheduler provisioning and explicit release approval are required before production.
+Multi-provider AI routing, the full Universal AI Connector Hub (including inbound MCP, OAuth/webhooks, and secret-manager integration), monetary budgets, agent tool permissions, full reconciliation/cash-flow reporting, payments/refunds/tax/settlement, logistics and other business domains remain incomplete. Independent security review, staging validation, monitoring, encrypted backup/restore drills, operational scheduler provisioning and explicit release approval are required before production.
 
 ## Delivery principle
 Build one secure end-to-end vertical slice at a time. Documentation is not implementation, and a successful unit test is not proof of production readiness.

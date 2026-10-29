@@ -11,8 +11,8 @@ Create a global AI-powered business ecosystem with a shared, secure backend and 
 5. Employment, freelancers and contractors.
 6. Store, inventory and business management.
 7. Education and training.
-8. Universal Connector Hub.
-9. Multi-provider AI orchestration.
+8. Universal AI Connector Hub with two directions: outbound provider APIs and inbound authenticated MCP tools for compatible AI clients.
+9. Multi-provider AI orchestration with capability-aware routing, per-tenant budgets, scoped tools, audit trails, and approval gates.
 10. AI Super Accounts Manager.
 11. AI Evolution and Research Lab.
 12. What-if simulation and analytics engine.
@@ -20,6 +20,18 @@ Create a global AI-powered business ecosystem with a shared, secure backend and 
 ## Current delivery note
 The current draft implements a limited authenticated self-service export for profile, organization memberships and buyer orders, with credential material excluded. The complete privacy lifecycle (consent, retention, deletion/anonymization) is not complete. CI run [#549](https://github.com/hijaz7861/global-ai-platform/actions/runs/40616367566) passed on its recorded commit; see [Implementation Status](IMPLEMENTATION_STATUS.md) for exact test scope and remaining gaps.
 13. Developer APIs and authorized third-party plugins.
+
+## Universal AI Connector Hub Requirements
+- Separate outbound provider adapters from inbound MCP server capabilities.
+- Support provider-specific adapters rather than assuming one API format works identically across vendors.
+- Keep credentials server-side in an encrypted secret store or deployment secret manager; never expose secrets in logs, prompts, tool output, or API responses.
+- Require tenant-scoped authorization, least-privilege scopes, explicit connector consent, revocation, rate limits, quotas, and audit events.
+- Verify webhook signatures and protect against replay and duplicate delivery.
+- Default to read-only tools; require human approval for high-impact writes, financial actions, external messaging, and destructive operations.
+- Keep external provider calls and public MCP access disabled until security tests and staging approval pass.
+- Treat connector responses and model-provided arguments as untrusted input; test prompt injection and cross-tenant isolation.
+
+See [Universal AI Connector Hub design](UNIVERSAL_AI_CONNECTOR_HUB.md). This is a requirement, not a claim that all connectors are already implemented.
 
 ## Security Requirements
 - Enforce tenant isolation in every data access path.
