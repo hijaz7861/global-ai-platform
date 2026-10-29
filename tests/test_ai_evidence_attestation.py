@@ -5,7 +5,9 @@ from app.ai.evidence_attestation import (
     SandboxAttestation,
     sign_attestation,
     verify_attestation,
+    verify_attestation_with_sqlite_store,
 )
+from app.ai.nonce_store import SQLiteNonceStore
 
 
 KEY = b"k" * 32
@@ -99,3 +101,13 @@ def test_short_hmac_key_is_rejected_for_verification():
 def test_missing_sandbox_identity_is_rejected_before_nonce_consumption():
     signed = make_signed(sandbox_id=" ")
     assert verifier(signed) == (False, "missing_run_or_sandbox_identity")
+
+
+def test_sqlite_store_is_wired_into_attestation_verification(tmp_path):
+    store = SQLiteNonceStore(tmp_path / "attestation-nonces.sqlite3")
+    signed = make_signed()
+    verify = lambda: verify_attestation_with_sqlite_store(
+        signed, key=KEY, expected_artifact_sha256=DIGEST, nonce_store=store, now=1100
+    )
+    assert verify() == (True, "attestation_verified")
+    assert verify() == (False, "nonce_replayed")
