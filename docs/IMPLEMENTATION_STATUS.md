@@ -12,12 +12,15 @@ This branch is the reviewable foundation for the **Global AI Platform**. Project
 - Commerce: tenant-scoped listings, public search, multi-item orders, stock reservation, idempotency, cancellation and expiry workflows, seller summaries, inventory adjustment history, and audit events.
 - Supplier operations: onboarding and review, procurement requests, quote submission/revisions, single-winner awards, purchase orders, cancellation, and fulfilment.
 - Accounting: double-entry journals, reversals, accounting periods, trial balance, account ledger, income statement, balance sheet, manual bank reconciliation, and bounded CSV statement imports.
-- AI: guarded OpenAI-compatible adapter, explicit primary/fallback selection, output/response limits, timeouts, audit events, PostgreSQL-serialized request quotas, and live provider calls disabled by default.
+- AI connectivity: optional allowlisted OpenAI-compatible provider registry (OpenAI API, Groq, OpenRouter, Together AI, and explicitly configured loopback/local endpoint); native Anthropic Messages and Google Gemini adapters; fixed provider origins, bounded request/response sizes, timeouts, redacted errors, prompt-size bounds, mocked transport tests, and live calls disabled by default.
+- AI autonomy controls: fail-closed release gate, HMAC-SHA-256 signed artifact-bound evidence, freshness checks, and SQLite-backed atomic nonce/replay protection. SQLite nonce persistence is single-host only.
+- Sandbox execution primitive: digest-pinned Docker image requirement, rootless-daemon check, no network, read-only root filesystem and mounts, dropped capabilities, non-root UID, resource/time/output bounds, and trusted-test separation. Unit/CI tests do not prove real-host isolation; no actual Docker worker run has been verified.
 - Privacy: authenticated self-service export endpoint for basic profile data, organization memberships, and buyer orders. Credential hashes, tokens, and MFA secrets are intentionally excluded.
 
 ## Verification evidence and limitations
 
-- Current verified run: [CI Run #549](https://github.com/hijaz7861/global-ai-platform/actions/runs/40616367566) completed successfully on commit `8a54bf52b177b243eb106507687fe25e060f9789`.
+- Latest verified change-set: [CI Run #593](https://github.com/hijaz7861/global-ai-platform/actions/runs/40915570405) completed successfully on the security-gateway documentation integration head. All five jobs passed: Python 3.11, 3.12, 3.13, PostgreSQL integration, and dependency/Bandit audit. This is CI evidence for that change-set, not a production-readiness certification.
+- Earlier foundation evidence: [CI Run #549](https://github.com/hijaz7861/global-ai-platform/actions/runs/40616367566) completed successfully on commit `8a54bf52b177b243eb106507687fe25e060f9789`.
 - Python 3.11, 3.12, and 3.13 each reported **98 passed, 11 skipped, 1 warning**. The 11 skips in these general test jobs are the PostgreSQL-only integration cases, which require the dedicated database job.
 - The dedicated PostgreSQL 16 integration job applied and checked migrations, then reported **11 passed, 1 warning**.
 - Ruff linting, Python compilation, Alembic migration consistency, dependency audit (`No known vulnerabilities found`), and Bandit checks passed in this run.
@@ -31,8 +34,8 @@ This branch is the reviewable foundation for the **Global AI Platform**. Project
 1. Run the complete test suite and resolve any current-head failures; validate all Alembic upgrades and downgrade assumptions against disposable databases.
 2. Extend PostgreSQL race coverage for reconciliation completion/editing, order expiry, stock reservation, accounting posting/period closure, and procurement state transitions.
 3. Finish the privacy/data lifecycle: define export coverage, user consent records, retention rules, and a carefully constrained deletion/anonymization workflow that preserves legally required financial/audit records.
-4. Add multi-provider AI routing with provider-specific adapters, usage accounting, explicit cost/budget controls, tool allowlists, and human approval gates. Keep external calls disabled until budgets and permissions are tested.
-5. Implement the connector registry and OAuth/webhook lifecycle: scoped grants, encrypted credentials, signature verification, replay protection, retries, revocation, and tenant-isolation tests.
+4. Add capability-aware multi-provider routing, usage accounting, explicit monetary/token budgets, tenant-aware tool allowlists, signed human approvals, and key management. Native provider adapters exist, but automatic routing/failover and production budget enforcement remain incomplete.
+5. Implement the runtime Security Gateway and Universal Connector Hub: inbound authenticated MCP endpoint, OAuth/webhook lifecycle, encrypted secret-manager integration, protocol-specific signature verification, scoped grants, retries, revocation, and tenant-isolation tests. The gateway blueprint is documentation, not runtime middleware.
 6. Complete financial workflows incrementally: cash-flow reporting, accounting close/roll-forward, payment/refund sandbox contracts, tax/commission/settlement calculations, and domain review. The existing manual reconciliation MVP does not connect to banks or move money.
 7. Build remaining product domains as independently tested vertical slices: logistics/returns, rentals, real estate, jobs/freelancers, education, and broader business operations.
 
