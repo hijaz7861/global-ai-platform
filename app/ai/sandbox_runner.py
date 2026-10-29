@@ -1,8 +1,8 @@
 """Hardened Docker sandbox runner for disposable, untrusted code checks.
 
 Prerequisites: a trusted, digest-pinned runner image and a rootless Docker daemon.
-This runner never pulls images, never attaches the Docker socket to the container,
-disables container networking, and exposes only the supplied artifact directory read-only.
+Candidate code and trusted tests are mounted separately and read-only. This is
+defense-in-depth; the runner does not create signatures or approve releases.
 """
 from __future__ import annotations
 
@@ -77,11 +77,17 @@ class DockerSandboxRunner:
             except (OSError, subprocess.TimeoutExpired) as exc:
                 raise RuntimeError("Sandbox cleanup could not be confirmed") from exc
 
-    def run(self, *, artifact_directory: str | Path, command: list[str]) -> SandboxResult:
-        """Execute a command in isolation. Command is argv, never a shell string."""
+    def run(
+        self, *, artifact_directory: str | Path,
+        trusted_test_directory: str | Path, command: list[str],
+    ) -> SandboxResult:
+        """Execute a command with candidate files and trusted tests mounted separately."""
         artifact = Path(artifact_directory).resolve(strict=True)
-        if not artifact.is_dir():
-            raise ValueError("Artifact path must be a directory")
+        trusted_tests = Path(trusted_test_directory).resolve(strict=True)
+        if not artifact.is_dir() or not trusted_tests.is_dir():
+            raise ValueError("Candidate and trusted test paths must be directories")
+        if artifact == trusted_tests or artifact in trusted_tests.parents or trusted_tests in artifact.parents:
+            raise ValueError("Candidate and trusted tests must be separate, non-nested directories")
         if not command or len(command) > 128:
             raise ValueError("Command must contain between 1 and 128 arguments")
         if any(not isinstance(part, str) or not part or "\x00" in part or len(part) > 4096
@@ -97,9 +103,10 @@ class DockerSandboxRunner:
             "--pids-limit", str(self.pids_limit),
             "--memory", self.memory_limit, "--cpus", self.cpu_limit,
             "--user", "65532:65532",
-            # This is a container-internal, size-bounded tmpfs, not a host temp path.
-            "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m,uid=65532,gid=65532",  # nosec B108
+            # Container-internal size-bounded tmpfs, not a host temp path.  # nosec B108
+            "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m,uid=65532,gid=65532",
             "--mount", f"type=bind,src={artifact},dst=/workspace,readonly",
+            "--mount", f"type=bind,src={trusted_tests},dst=/trusted-tests,readonly",
             "--workdir", "/workspace", self.image, *command,
         ]
         started = time.monotonic()
