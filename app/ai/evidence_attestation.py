@@ -1,7 +1,7 @@
 """Authenticate sandbox evidence with HMAC-SHA-256 and replay-aware verification.
 
-The caller must provide a durable, atomic nonce-consumption function in production.
-This module deliberately does not implement storage or execute sandbox jobs.
+The caller must use a durable, atomic nonce-consumption function in production.
+The SQLite convenience wrapper is for a single host with a persistent database file.
 """
 from __future__ import annotations
 
@@ -12,6 +12,8 @@ import json
 import re
 import time
 from typing import Callable
+
+from app.ai.nonce_store import SQLiteNonceStore
 
 
 @dataclass(frozen=True)
@@ -92,8 +94,29 @@ def verify_attestation(
     if not payload.tests_passed or not payload.security_scan_passed or not payload.regression_suite_passed:
         return False, "required_check_failed"
 
-    # A durable implementation must atomically reject re-use across workers.
     if not consume_nonce(payload.nonce):
         return False, "nonce_replayed"
 
     return True, "attestation_verified"
+
+
+def verify_attestation_with_sqlite_store(
+    signed: SignedAttestation,
+    *,
+    key: bytes,
+    expected_artifact_sha256: str,
+    nonce_store: SQLiteNonceStore,
+    now: int | None = None,
+    max_age_seconds: int = 900,
+    max_future_skew_seconds: int = 30,
+) -> tuple[bool, str]:
+    """Verify an attestation using the persistent single-host nonce store."""
+    return verify_attestation(
+        signed,
+        key=key,
+        expected_artifact_sha256=expected_artifact_sha256,
+        consume_nonce=nonce_store.consume_nonce,
+        now=now,
+        max_age_seconds=max_age_seconds,
+        max_future_skew_seconds=max_future_skew_seconds,
+    )
