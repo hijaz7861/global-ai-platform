@@ -97,7 +97,8 @@ class DockerSandboxRunner:
             "--pids-limit", str(self.pids_limit),
             "--memory", self.memory_limit, "--cpus", self.cpu_limit,
             "--user", "65532:65532",
-            "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m,uid=65532,gid=65532",
+            # This is a container-internal, size-bounded tmpfs, not a host temp path.
+            "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m,uid=65532,gid=65532",  # nosec B108
             "--mount", f"type=bind,src={artifact},dst=/workspace,readonly",
             "--workdir", "/workspace", self.image, *command,
         ]
