@@ -56,12 +56,38 @@ def test_runner_rejects_missing_artifact_directory_before_docker(monkeypatch, tm
         runner, "_require_rootless_daemon", lambda: called.append(True)
     )
     with pytest.raises(FileNotFoundError):
-        runner.run(artifact_directory=tmp_path / "missing", command=["python", "-m", "pytest"])
+        runner.run(
+            artifact_directory=tmp_path / "missing",
+            trusted_test_directory=tmp_path / "trusted",
+            command=["python", "-m", "pytest"],
+        )
     assert called == []
 
 
 def test_runner_rejects_shell_string_command(tmp_path, monkeypatch):
+    candidate = tmp_path / "candidate"
+    trusted = tmp_path / "trusted"
+    candidate.mkdir()
+    trusted.mkdir()
     runner = DockerSandboxRunner(image=PINNED_IMAGE)
     monkeypatch.setattr(runner, "_require_rootless_daemon", lambda: None)
     with pytest.raises(ValueError, match="Command must contain"):
-        runner.run(artifact_directory=tmp_path, command=[])
+        runner.run(
+            artifact_directory=candidate,
+            trusted_test_directory=trusted,
+            command=[],
+        )
+
+
+def test_runner_rejects_nested_candidate_and_trusted_tests(tmp_path, monkeypatch):
+    candidate = tmp_path / "candidate"
+    trusted = candidate / "tests"
+    trusted.mkdir(parents=True)
+    runner = DockerSandboxRunner(image=PINNED_IMAGE)
+    monkeypatch.setattr(runner, "_require_rootless_daemon", lambda: None)
+    with pytest.raises(ValueError, match="separate"):
+        runner.run(
+            artifact_directory=candidate,
+            trusted_test_directory=trusted,
+            command=["pytest", "/trusted-tests"],
+        )
