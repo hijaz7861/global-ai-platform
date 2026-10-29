@@ -106,8 +106,12 @@ def test_missing_sandbox_identity_is_rejected_before_nonce_consumption():
 def test_sqlite_store_is_wired_into_attestation_verification(tmp_path):
     store = SQLiteNonceStore(tmp_path / "attestation-nonces.sqlite3")
     signed = make_signed()
-    verify = lambda: verify_attestation_with_sqlite_store(
-        signed, key=KEY, expected_artifact_sha256=DIGEST, nonce_store=store, now=1100
-    )
+
+    def verify():
+        return verify_attestation_with_sqlite_store(
+            signed, key=KEY, expected_artifact_sha256=DIGEST,
+            nonce_store=store, now=1100
+        )
+
     assert verify() == (True, "attestation_verified")
     assert verify() == (False, "nonce_replayed")
