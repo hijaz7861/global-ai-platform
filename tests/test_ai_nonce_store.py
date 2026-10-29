@@ -1,5 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from app.ai.nonce_store import SQLiteNonceStore
 
 
@@ -28,11 +30,14 @@ def test_concurrent_consumers_accept_nonce_exactly_once(tmp_path):
 
 
 def test_rejects_invalid_nonce_and_too_short_retention(tmp_path):
-    import pytest
-
     with pytest.raises(ValueError, match="at least 930"):
         SQLiteNonceStore(tmp_path / "bad.sqlite3", retention_seconds=10)
 
     store = SQLiteNonceStore(tmp_path / "nonces.sqlite3")
     assert not store.consume_nonce("")
     assert not store.consume_nonce("x" * 129)
+
+
+def test_ephemeral_memory_database_is_rejected():
+    with pytest.raises(ValueError, match="persistent SQLite database"):
+        SQLiteNonceStore(":memory:")
