@@ -68,10 +68,10 @@ class DockerSandboxRunner:
 
     def _cleanup_container(self, name: str) -> None:
         # Killing the Docker CLI alone may leave a container running in the daemon.
-        for action in ("kill", "rm"):
+        for action, extra in (("kill", []), ("rm", ["--force"])):
             try:
                 subprocess.run(
-                    [self.docker_binary, action, "--force", name],
+                    [self.docker_binary, action, *extra, name],
                     check=False, capture_output=True, text=True, timeout=10,
                 )
             except (OSError, subprocess.TimeoutExpired) as exc:
