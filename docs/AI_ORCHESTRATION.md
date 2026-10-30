@@ -10,8 +10,9 @@
 ## Autonomy and approval controls
 - A fail-closed gate evaluates artifact integrity, sandbox evidence, tests, security scans, regression evidence, rollback readiness, risk and approval.
 - HMAC-SHA-256 attestation binds evidence to an artifact digest; a persistent SQLite nonce store provides atomic single-host replay protection.
-- Signed human approvals bind a short-lived approval to an exact action/artifact digest and verify HMAC, actor allowlisting, expiry and one-time nonce consumption.
-- `evaluate_change_with_signed_approval` connects signed-approval verification to the autonomy gate. Missing approval cannot authorize high/critical-risk changes or staged release; an invalid supplied approval denies. A valid approval only makes a change eligible for staged release after all other evidence and rollback checks pass.
+- Signed human approvals cryptographically bind both the exact artifact SHA-256 digest and a distinct action identifier. Verification checks signature, actor allowlisting, expiry, maximum lifetime, future clock skew and one-time nonce consumption.
+- The gate evaluates artifact integrity, sandbox/test/security/regression evidence and rollback readiness before consuming the approval nonce. Invalid, expired, unauthorized, action-mismatched, digest-mismatched, tampered and replayed approvals fail closed.
+- The legacy caller-controlled `human_approval` boolean is ignored by signed-approval integration paths. A valid approval only makes a change eligible for staged release after all other evidence and rollback checks pass.
 - HMAC proves possession of a shared key, not a human identity. A trusted approval service must authenticate and authorize the actor before signing. Key management, identity/RBAC issuance workflow, durable approval audit integration and a public release API remain incomplete.
 - The constrained Docker runner requires a digest-pinned image and rootless Docker, disables networking, uses a read-only root filesystem and mounts, drops capabilities, uses a non-root UID, and bounds resources/time/output. It has not been verified on a real rootless Docker host.
 
@@ -24,7 +25,7 @@ The inbound MCP endpoint, runtime security gateway, encrypted secret-manager int
 ## Current limitations
 - Provider selection is explicit; no automatic retry/failover is enabled.
 - Native Anthropic and Gemini adapters are not fully integrated into the core chat route or automatic router.
-- Signed approvals are verified by the library gate but are not issued through a trusted identity service or exposed through a release API.
+- Signed approvals are integrated as library-level policy helpers, not issued through a trusted identity service or exposed through a release API.
 - SQLite nonce storage is single-host only.
 - CI unit tests are not proof of real Docker isolation.
 - No live provider credentials, paid API calls, payments, or deployment are used by tests.
