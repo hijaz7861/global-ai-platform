@@ -12,6 +12,9 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 REPOSITORY = os.getenv("GITHUB_REPOSITORY", "hijaz7861/global-ai-platform")
+PATH_TOKEN = os.getenv("MCP_PATH_TOKEN", "")
+if len(PATH_TOKEN) < 40:
+    raise RuntimeError("MCP_PATH_TOKEN must contain at least 40 characters.")
 OWNER, SEP, REPO = REPOSITORY.partition("/")
 if not SEP or not OWNER or not REPO or "/" in REPO:
     raise RuntimeError("GITHUB_REPOSITORY must use owner/repository format.")
@@ -53,7 +56,7 @@ mcp = FastMCP(
         "dispatch workflows, or execute shell commands."
     ),
     host="0.0.0.0",
-    streamable_http_path="/mcp",
+    streamable_http_path=f"/{PATH_TOKEN}/mcp",
     json_response=True,
     stateless_http=True,
     transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
