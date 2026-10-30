@@ -3,13 +3,15 @@ from __future__ import annotations
 import base64
 import os
 import re
+from contextlib import asynccontextmanager
 from typing import Any
 import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.routing import Route
+from starlette.routing import Mount, Route
 
 REPOSITORY = os.getenv("GITHUB_REPOSITORY", "hijaz7861/global-ai-platform")
 PATH_TOKEN = os.getenv("MCP_PATH_TOKEN", "")
@@ -56,7 +58,7 @@ mcp = FastMCP(
         "dispatch workflows, or execute shell commands."
     ),
     host="0.0.0.0",
-    streamable_http_path=f"/{PATH_TOKEN}/mcp",
+    streamable_http_path="/mcp",
     json_response=True,
     stateless_http=True,
     transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
@@ -164,5 +166,17 @@ async def list_ci_runs(limit: int = 10, branch: str = "") -> dict[str, Any]:
 async def health(_: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "service": "global-ai-platform-mcp-bridge"})
 
-app = mcp.streamable_http_app()
-app.router.routes.insert(0, Route("/health", health, methods=["GET"]))
+mcp_app = mcp.streamable_http_app()
+
+@asynccontextmanager
+async def lifespan(_: Starlette):
+    async with mcp.session_manager.run():
+        yield
+
+app = Starlette(
+    routes=[
+        Route("/health", health, methods=["GET"]),
+        Mount(f"/{PATH_TOKEN}", app=mcp_app),
+    ],
+    lifespan=lifespan,
+)
