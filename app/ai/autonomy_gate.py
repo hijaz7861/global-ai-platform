@@ -43,6 +43,7 @@ class ChangeEvidence:
     risk: RiskLevel
     human_approval: bool = False
     production_release_requested: bool = False
+    action: str = "production_release"
 
 
 @dataclass(frozen=True)
@@ -118,39 +119,49 @@ def evaluate_change_with_signed_approval(
     allowed_actor_ids: Collection[str],
     nonce_store,
     now: int | None = None,
+    max_lifetime_seconds: int = 900,
+    max_future_skew_seconds: int = 30,
 ) -> GateResult:
-    """Evaluate evidence and cryptographically verify approval for this exact artifact.
+    """Verify action-bound approval only after all technical/rollback checks pass.
 
-    A missing approval leaves low/medium-risk sandbox evaluation available but
-    cannot authorize high/critical-risk changes or any staged release. Invalid
-    supplied approvals fail closed. Nonce storage failures intentionally propagate.
+    Missing approval preserves sandbox evaluation but cannot authorize a high-risk
+    change or staged release. Invalid supplied approvals fail closed. Nonce-store
+    failures propagate; the legacy human_approval boolean is never trusted.
     """
-    base = replace(evidence, human_approval=False)
+    unapproved = replace(evidence, human_approval=False)
+    preliminary = evaluate_change(unapproved)
+    if preliminary.decision is GateDecision.DENY:
+        return preliminary
+
     needs_approval = (
         evidence.risk in (RiskLevel.HIGH, RiskLevel.CRITICAL)
         or evidence.production_release_requested
     )
     if signed_approval is None:
-        return evaluate_change(base)
+        return preliminary
+    if not needs_approval:
+        return GateResult(
+            GateDecision.DENY,
+            ("unexpected_human_approval_for_non_release_change",),
+            preliminary.verified_sha256,
+        )
 
-    artifact_digest = sha256(evidence.artifact).hexdigest()
     valid, reason = verify_human_approval_with_sqlite_store(
         signed_approval,
         key=approval_key,
-        expected_action_sha256=artifact_digest,
+        expected_action_sha256=preliminary.verified_sha256,
         allowed_actor_ids=allowed_actor_ids,
         nonce_store=nonce_store,
+        expected_action=evidence.action,
         now=now,
+        max_lifetime_seconds=max_lifetime_seconds,
+        max_future_skew_seconds=max_future_skew_seconds,
     )
     if not valid:
         return GateResult(
             GateDecision.DENY,
             (f"human_approval_{reason}",),
-            artifact_digest,
+            preliminary.verified_sha256,
         )
 
-    approved = replace(evidence, human_approval=True)
-    result = evaluate_change(approved)
-    if not needs_approval and result.decision is GateDecision.SANDBOX_ONLY:
-        return result
-    return result
+    return evaluate_change(replace(unapproved, human_approval=True))
