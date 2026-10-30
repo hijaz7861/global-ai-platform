@@ -5,10 +5,16 @@ Execution must be delegated to an isolated runner with no production credentials
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from hashlib import sha256
 import hmac
+from collections.abc import Collection
+
+from app.ai.human_approval import (
+    SignedHumanApproval,
+    verify_human_approval_with_sqlite_store,
+)
 
 
 class RiskLevel(StrEnum):
@@ -102,3 +108,49 @@ def evaluate_change(evidence: ChangeEvidence) -> GateResult:
         ("checks_passed_staged_release_only",),
         actual_digest,
     )
+
+
+def evaluate_change_with_signed_approval(
+    evidence: ChangeEvidence,
+    *,
+    signed_approval: SignedHumanApproval | None,
+    approval_key: bytes,
+    allowed_actor_ids: Collection[str],
+    nonce_store,
+    now: int | None = None,
+) -> GateResult:
+    """Evaluate evidence and cryptographically verify approval for this exact artifact.
+
+    A missing approval leaves low/medium-risk sandbox evaluation available but
+    cannot authorize high/critical-risk changes or any staged release. Invalid
+    supplied approvals fail closed. Nonce storage failures intentionally propagate.
+    """
+    base = replace(evidence, human_approval=False)
+    needs_approval = (
+        evidence.risk in (RiskLevel.HIGH, RiskLevel.CRITICAL)
+        or evidence.production_release_requested
+    )
+    if signed_approval is None:
+        return evaluate_change(base)
+
+    artifact_digest = sha256(evidence.artifact).hexdigest()
+    valid, reason = verify_human_approval_with_sqlite_store(
+        signed_approval,
+        key=approval_key,
+        expected_action_sha256=artifact_digest,
+        allowed_actor_ids=allowed_actor_ids,
+        nonce_store=nonce_store,
+        now=now,
+    )
+    if not valid:
+        return GateResult(
+            GateDecision.DENY,
+            (f"human_approval_{reason}",),
+            artifact_digest,
+        )
+
+    approved = replace(evidence, human_approval=True)
+    result = evaluate_change(approved)
+    if not needs_approval and result.decision is GateDecision.SANDBOX_ONLY:
+        return result
+    return result
