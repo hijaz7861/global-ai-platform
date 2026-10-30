@@ -5,10 +5,16 @@ Execution must be delegated to an isolated runner with no production credentials
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from hashlib import sha256
 import hmac
+from collections.abc import Collection
+
+from app.ai.human_approval import (
+    SignedHumanApproval,
+    verify_human_approval_with_sqlite_store,
+)
 
 
 class RiskLevel(StrEnum):
@@ -37,6 +43,7 @@ class ChangeEvidence:
     risk: RiskLevel
     human_approval: bool = False
     production_release_requested: bool = False
+    action: str = "production_release"
 
 
 @dataclass(frozen=True)
@@ -102,3 +109,59 @@ def evaluate_change(evidence: ChangeEvidence) -> GateResult:
         ("checks_passed_staged_release_only",),
         actual_digest,
     )
+
+
+def evaluate_change_with_signed_approval(
+    evidence: ChangeEvidence,
+    *,
+    signed_approval: SignedHumanApproval | None,
+    approval_key: bytes,
+    allowed_actor_ids: Collection[str],
+    nonce_store,
+    now: int | None = None,
+    max_lifetime_seconds: int = 900,
+    max_future_skew_seconds: int = 30,
+) -> GateResult:
+    """Verify action-bound approval only after all technical/rollback checks pass.
+
+    Missing approval preserves sandbox evaluation but cannot authorize a high-risk
+    change or staged release. Invalid supplied approvals fail closed. Nonce-store
+    failures propagate; the legacy human_approval boolean is never trusted.
+    """
+    unapproved = replace(evidence, human_approval=False)
+    preliminary = evaluate_change(unapproved)
+    if preliminary.decision is GateDecision.DENY:
+        return preliminary
+
+    needs_approval = (
+        evidence.risk in (RiskLevel.HIGH, RiskLevel.CRITICAL)
+        or evidence.production_release_requested
+    )
+    if signed_approval is None:
+        return preliminary
+    if not needs_approval:
+        return GateResult(
+            GateDecision.DENY,
+            ("unexpected_human_approval_for_non_release_change",),
+            preliminary.verified_sha256,
+        )
+
+    valid, reason = verify_human_approval_with_sqlite_store(
+        signed_approval,
+        key=approval_key,
+        expected_action_sha256=preliminary.verified_sha256,
+        allowed_actor_ids=allowed_actor_ids,
+        nonce_store=nonce_store,
+        expected_action=evidence.action,
+        now=now,
+        max_lifetime_seconds=max_lifetime_seconds,
+        max_future_skew_seconds=max_future_skew_seconds,
+    )
+    if not valid:
+        return GateResult(
+            GateDecision.DENY,
+            (f"human_approval_{reason}",),
+            preliminary.verified_sha256,
+        )
+
+    return evaluate_change(replace(unapproved, human_approval=True))
