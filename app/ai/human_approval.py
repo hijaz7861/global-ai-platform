@@ -17,6 +17,7 @@ from collections.abc import Callable, Collection
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _ACTOR = re.compile(r"^[A-Za-z0-9@._:-]{1,128}$")
+_ACTION = re.compile(r"^[a-z][a-z0-9_.:-]{0,63}$")
 _NONCE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 
@@ -28,6 +29,7 @@ class HumanApproval:
     issued_at: int
     expires_at: int
     nonce: str
+    action: str = "production_release"
 
 
 @dataclass(frozen=True)
@@ -59,11 +61,12 @@ def verify_human_approval(
     expected_action_sha256: str,
     allowed_actor_ids: Collection[str],
     consume_nonce: Callable[[str], bool],
+    expected_action: str = "production_release",
     now: int | None = None,
     max_lifetime_seconds: int = 900,
     max_future_skew_seconds: int = 30,
 ) -> tuple[bool, str]:
-    """Verify signature, action binding, actor allowlist, expiry and one-time use.
+    """Verify signature, exact artifact/action binding, actor, expiry and one-time use.
 
     Nonce consumption must be atomic and durable. Storage errors should propagate
     so callers fail closed. A valid signature is not a substitute for authenticating
@@ -78,6 +81,12 @@ def verify_human_approval(
         return False, "invalid_expected_action_digest"
     if not hmac.compare_digest(payload.action_sha256, expected_action_sha256.lower()):
         return False, "action_digest_mismatch"
+    if not isinstance(payload.action, str) or not _ACTION.fullmatch(payload.action):
+        return False, "invalid_action"
+    if not isinstance(expected_action, str) or not _ACTION.fullmatch(expected_action):
+        return False, "invalid_expected_action"
+    if not hmac.compare_digest(payload.action, expected_action):
+        return False, "action_mismatch"
     if not _ACTOR.fullmatch(payload.actor_id):
         return False, "invalid_actor_id"
     if payload.actor_id not in allowed_actor_ids:
@@ -118,6 +127,7 @@ def verify_human_approval_with_sqlite_store(
     expected_action_sha256: str,
     allowed_actor_ids: Collection[str],
     nonce_store,
+    expected_action: str = "production_release",
     now: int | None = None,
     max_lifetime_seconds: int = 900,
     max_future_skew_seconds: int = 30,
@@ -129,6 +139,7 @@ def verify_human_approval_with_sqlite_store(
         expected_action_sha256=expected_action_sha256,
         allowed_actor_ids=allowed_actor_ids,
         consume_nonce=nonce_store.consume_nonce,
+        expected_action=expected_action,
         now=now,
         max_lifetime_seconds=max_lifetime_seconds,
         max_future_skew_seconds=max_future_skew_seconds,
