@@ -20,8 +20,9 @@ This branch is the reviewable foundation for the **Global AI Platform**. Project
 
 ## Verification evidence and limitations
 
-- CI Run #604 completed successfully on the earlier PR head `84448353e8aac4be89aeaadcd94c43119a3f6531`. All five jobs passed: Python 3.11, 3.12, 3.13, PostgreSQL integration, and dependency/Bandit audit. This run predates the latest action-binding and nonce-ordering fixes below and does not verify those later commits.
-- The latest code changes require a fresh CI run before merge. Do not treat Run #604 as verification of the new head.
+- CI Run #606 completed successfully on PR head `8768d42b3906476ede940e61d97bbbb55370b33f`. All five jobs passed: Python 3.11, 3.12, and 3.13 each reported **186 passed, 11 skipped, 1 warning**; the dedicated PostgreSQL integration job reported **11 passed, 1 warning**; dependency audit and Bandit passed.
+- Ruff lint, Python compilation, and Alembic migration checks passed in each Python test job. The 11 skipped cases are PostgreSQL-only tests excluded from the ordinary Python matrix; they ran successfully in the dedicated PostgreSQL job.
+- Run #606 verifies the action-binding, nonce-ordering, regression-test, and documentation changes present on the recorded head. CI success is not a production-readiness certification.
 - Earlier foundation evidence: [CI Run #549](https://github.com/hijaz7861/global-ai-platform/actions/runs/40616367566) completed successfully on commit `8a54bf52b177b243eb106507687fe25e060f9789`.
 - The earlier recorded Python jobs reported **98 passed, 11 skipped, 1 warning** per Python version. The skips were PostgreSQL-only integration cases run in the dedicated database job.
 - The earlier dedicated PostgreSQL 16 integration job applied and checked migrations, then reported **11 passed, 1 warning**.
