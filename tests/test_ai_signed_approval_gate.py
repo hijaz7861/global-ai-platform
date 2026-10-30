@@ -85,7 +85,7 @@ def test_approval_for_different_action_is_denied_before_nonce_use(tmp_path):
     signed = approval_for(action="database_delete")
     result = evaluate_change_with_signed_approval(
         evidence_for(),
-        signed,
+        signed_approval=signed,
         approval_key=KEY,
         allowed_actor_ids={ACTOR},
         nonce_store=store,
@@ -124,7 +124,7 @@ def test_failed_security_evidence_does_not_consume_approval_nonce(tmp_path):
     signed = approval_for()
     result = evaluate_change_with_signed_approval(
         evidence_for(security_scan_passed=False),
-        signed,
+        signed_approval=signed,
         approval_key=KEY,
         allowed_actor_ids={ACTOR},
         nonce_store=store,
