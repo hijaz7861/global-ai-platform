@@ -27,7 +27,7 @@ def evaluate_change_with_signed_approval(
     nonce_store: SQLiteNonceStore,
     now: int | None = None,
 ) -> GateResult:
-    """Require a valid one-time approval bound to the exact artifact before release.
+    """Require a valid one-time approval bound to the exact artifact and action.
 
     All artifact/evidence/rollback checks run before consuming the approval nonce.
     Approval cannot override a failed check or turn a sandbox-only request into a
@@ -41,8 +41,6 @@ def evaluate_change_with_signed_approval(
             actual_digest,
         )
 
-    # Ignore the legacy boolean supplied on the evidence object: this path accepts
-    # only a cryptographically verified, action-bound approval.
     preliminary = evaluate_change(replace(evidence, human_approval=False))
     if preliminary.decision is GateDecision.DENY:
         return preliminary
@@ -53,6 +51,7 @@ def evaluate_change_with_signed_approval(
         expected_action_sha256=actual_digest,
         allowed_actor_ids=allowed_actor_ids,
         nonce_store=nonce_store,
+        expected_action=evidence.action,
         now=now,
     )
     if not valid:
