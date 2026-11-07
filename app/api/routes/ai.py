@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.ai.providers import OpenAICompatibleProvider, ProviderError
+from app.ai.model_router import ModelRouteError, create_model_router
+from app.ai.providers import ProviderError
 from app.api.deps import require_membership
 from app.audit import record_audit_event
 from app.core.config import settings
@@ -35,23 +36,26 @@ async def chat(
             status_code=422,
             detail=f"max_output_tokens cannot exceed configured limit ({settings.ai_max_output_tokens})",
         )
-    primary_values = (settings.ai_api_key, settings.ai_base_url, settings.ai_model)
-    fallback_values = (
-        settings.ai_fallback_api_key,
-        settings.ai_fallback_base_url,
-        settings.ai_fallback_model,
-    )
-    fallback_configured = any(value and value.strip() for value in fallback_values)
-    if fallback_configured and not all(value and value.strip() for value in fallback_values):
-        raise HTTPException(status_code=503, detail="AI fallback provider configuration is incomplete")
-    if payload.provider == "fallback":
-        if not fallback_configured:
-            raise HTTPException(status_code=503, detail="AI fallback provider is not configured")
-        selected_values = fallback_values
-    else:
-        selected_values = primary_values
-    if not all(value and value.strip() for value in selected_values):
-        raise HTTPException(status_code=503, detail="Selected AI provider configuration is incomplete")
+    try:
+        model_router = create_model_router(settings)
+    except ValueError as exc:
+        detail = (
+            "AI fallback provider configuration is incomplete"
+            if "fallback" in str(exc).lower()
+            else "AI provider configuration is incomplete"
+        )
+        raise HTTPException(status_code=503, detail=detail) from None
+    try:
+        model_router.select(
+            route=payload.provider,
+            task_type=payload.task_type,
+            data_class=payload.data_class,
+            max_output_tokens=payload.max_output_tokens,
+        )
+    except ModelRouteError as exc:
+        code = 503 if "not configured" in str(exc).lower() else 422
+        raise HTTPException(status_code=code, detail=str(exc)) from None
+
     if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
         raise HTTPException(
             status_code=503,
@@ -91,19 +95,13 @@ async def chat(
     db.commit()
 
     try:
-        if payload.provider == "fallback":
-            api_key, base_url, model = fallback_values
-        else:
-            api_key, base_url, model = primary_values
-        provider = OpenAICompatibleProvider(
-            api_key=api_key or "",
-            base_url=base_url or "",
-            model=model or "",
-            timeout_seconds=settings.ai_timeout_seconds,
-            max_response_bytes=settings.ai_max_response_bytes,
-            provider_name=payload.provider,
+        result = await model_router.complete(
+            route=payload.provider,
+            task_type=payload.task_type,
+            data_class=payload.data_class,
+            prompt=payload.prompt,
+            max_output_tokens=payload.max_output_tokens,
         )
-        result = await provider.complete(payload.prompt, payload.max_output_tokens)
     except ValueError:
         record_audit_event(
             db,
