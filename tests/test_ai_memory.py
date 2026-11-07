@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -18,7 +18,7 @@ from app.ai.memory.service import (
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import AIMemoryRecord, Organization, User
+from app.models import Organization, User
 
 
 @pytest.fixture
