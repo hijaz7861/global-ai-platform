@@ -214,10 +214,10 @@ All new organization-owned tables require organization foreign keys and tenant-s
 ## 8. API surface (versioned)
 
 Initial internal/public API candidates:
-- `POST /api/v1/ai/tasks` — create an idempotent task.
-- `GET /api/v1/ai/tasks/{task_id}` — inspect task status and safe result metadata.
-- `POST /api/v1/ai/tasks/{task_id}/cancel` — cancel a cancellable task.
-- `GET /api/v1/ai/tasks/{task_id}/events` — paginated event/evidence timeline.
+- `POST /api/v1/organizations/{organization_id}/ai/tasks` — create an idempotent organization-scoped task.
+- `GET /api/v1/organizations/{organization_id}/ai/tasks/{task_id}` — inspect task status and safe result metadata.
+- `POST /api/v1/organizations/{organization_id}/ai/tasks/{task_id}/cancel` — request cooperative cancellation.
+- `GET /api/v1/organizations/{organization_id}/ai/tasks/{task_id}/events` — read the task lifecycle timeline.
 - `GET|POST /api/v1/ai/memory` — list/create authorized memory records.
 - `GET|PATCH|DELETE /api/v1/ai/memory/{memory_id}` — inspect/correct/delete within retention policy.
 - `GET /api/v1/ai/skills` — list approved skills and versions.
@@ -309,9 +309,9 @@ Do not expose an unauthenticated global agent endpoint. Use existing authenticat
 
 ## 13. Evidence and scope notes
 
-This plan is based on the current MUSE v3.10.0 source tree and the current Global AI Platform `master` tree. MUSE's 68 skill documents were individually fetched; core continuity/runtime files, installer, MCP server, updater, search, orchestration, selected tests, and CI configuration were inspected. The Global AI Platform's current AI modules, AI tests, primary architecture/security docs, configuration, models, and CI workflow were inspected.
+This plan is based on the current MUSE v3.10.0 source tree and the current Global AI Platform `master` tree. MUSE's 68-skill manifest and all 10 Core skill documents were inspected, along with selected Toolkit/Ecosystem material, core continuity/runtime files, installer, MCP server, search, orchestration, selected tests, and CI configuration. The remaining skill documents were not individually reviewed. The Global AI Platform's current AI modules, AI tests, primary architecture/security docs, configuration, models, and CI workflow were inspected.
 
-No local clone was executed in this review. No MUSE test suite or platform test suite was run by this review. The latest platform commit records CI run #608 as successful; the latest MUSE commit's full CI status was not independently established here. No sandbox host, penetration test, load test, or production deployment was exercised.
+No local clone was executed in this review. No MUSE test suite or platform test suite was run by this review. The feature branch's CI run #713 passed on its exact head at that time; subsequent cancellation API tests and documentation/migration changes are subject to the latest run. The latest MUSE commit's full CI status was not independently established here. No sandbox host, penetration test, load test, or production deployment was exercised.
 
 This document is an architecture proposal and is not a claim that any proposed runtime, memory, queue, API, or schema is implemented.
 
@@ -351,7 +351,7 @@ The draft adds a first single-agent loop:
 - The model must return a strict JSON decision. Unknown tools, invalid schemas, and unregistered actions fail closed. Tool results and skill bodies are untrusted.
 - Each model turn consumes one unit of the rolling 24-hour organization request quota. There is no token/cost reservation.
 - Agent tasks are forced to one attempt. A worker crash or provider failure does not trigger an automatic paid-call replay; the task will fail after lease expiry if not completed.
-- Successful results include a bounded trace. There is no durable per-turn checkpoint, resumable conversation, cancellation, multi-agent planner, write tool, or memory-write tool yet.
+- Successful results include a bounded trace. There is no durable per-turn checkpoint, resumable conversation, multi-agent planner, write tool, or memory-write tool yet. Cooperative task cancellation is implemented separately (Section 17).
 
 
 ## 17. Cooperative task cancellation
