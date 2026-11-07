@@ -33,7 +33,10 @@ class AgentDecision(BaseModel):
     @field_validator("arguments")
     @classmethod
     def bound_arguments(cls, value: dict[str, Any]) -> dict[str, Any]:
-        encoded = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        try:
+            encoded = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise ValueError("Agent tool arguments must be finite JSON data") from exc
         if len(encoded.encode("utf-8")) > 8_192:
             raise ValueError("Agent tool arguments exceed 8192 bytes")
         return value
