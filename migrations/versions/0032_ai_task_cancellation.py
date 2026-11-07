@@ -22,11 +22,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("ai_task_events") as batch_op:
-        batch_op.drop_constraint("ck_ai_task_events_type", type_="check")
-        batch_op.create_check_constraint(
-            "ck_ai_task_events_type",
-            "event_type IN ('created','claimed','heartbeat','completed','retry_scheduled','failed','cancelled','lease_expired')",
-        )
+    # Keep the expanded event check so existing cancellation events remain valid
+    # if the application is rolled back before the data is migrated elsewhere.
     with op.batch_alter_table("ai_tasks") as batch_op:
         batch_op.drop_column("cancel_requested_at")
