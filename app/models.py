@@ -791,3 +791,52 @@ class AIMemoryRecord(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class AISkillVersion(Base):
+    """Version-pinned instructional skill content; never executable authorization."""
+    __tablename__ = "ai_skill_versions"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "skill_id", "version", name="uq_ai_skill_org_id_version"),
+        CheckConstraint(
+            "status IN ('draft','approved','disabled','deprecated')",
+            name="ck_ai_skill_status",
+        ),
+        CheckConstraint(
+            "risk_level IN ('low','medium','high','critical')",
+            name="ck_ai_skill_risk",
+        ),
+        CheckConstraint(
+            "source_type IN ('internal','user_authored','imported')",
+            name="ck_ai_skill_source_type",
+        ),
+        Index("ix_ai_skill_org_status", "organization_id", "status", "skill_id"),
+        Index("ix_ai_skill_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    skill_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    license_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    required_capabilities: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    data_classes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(16), default="low", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    approved_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
