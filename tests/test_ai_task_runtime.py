@@ -297,3 +297,41 @@ def test_context_handler_receives_tenant_bound_task_and_can_heartbeat(database):
         "organization_id": organization.id,
         "worker_id": "context-worker",
     }
+
+
+
+def test_agent_task_api_validates_input_and_requires_postgres_quota_store(api_client, monkeypatch):
+    token, organization_id = _owner(api_client)
+    url = f"/api/v1/organizations/{organization_id}/ai/tasks"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": "agent-task-api-001",
+    }
+    monkeypatch.setattr(settings, "ai_live_calls_enabled", True)
+    monkeypatch.setattr(settings, "ai_daily_request_limit", 5)
+    monkeypatch.setattr(settings, "ai_max_output_tokens", 128)
+    monkeypatch.setattr(settings, "ai_api_key", "primary-test-key")
+    monkeypatch.setattr(settings, "ai_base_url", "https://provider.example/v1")
+    monkeypatch.setattr(settings, "ai_model", "primary-model")
+
+    invalid = api_client.post(url, headers=headers, json={
+        "task_type": "agent.run",
+        "title": "Run agent",
+        "input_payload": {"max_steps": 3},
+    })
+    assert invalid.status_code == 422
+
+    valid = api_client.post(url, headers=headers, json={
+        "task_type": "agent.run",
+        "title": "Run agent",
+        "input_payload": {
+            "goal": "Inspect the organization profile",
+            "model_route": "primary",
+            "task_type": "analyze",
+            "data_class": "internal",
+            "max_steps": 2,
+            "max_output_tokens": 64,
+        },
+    })
+    assert valid.status_code == 503
+    assert "postgresql" in valid.json()["detail"].lower()
