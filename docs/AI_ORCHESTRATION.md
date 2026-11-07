@@ -127,3 +127,15 @@ python -m app.ai.runtime.worker --poll-seconds 2 --lease-seconds 300
 The agent uses strict JSON decisions (`tool` or `final`), a maximum of five model turns, and only the static read-only tool catalogue. Tool results and skill content are treated as untrusted data. Each model call consumes one unit of the organization's rolling 24-hour AI request quota. No provider cost/token reservation is implemented.
 
 Current limits: this is a single-agent loop, not a multi-agent planner; there are no write tools, memory-write tools, native provider function calls, per-turn durable checkpoints, task cancellation, automatic retry/failover, or automatic resumption. If a worker dies, the single-attempt task eventually expires and fails rather than replaying paid calls. Successful task results include a bounded tool/action trace.
+
+
+## Cooperative task cancellation
+
+`POST /api/v1/organizations/{organization_id}/ai/tasks/{task_id}/cancel` lets the task creator cancel their own queued/running task, or an organization owner/admin cancel any task in that organization.
+- Queued tasks transition immediately to `cancelled`.
+- Running tasks receive a `cancel_requested_at` timestamp and a `cancel_requested` event. The worker acknowledges the request at its next heartbeat or terminal transition, abandons the active step, clears its lease, and records `cancelled`.
+- Completion and failure transitions recheck the cancellation flag under a row lock, so a pending cancellation wins over a later success/failure write.
+- If cancellation arrives during an external model request, that request cannot be forcibly interrupted; the worker observes cancellation when the request returns. No new model turn or tool call should start after that checkpoint.
+- Expired running tasks with a pending cancellation are marked cancelled rather than reclaimed.
+
+Cancellation is cooperative, not a hard process kill. It does not yet interrupt an in-flight HTTP request or persist resumable per-turn agent checkpoints.
