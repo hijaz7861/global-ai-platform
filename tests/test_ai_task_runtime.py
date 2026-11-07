@@ -27,7 +27,12 @@ from app.ai.runtime.tasks import (
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import AITaskStep, Organization, User
+from app.models import AIOutboxEvent, AITaskStep, Organization, User
+from app.ai.runtime.outbox import (
+    acknowledge_outbox_event,
+    claim_outbox_events,
+    retry_outbox_event,
+)
 
 
 @pytest.fixture
@@ -63,6 +68,60 @@ def _create(db: Session, user: User, organization: Organization, **overrides):
     }
     values.update(overrides)
     return create_task(db, **values)
+
+
+def test_task_creation_writes_one_transactional_outbox_event(database):
+    db, _, user, organization = database
+    task, created = _create(db, user, organization)
+    assert created is True
+    event = db.scalar(select(AIOutboxEvent).where(AIOutboxEvent.task_id == task.id))
+    assert event is not None
+    assert event.event_type == "created"
+    assert event.status == "pending"
+    assert event.payload["task_id"] == task.id
+    assert event.payload["organization_id"] == organization.id
+    assert "input_payload" not in event.payload
+    assert event.task_event_id == event.id
+
+
+def test_outbox_claim_acknowledge_and_retry_lifecycle(database):
+    db, _, user, organization = database
+    task, _ = _create(db, user, organization)
+    claimed = claim_outbox_events(db, worker_id="outbox-worker", limit=10, lease_seconds=30)
+    assert len(claimed) == 1
+    event = claimed[0]
+    assert event.status == "processing"
+    assert event.attempt_count == 1
+    assert acknowledge_outbox_event(
+        db, event_id=event.id, worker_id="outbox-worker"
+    ) is True
+    db.refresh(event)
+    assert event.status == "delivered"
+    assert event.delivered_at is not None
+
+    second, _ = _create(
+        db, user, organization, idempotency_key="outbox-retry-key-01"
+    )
+    retryable = db.scalar(select(AIOutboxEvent).where(AIOutboxEvent.task_id == second.id))
+    batch = claim_outbox_events(db, worker_id="outbox-worker", limit=10, lease_seconds=30)
+    assert any(item.id == retryable.id for item in batch)
+    assert retry_outbox_event(
+        db, event_id=retryable.id, worker_id="outbox-worker",
+        error_code="downstream_unavailable",
+    ) == "pending"
+    db.refresh(retryable)
+    assert retryable.status == "pending"
+    assert retryable.last_error_code == "downstream_unavailable"
+    assert retryable.available_at > datetime.now(timezone.utc)
+
+
+def test_outbox_does_not_emit_high_volume_heartbeat_events(database):
+    db, _, user, organization = database
+    task, _ = _create(db, user, organization)
+    claim_next_task(db, worker_id="heartbeat-worker", lease_seconds=30)
+    heartbeat_task(db, task_id=task.id, worker_id="heartbeat-worker", lease_seconds=30)
+    events = db.scalars(select(AIOutboxEvent).where(AIOutboxEvent.task_id == task.id)).all()
+    assert [event.event_type for event in events] == ["created", "claimed"]
 
 
 def test_task_creation_is_idempotent_and_payload_bound(database):
