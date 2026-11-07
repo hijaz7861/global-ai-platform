@@ -219,3 +219,39 @@ def test_tool_api_lists_and_executes_only_registered_tools(api_client):
         json={"command": "id"},
     )
     assert unknown.status_code == 404
+
+
+
+def test_skill_get_tool_only_returns_approved_versions_to_members(database):
+    from app.ai.skills.service import approve_skill_version, create_skill_version
+
+    db, owner, member, organization = database
+    skill = create_skill_version(
+        db,
+        organization_id=organization.id,
+        actor_user_id=owner.id,
+        skill_id="research-method",
+        version="1.0.0",
+        title="Research method",
+        description="Approved research instructions",
+        content="Prefer primary sources and preserve provenance.",
+        source_type="user_authored",
+        license_id="user-owned",
+    )
+    approve_skill_version(
+        db,
+        organization_id=organization.id,
+        skill_id=skill.skill_id,
+        version=skill.version,
+        actor_user_id=owner.id,
+    )
+    result = execute_tool(
+        db,
+        actor_user_id=member.id,
+        organization_id=organization.id,
+        role="member",
+        tool_name="ai.skills.get",
+        arguments={"skill_id": skill.skill_id, "version": skill.version},
+    )
+    assert result["content"] == "Prefer primary sources and preserve provenance."
+    assert result["status"] == "approved"
