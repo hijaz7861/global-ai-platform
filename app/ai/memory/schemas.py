@@ -1,6 +1,6 @@
 """Request/response contracts for provenance-aware AI memory."""
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
