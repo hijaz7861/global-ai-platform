@@ -170,6 +170,7 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
     selected_model = ""
 
     for turn in range(1, payload.max_steps + 1):
+        _current_authorized_membership(context)
         context.heartbeat()
         prompt = _build_prompt(payload.goal, tools, history)
         try:
