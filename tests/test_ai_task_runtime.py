@@ -112,7 +112,10 @@ def test_outbox_claim_acknowledge_and_retry_lifecycle(database):
     db.refresh(retryable)
     assert retryable.status == "pending"
     assert retryable.last_error_code == "downstream_unavailable"
-    assert retryable.available_at > datetime.now(timezone.utc)
+    retry_at = retryable.available_at
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+    assert retry_at > datetime.now(timezone.utc)
 
 
 def test_outbox_does_not_emit_high_volume_heartbeat_events(database):
