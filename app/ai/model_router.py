@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Mapping
+from urllib.parse import urlsplit
 
 from app.ai.native_providers import AnthropicProvider, GeminiProvider
 from app.ai.providers import OpenAICompatibleProvider
@@ -128,6 +129,9 @@ def _make_profile(
             raise ValueError("Local AI endpoints require explicit AI_ALLOW_LOCAL_ENDPOINTS=true")
         if not base_url:
             raise ValueError("Local AI provider requires an explicit loopback endpoint")
+        parsed = urlsplit(base_url)
+        if parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+            raise ValueError("Local AI provider endpoint must resolve to loopback")
         adapter = OpenAICompatibleProvider(
             api_key=key, base_url=base_url, model=model,
             timeout_seconds=timeout_seconds, max_response_bytes=max_response_bytes,
