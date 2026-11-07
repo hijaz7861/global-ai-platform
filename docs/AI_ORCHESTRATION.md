@@ -2,7 +2,7 @@
 
 ## Current implementation
 - The core chat API has a guarded OpenAI-compatible chat-completions adapter with primary and explicitly selected fallback.
-- A separate optional provider registry and native Anthropic Messages and Google Gemini adapters exist with fixed provider origins, bounded HTTP behavior, and mocked tests.
+- The core chat route now uses an explicit capability-aware model router over OpenAI-compatible, OpenAI, Groq, OpenRouter, Together, native Anthropic, native Gemini, and opt-in loopback-local adapters. Provider origins are fixed for named hosted providers; custom origins are restricted to the explicit OpenAI-compatible route.
 - Live calls are disabled by default. No provider credentials or paid calls are used in CI.
 - The organization AI chat route is restricted to owners/admins, requires explicit configuration, a positive rolling 24-hour request limit, and PostgreSQL quota serialization.
 - AI audit events omit prompt and response content.
@@ -23,8 +23,8 @@ Use environment variables documented in `.env.example`. Set `AI_LIVE_CALLS_ENABL
 The inbound MCP endpoint, runtime security gateway, encrypted secret-manager integration, capability-aware routing, tenant cost budgets, scoped tool permissions, OAuth/webhook lifecycle and staged release automation remain incomplete. No public MCP endpoint or production deployment is enabled.
 
 ## Current limitations
-- Provider selection is explicit; no automatic retry/failover is enabled.
-- Native Anthropic and Gemini adapters are not fully integrated into the core chat route or automatic router.
+- Provider selection is explicit; no automatic retry/failover is enabled. The client-declared data class is a policy hint, not automatic DLP or trusted content classification.
+- Provider routing supports text generation only. Native Anthropic and Gemini adapters are integrated, but no model supports tool calling through this router, and there is no automatic fallback or health-based failover.
 - Signed approvals are integrated as library-level policy helpers, not issued through a trusted identity service or exposed through a release API.
 - SQLite nonce storage is single-host only.
 - CI unit tests are not proof of real Docker isolation.
