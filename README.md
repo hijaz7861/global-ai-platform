@@ -1,6 +1,6 @@
 # Global AI-Powered Business Ecosystem
 
-A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, a double-entry ledger foundation, audit events, and a guarded OpenAI-compatible AI adapter. It is not yet a complete business ecosystem.
+A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, a double-entry ledger foundation, audit events, and a guarded multi-provider AI adapter with a constrained, tenant-scoped agent operating layer. It is not yet a complete business ecosystem.
 
 ## Current foundation
 
