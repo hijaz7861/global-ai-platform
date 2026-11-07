@@ -27,6 +27,10 @@ class TaskLeaseLost(RuntimeError):
     """The worker no longer owns a live lease for the task."""
 
 
+class TaskCancelled(RuntimeError):
+    """A running task observed a cooperative cancellation request."""
+
+
 class TaskStateConflict(RuntimeError):
     """The requested transition is not valid for the current task state."""
 
@@ -87,6 +91,22 @@ def _event(
         event_type=event_type,
         details=details or {},
     ))
+
+
+def _mark_task_cancelled(db: Session, task: AITask, now: datetime, actor_user_id: str | None = None) -> None:
+    task.status = "cancelled"
+    task.cancel_requested_at = task.cancel_requested_at or now
+    task.claimed_by = None
+    task.lease_expires_at = None
+    task.heartbeat_at = None
+    task.completed_at = now
+    task.updated_at = now
+    task.error_code = "cancelled_by_request"
+    db.execute(update(AITaskStep).where(
+        AITaskStep.task_id == task.id,
+        AITaskStep.status == "running",
+    ).values(status="abandoned", error_code="task_cancelled", completed_at=now))
+    _event(db, task, "cancelled", {"status": "cancelled"}, actor_user_id)
 
 
 def create_task(
@@ -162,10 +182,22 @@ def claim_next_task(db: Session, *, worker_id: str, lease_seconds: int = 60) -> 
         raise ValueError("lease_seconds must be between 5 and 3600")
     now = datetime.now(timezone.utc)
 
+    # A cancellation request wins over lease recovery and must never be re-claimed.
+    expired_cancelled = db.scalars(select(AITask).where(
+        AITask.status == "running",
+        AITask.lease_expires_at <= now,
+        AITask.cancel_requested_at.is_not(None),
+    ).with_for_update(skip_locked=True)).all()
+    for expired_task in expired_cancelled:
+        _mark_task_cancelled(db, expired_task, now)
+    if expired_cancelled:
+        db.commit()
+
     # Expired tasks that exhausted their attempts are terminal, never left running forever.
     exhausted = db.execute(update(AITask).where(
         AITask.status == "running",
         AITask.lease_expires_at <= now,
+        AITask.cancel_requested_at.is_(None),
         AITask.attempt_count >= AITask.max_attempts,
     ).values(
         status="failed", claimed_by=None, lease_expires_at=None,
@@ -175,8 +207,8 @@ def claim_next_task(db: Session, *, worker_id: str, lease_seconds: int = 60) -> 
         db.commit()
 
     eligible = or_(
-        and_(AITask.status == "queued", AITask.available_at <= now),
-        and_(AITask.status == "running", AITask.lease_expires_at <= now),
+        and_(AITask.status == "queued", AITask.available_at <= now, AITask.cancel_requested_at.is_(None)),
+        and_(AITask.status == "running", AITask.lease_expires_at <= now, AITask.cancel_requested_at.is_(None)),
     )
     candidate = db.scalar(
         select(AITask).where(
@@ -195,8 +227,8 @@ def claim_next_task(db: Session, *, worker_id: str, lease_seconds: int = 60) -> 
         AITask.id == task_id,
         AITask.attempt_count == previous_attempt,
         or_(
-            and_(AITask.status == "queued", AITask.available_at <= now),
-            and_(AITask.status == "running", AITask.lease_expires_at <= now),
+            and_(AITask.status == "queued", AITask.available_at <= now, AITask.cancel_requested_at.is_(None)),
+            and_(AITask.status == "running", AITask.lease_expires_at <= now, AITask.cancel_requested_at.is_(None)),
         ),
     ).values(
         status="running",
@@ -232,22 +264,22 @@ def heartbeat_task(
     if not _WORKER_ID.fullmatch(worker_id) or not 5 <= lease_seconds <= 3600:
         raise ValueError("Invalid worker identity or lease duration")
     now = datetime.now(timezone.utc)
-    changed = db.execute(update(AITask).where(
+    task = db.scalar(select(AITask).where(
         AITask.id == task_id,
         AITask.status == "running",
         AITask.claimed_by == worker_id,
         AITask.lease_expires_at > now,
-    ).values(
-        heartbeat_at=now,
-        lease_expires_at=now + timedelta(seconds=lease_seconds),
-        updated_at=now,
-    ).execution_options(synchronize_session=False))
-    if changed.rowcount != 1:
+    ).with_for_update())
+    if task is None:
         db.rollback()
         raise TaskLeaseLost("Worker lease is no longer active")
-    db.expire_all()
-    task = db.get(AITask, task_id)
-    assert task is not None
+    if task.cancel_requested_at is not None:
+        _mark_task_cancelled(db, task, now)
+        db.commit()
+        raise TaskCancelled("Task cancellation acknowledged")
+    task.heartbeat_at = now
+    task.lease_expires_at = now + timedelta(seconds=lease_seconds)
+    task.updated_at = now
     _event(db, task, "heartbeat", {"worker_id": worker_id})
     db.commit()
 
@@ -255,14 +287,19 @@ def heartbeat_task(
 def start_task_step(db: Session, *, task: AITask, worker_id: str, step_name: str) -> AITaskStep:
     if not _WORKER_ID.fullmatch(worker_id) or not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", step_name):
         raise ValueError("Invalid worker identity or step name")
-    live = db.scalar(select(AITask.id).where(
+    now = datetime.now(timezone.utc)
+    live = db.scalar(select(AITask).where(
         AITask.id == task.id,
         AITask.status == "running",
         AITask.claimed_by == worker_id,
-        AITask.lease_expires_at > datetime.now(timezone.utc),
-    ))
+        AITask.lease_expires_at > now,
+    ).with_for_update())
     if live is None:
         raise TaskLeaseLost("Worker lease is no longer active")
+    if live.cancel_requested_at is not None:
+        _mark_task_cancelled(db, live, now)
+        db.commit()
+        raise TaskCancelled("Task cancellation acknowledged")
     step = AITaskStep(
         task_id=task.id,
         organization_id=task.organization_id,
@@ -281,26 +318,27 @@ def complete_task(
 ) -> None:
     _, output_digest = _canonical_json(result_payload)
     now = datetime.now(timezone.utc)
-    changed = db.execute(update(AITask).where(
+    task = db.scalar(select(AITask).where(
         AITask.id == task_id,
         AITask.status == "running",
         AITask.claimed_by == worker_id,
         AITask.lease_expires_at > now,
-    ).values(
-        status="succeeded",
-        result_payload=result_payload,
-        claimed_by=None,
-        lease_expires_at=None,
-        completed_at=now,
-        updated_at=now,
-        error_code=None,
-    ).execution_options(synchronize_session=False))
-    if changed.rowcount != 1:
+    ).with_for_update())
+    if task is None:
         db.rollback()
         raise TaskLeaseLost("Worker lease is no longer active")
-    db.expire_all()
-    task = db.get(AITask, task_id)
-    assert task is not None
+    if task.cancel_requested_at is not None:
+        _mark_task_cancelled(db, task, now)
+        db.commit()
+        return
+    task.status = "succeeded"
+    task.result_payload = result_payload
+    task.claimed_by = None
+    task.lease_expires_at = None
+    task.heartbeat_at = None
+    task.completed_at = now
+    task.updated_at = now
+    task.error_code = None
     db.execute(update(AITaskStep).where(
         AITaskStep.task_id == task_id,
         AITaskStep.sequence_number == task.attempt_count,
@@ -326,6 +364,10 @@ def fail_task(
     if task is None:
         db.rollback()
         raise TaskLeaseLost("Worker lease is no longer active")
+    if task.cancel_requested_at is not None:
+        _mark_task_cancelled(db, task, now)
+        db.commit()
+        return
     will_retry = retryable and task.attempt_count < task.max_attempts
     task.status = "queued" if will_retry else "failed"
     task.available_at = now + timedelta(seconds=min(2 ** task.attempt_count, 300)) if will_retry else task.available_at
@@ -346,10 +388,42 @@ def fail_task(
     db.commit()
 
 
+def request_task_cancel(
+    db: Session,
+    *,
+    task_id: str,
+    organization_id: str,
+    actor_user_id: str,
+    role: str,
+) -> AITask:
+    now = datetime.now(timezone.utc)
+    task = db.scalar(select(AITask).where(
+        AITask.id == task_id,
+        AITask.organization_id == organization_id,
+    ).with_for_update())
+    if task is None:
+        raise TaskStateConflict("Task not found")
+    if task.created_by_user_id != actor_user_id and role not in {"owner", "admin"}:
+        raise TaskStateConflict("Only the task creator or an organization owner/admin can cancel it")
+    if task.status not in {"queued", "running"}:
+        raise TaskStateConflict("Terminal tasks cannot be cancelled")
+    if task.cancel_requested_at is not None:
+        return task
+    task.cancel_requested_at = now
+    task.updated_at = now
+    if task.status == "queued":
+        _mark_task_cancelled(db, task, now, actor_user_id)
+    else:
+        _event(db, task, "cancel_requested", {"status": "requested"}, actor_user_id)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
 def cancel_queued_task(
     db: Session, *, task_id: str, organization_id: str, actor_user_id: str,
 ) -> None:
-    now = datetime.now(timezone.utc)
+    """Backward-compatible creator-only queued cancellation helper."""
     task = db.scalar(select(AITask).where(
         AITask.id == task_id,
         AITask.organization_id == organization_id,
@@ -358,11 +432,10 @@ def cancel_queued_task(
     ))
     if task is None:
         raise TaskStateConflict("Only your queued tasks can be cancelled")
-    task.status = "cancelled"
-    task.completed_at = now
-    task.updated_at = now
-    _event(db, task, "cancelled", {"status": "cancelled"}, actor_user_id)
-    db.commit()
+    request_task_cancel(
+        db, task_id=task_id, organization_id=organization_id,
+        actor_user_id=actor_user_id, role="member",
+    )
 
 
 def run_once(
@@ -382,8 +455,8 @@ def run_once(
     if handler is None and context_handler is None:
         fail_task(db, task_id=task.id, worker_id=worker_id, error_code="handler_not_registered")
         return True
-    start_task_step(db, task=task, worker_id=worker_id, step_name=task.task_type)
     try:
+        start_task_step(db, task=task, worker_id=worker_id, step_name=task.task_type)
         if context_handler is not None:
             result = context_handler(TaskExecutionContext(
                 db=db, task=task, worker_id=worker_id, lease_seconds=lease_seconds
@@ -393,6 +466,8 @@ def run_once(
         if not isinstance(result, dict):
             raise ValueError("Task handler must return a JSON object")
         complete_task(db, task_id=task.id, worker_id=worker_id, result_payload=result)
+    except TaskCancelled:
+        pass
     except TaskLeaseLost:
         raise
     except RetryableTaskError as exc:
