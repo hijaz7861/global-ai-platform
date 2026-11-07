@@ -78,7 +78,7 @@ def _memory_search(ctx: ToolContext, args: BaseModel) -> dict[str, Any]:
 
 def _skills_list(ctx: ToolContext, args: BaseModel) -> dict[str, Any]:
     records = list_skill_versions(
-        ctx.db, organization_id=ctx.organization_id, role=ctx.role
+        ctx.db, organization_id=ctx.organization_id, role="member"
     )
     return {
         "skills": [
@@ -105,7 +105,7 @@ def _skill_get(ctx: ToolContext, args: BaseModel) -> dict[str, Any]:
         organization_id=ctx.organization_id,
         skill_id=args.skill_id,
         version=args.version,
-        role=ctx.role,
+        role="member",
     )
     content = skill.content[:4000]
     return {
