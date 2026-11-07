@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     true,
     false,
@@ -736,3 +737,57 @@ class AITaskEvent(Base):
     event_type: Mapped[str] = mapped_column(String(24), nullable=False)
     details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class AIMemoryRecord(Base):
+    """Provenance-aware user-private or organization-shared AI memory."""
+    __tablename__ = "ai_memory_records"
+    __table_args__ = (
+        CheckConstraint(
+            "(scope = 'user' AND owner_user_id IS NOT NULL AND organization_id IS NULL) OR "
+            "(scope = 'organization' AND organization_id IS NOT NULL AND owner_user_id IS NULL)",
+            name="ck_ai_memory_scope_owner",
+        ),
+        CheckConstraint("scope IN ('user','organization')", name="ck_ai_memory_scope"),
+        CheckConstraint(
+            "memory_type IN ('preference','feedback','project','reference','decision','session_summary')",
+            name="ck_ai_memory_type",
+        ),
+        CheckConstraint("sensitivity IN ('normal','sensitive','restricted')", name="ck_ai_memory_sensitivity"),
+        CheckConstraint(
+            "verification_status IN ('unverified','verified','superseded')",
+            name="ck_ai_memory_verification",
+        ),
+        CheckConstraint("status IN ('active','archived','superseded')", name="ck_ai_memory_status"),
+        CheckConstraint("confidence_percent BETWEEN 0 AND 100", name="ck_ai_memory_confidence"),
+        Index("ix_ai_memory_org_scope_status", "organization_id", "scope", "status", "updated_at"),
+        Index("ix_ai_memory_owner_scope_status", "owner_user_id", "scope", "status", "updated_at"),
+        Index("ix_ai_memory_type_created", "memory_type", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    organization_id: Mapped[str | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    )
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    memory_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    confidence_percent: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    sensitivity: Mapped[str] = mapped_column(String(16), default="normal", nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(16), default="unverified", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
+    supersedes_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ai_memory_records.id", ondelete="SET NULL"), nullable=True
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
