@@ -1,6 +1,6 @@
 # AI Agent Operating Layer — Architecture and Integration Plan
 
-**Status:** Proposed architecture; implementation not yet started  
+**Status:** Partially implemented on a draft feature branch; not merged or production-ready  
 **Target:** Existing `hijaz7861/global-ai-platform` modular monolith  
 **Baseline reviewed:** `master` at `f4a75813130b081688b7efe8c00a71f7d6d44201`  
 **Reference system:** MUSE v3.10.0 at `aaba5300126b01f583d5ad5f15d6f548fc4f0a7d`
@@ -325,3 +325,16 @@ The following foundations are implemented in `feat/ai-agent-operating-layer-desi
 - a static five-tool read-only gateway with strict input schemas, tenant-aware handlers, fail-closed unknown-tool handling, and audit events.
 
 Still not implemented: continuous worker supervision, cooperative cancellation of running work, transactional outbox, PostgreSQL-backed nonce replacement, vector/embedding retrieval, memory retention and hard deletion, automated skill selection, skill-to-agent context integration, integration of the tool gateway into a model-driven agent loop, write-capable tools, model capability router, budget reservations, and full evaluation/observability pipeline. Do not describe these as complete.
+
+
+## 15. Model capability router (initial implementation)
+
+The feature branch routes the existing chat API through `app/ai/model_router.py`:
+- Provider profiles support OpenAI-compatible endpoints, fixed OpenAI/Groq/OpenRouter/Together origins, native Anthropic and Gemini adapters, and opt-in loopback-local endpoints.
+- A profile currently advertises only `text.generate`; tool calling, vision, audio, streaming, and cost estimates are not advertised.
+- Task classes are explicitly limited to chat, summarize, analyze, and extract. Output token limits are checked against the selected profile.
+- Data classes `public` and `internal` are currently accepted. `confidential` and `restricted` are rejected. This is a caller-declared label, not automatic DLP; it must not be represented as content inspection.
+- The caller explicitly selects `primary` or `fallback`. The router never silently fails over, and fallback must be fully configured.
+- Named hosted providers use fixed origins. Custom origins are available only through the explicitly configured OpenAI-compatible adapter. Local endpoints require `AI_ALLOW_LOCAL_ENDPOINTS=true` and a loopback hostname.
+
+The router is integrated into the chat endpoint but is not yet the planner for durable tasks or a model-driven tool loop. Token/cost reservation, provider health/circuit breaking, model evaluations, and automatic failover remain future work.
