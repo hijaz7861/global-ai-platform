@@ -24,7 +24,7 @@ The inbound MCP endpoint, runtime security gateway, encrypted secret-manager int
 
 ## Current limitations
 - Provider selection is explicit; no automatic retry/failover is enabled. The client-declared data class is a policy hint, not automatic DLP or trusted content classification.
-- Provider routing supports text generation only. Native Anthropic and Gemini adapters are integrated, but no model supports tool calling through this router, and there is no automatic fallback or health-based failover.
+- Provider routing supports text generation only. Native Anthropic and Gemini adapters are integrated. The agent loop uses strict JSON decisions and a local static read-only tool gateway rather than native provider function-calling. There is no automatic fallback or health-based failover.
 - Signed approvals are integrated as library-level policy helpers, not issued through a trusted identity service or exposed through a release API.
 - SQLite nonce storage is single-host only.
 - CI unit tests are not proof of real Docker isolation.
@@ -139,3 +139,14 @@ Current limits: this is a single-agent loop, not a multi-agent planner; there ar
 - Expired running tasks with a pending cancellation are marked cancelled rather than reclaimed.
 
 Cancellation is cooperative, not a hard process kill. It does not yet interrupt an in-flight HTTP request or persist resumable per-turn agent checkpoints.
+
+
+## Durable task and constrained agent runtime
+
+The organization AI task API supports idempotent queued work, lease-based worker claims, heartbeat, bounded attempts, lifecycle events, and task inspection. Run the standalone worker using `python -m app.ai.runtime.worker --once` or `--poll-seconds 2 --lease-seconds 300`; use an external process supervisor for continuous operation.
+
+Agent execution is submitted as task type `agent.run`. It requires live AI to be explicitly enabled, PostgreSQL quota serialization, a positive rolling 24-hour request limit, and a compatible explicit model route. The model returns strict JSON decisions; only the static six-tool read-only gateway is available. Agent tasks have a maximum of five model turns and one task attempt to prevent automatic replay of paid provider calls after worker failure. Each model turn consumes one request-quota unit; there is no token/cost reservation.
+
+Cooperative cancellation is available at `POST /api/v1/organizations/{organization_id}/ai/tasks/{task_id}/cancel`. Creators can cancel their own tasks; organization owners/admins can cancel any task in their organization. Queued tasks cancel immediately. Running tasks observe cancellation at a heartbeat or terminal transition. A provider HTTP request already in flight cannot be forcibly interrupted.
+
+The runtime is single-agent, not a multi-agent planner. It has no write tools, memory-write tools, per-turn durable checkpoint/resumption, task preemption, automatic provider retry/failover, or external worker supervisor. Do not represent it as a fully autonomous multi-agent system.
