@@ -81,7 +81,7 @@ def submit_task(
             title=payload.title,
             input_payload=input_payload,
             idempotency_key=idempotency_key,
-            max_attempts=payload.max_attempts,
+            max_attempts=1 if payload.task_type == "agent.run" else payload.max_attempts,
         )
     except TaskConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
