@@ -32,6 +32,16 @@ class AgentRunError(PermanentTaskError):
     """Safe, stable error code for a failed agent run."""
 
 
+def _current_authorized_membership(context: TaskExecutionContext) -> Membership:
+    membership = context.db.scalar(select(Membership).where(
+        Membership.user_id == context.task.created_by_user_id,
+        Membership.organization_id == context.task.organization_id,
+    ))
+    if membership is None or membership.role not in {"owner", "admin"}:
+        raise AgentRunError("membership_revoked")
+    return membership
+
+
 def _reserve_model_call(
     db: Session, *, organization_id: str, actor_user_id: str,
 ) -> str:
@@ -137,12 +147,7 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
         payload = AgentTaskInput.model_validate(task.input_payload)
     except ValidationError:
         raise AgentRunError("invalid_agent_task_input") from None
-    membership = context.db.scalar(select(Membership).where(
-        Membership.user_id == task.created_by_user_id,
-        Membership.organization_id == task.organization_id,
-    ))
-    if membership is None or membership.role not in {"owner", "admin"}:
-        raise AgentRunError("membership_revoked")
+    membership = _current_authorized_membership(context)
     if not settings.ai_live_calls_enabled:
         raise AgentRunError("ai_live_calls_disabled")
     try:
@@ -246,12 +251,13 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
 
         if decision.tool not in {tool["name"] for tool in tools}:
             raise AgentRunError("unregistered_tool_call")
+        current_membership = _current_authorized_membership(context)
         try:
             tool_result = execute_tool(
                 context.db,
                 actor_user_id=task.created_by_user_id,
                 organization_id=task.organization_id,
-                role=membership.role,
+                role=current_membership.role,
                 tool_name=decision.tool,
                 arguments=decision.arguments,
             )
