@@ -127,7 +127,7 @@ def claim_next_task(db: Session, *, worker_id: str, lease_seconds: int = 60) -> 
     ).values(
         status="failed", claimed_by=None, lease_expires_at=None,
         error_code="worker_lease_exhausted", completed_at=now, updated_at=now,
-    ))
+    ).execution_options(synchronize_session=False))
     if exhausted.rowcount:
         db.commit()
 
@@ -163,7 +163,7 @@ def claim_next_task(db: Session, *, worker_id: str, lease_seconds: int = 60) -> 
         lease_expires_at=now + timedelta(seconds=lease_seconds),
         updated_at=now,
         error_code=None,
-    ))
+    ).execution_options(synchronize_session=False))
     if changed.rowcount != 1:
         db.rollback()
         return None
@@ -198,10 +198,11 @@ def heartbeat_task(
         heartbeat_at=now,
         lease_expires_at=now + timedelta(seconds=lease_seconds),
         updated_at=now,
-    ))
+    ).execution_options(synchronize_session=False))
     if changed.rowcount != 1:
         db.rollback()
         raise TaskLeaseLost("Worker lease is no longer active")
+    db.expire_all()
     task = db.get(AITask, task_id)
     assert task is not None
     _event(db, task, "heartbeat", {"worker_id": worker_id})
@@ -250,10 +251,11 @@ def complete_task(
         completed_at=now,
         updated_at=now,
         error_code=None,
-    ))
+    ).execution_options(synchronize_session=False))
     if changed.rowcount != 1:
         db.rollback()
         raise TaskLeaseLost("Worker lease is no longer active")
+    db.expire_all()
     task = db.get(AITask, task_id)
     assert task is not None
     db.execute(update(AITaskStep).where(
