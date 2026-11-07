@@ -23,7 +23,7 @@ from app.ai.runtime.tasks import (
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import AITask, AITaskStep, Organization, User
+from app.models import AITaskStep, Organization, User
 
 
 @pytest.fixture
