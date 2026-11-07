@@ -41,6 +41,7 @@ def create_memory_record(
         record = create_memory(
             db,
             actor_user_id=membership.user_id,
+            actor_role=membership.role,
             scope=payload.scope,
             organization_id=membership.organization_id if payload.scope == "organization" else None,
             memory_type=payload.memory_type,
