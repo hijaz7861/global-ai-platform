@@ -76,3 +76,21 @@ The feature branch adds organization-owned skill versions:
 - Skill bodies are instructional text and are never executed as code. Imported source/license claims are recorded, not independently certified.
 
 There is not yet an automatic skill selector, bulk MUSE-skill importer, cross-organization global catalog, or tool gateway that consumes capability labels.
+
+
+## Static read-only tool gateway (initial implementation)
+
+The feature branch exposes a fixed tool catalogue through:
+- `GET /api/v1/organizations/{organization_id}/ai/tools`
+- `POST /api/v1/organizations/{organization_id}/ai/tools/{tool_name}/execute`
+
+The only registered tools are:
+- `platform.health` — database connectivity check.
+- `organization.profile` — basic profile for the authenticated organization.
+- `ai.memory.search` — scope-filtered memory retrieval with provenance and matched terms.
+- `ai.skills.list` — skill versions visible to the caller's organization role.
+- `ai.tasks.get` — task status for its creator or an organization owner/admin.
+
+Each tool has a strict Pydantic input schema. Unknown tools and extra arguments fail closed. Calls are audited without recording raw arguments or results. Tool definitions are static code; users and model output cannot register handlers. All five tools are read-only. Capability labels are descriptive metadata, not grants. No arbitrary shell, SQL, filesystem, URL-fetch, generic HTTP, payment, accounting-write, or production-deployment tool is registered.
+
+The registry is not yet invoked by the task worker or an LLM tool-call loop. It is a separately callable, authenticated gateway foundation.
