@@ -107,6 +107,7 @@ def create_skill_version(
         details={"status": "draft"},
     )
     db.commit()
+    db.expire_all()
     db.refresh(record)
     return record
 
