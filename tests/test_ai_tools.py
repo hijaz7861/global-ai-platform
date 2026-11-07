@@ -53,6 +53,7 @@ def test_registry_exposes_only_static_read_only_tools():
         "organization.profile",
         "ai.memory.search",
         "ai.skills.list",
+        "ai.skills.get",
         "ai.tasks.get",
     }
     assert all(item["risk"] == "read_only" for item in tools)
@@ -205,7 +206,7 @@ def test_tool_api_lists_and_executes_only_registered_tools(api_client):
     listed = api_client.get(base, headers=headers)
     assert listed.status_code == 200
     assert listed.json()["execution_mode"] == "read_only"
-    assert len(listed.json()["tools"]) == 5
+    assert len(listed.json()["tools"]) == 6
 
     health = api_client.post(
         f"{base}/platform.health/execute", headers=headers, json={},
