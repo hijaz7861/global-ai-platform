@@ -108,7 +108,12 @@ def create_task(
         AITask.idempotency_key == idempotency_key,
     ))
     if existing is not None:
-        if existing.request_sha256 != digest or existing.task_type != task_type or existing.title != title:
+        if (
+            existing.request_sha256 != digest
+            or existing.task_type != task_type
+            or existing.title != title
+            or existing.max_attempts != max_attempts
+        ):
             raise TaskConflict("Idempotency-Key was already used for a different task")
         return existing, False
 
@@ -134,7 +139,12 @@ def create_task(
         ))
         if existing is None:
             raise
-        if existing.request_sha256 != digest or existing.task_type != task_type or existing.title != title:
+        if (
+            existing.request_sha256 != digest
+            or existing.task_type != task_type
+            or existing.title != title
+            or existing.max_attempts != max_attempts
+        ):
             raise TaskConflict("Idempotency-Key was already used for a different task") from None
         return existing, False
 
