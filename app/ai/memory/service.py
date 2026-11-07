@@ -41,6 +41,14 @@ def _tokens(value: str) -> list[str]:
     return [token for token in _TOKEN.findall(value.casefold()) if len(token) > 1][:2048]
 
 
+def _verify_content_digest(record: AIMemoryRecord) -> AIMemoryRecord:
+    """Fail closed when stored memory content no longer matches its provenance digest."""
+    actual = sha256(record.content.encode("utf-8")).hexdigest()
+    if actual != record.content_sha256:
+        raise MemoryConflict("Memory content digest does not match its stored provenance")
+    return record
+
+
 def create_memory(
     db: Session,
     *,
@@ -203,6 +211,8 @@ def search_memories(
             db, actor_user_id=actor_user_id, organization_id=organization_id, role=role
         ).order_by(AIMemoryRecord.updated_at.desc(), AIMemoryRecord.id).limit(500)
     ).all()
+    for record in candidates:
+        _verify_content_digest(record)
     if not terms:
         return [MemoryMatch(record, 0.0, ()) for record in candidates[:limit]]
 
@@ -247,7 +257,7 @@ def get_memory(
     ).where(AIMemoryRecord.id == memory_id))
     if record is None:
         raise MemoryNotFound("Memory record not found")
-    return record
+    return _verify_content_digest(record)
 
 
 def archive_memory(
@@ -258,13 +268,13 @@ def archive_memory(
     organization_id: str,
     role: str,
 ) -> None:
-    record = get_memory(
-        db,
-        memory_id=memory_id,
-        actor_user_id=actor_user_id,
-        organization_id=organization_id,
-        role=role,
-    )
+    # Archival is a remediation action: authorize by scope without requiring the
+    # corrupted content to pass integrity verification first.
+    record = db.scalar(_visible_query(
+        db, actor_user_id=actor_user_id, organization_id=organization_id, role=role
+    ).where(AIMemoryRecord.id == memory_id))
+    if record is None:
+        raise MemoryNotFound("Memory record not found")
     if record.scope == "user" and record.owner_user_id != actor_user_id:
         raise MemoryNotFound("Memory record not found")
     if record.scope == "organization" and role not in {"owner", "admin"}:
