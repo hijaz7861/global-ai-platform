@@ -1103,7 +1103,6 @@ def test_postgres_memory_isolation_separates_users_and_organizations():
 
 
 def test_postgres_concurrent_memory_supersession_has_one_winner():
-    from concurrent.futures import ThreadPoolExecutor
     from sqlalchemy.orm import sessionmaker
 
     from app.ai.memory.service import MemoryConflict, MemoryNotFound, create_memory
@@ -1124,7 +1123,7 @@ def test_postgres_concurrent_memory_supersession_has_one_winner():
                 db, actor_user_id=user.id, scope="user", organization_id=None,
                 memory_type="project", content="Original version before concurrent correction",
             )
-            user_id, org_id, original_id = user.id, organization.id, original.id
+            user_id, original_id = user.id, original.id
 
         def supersede(index: int) -> str:
             with factory() as db:
