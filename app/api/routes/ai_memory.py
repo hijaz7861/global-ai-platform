@@ -25,6 +25,7 @@ router = APIRouter(tags=["ai-memory"])
     status_code=status.HTTP_201_CREATED,
 )
 def create_memory_record(
+    organization_id: str,
     payload: CreateAIMemoryRequest,
     membership: Annotated[Membership, Depends(require_membership)],
     db: Annotated[Session, Depends(get_db)],
@@ -63,6 +64,7 @@ def create_memory_record(
     response_model=list[AIMemoryResponse],
 )
 def list_memory_records(
+    organization_id: str,
     membership: Annotated[Membership, Depends(require_membership)],
     db: Annotated[Session, Depends(get_db)],
     q: Annotated[str, Query(max_length=200)] = "",
@@ -92,6 +94,7 @@ def list_memory_records(
     response_model=AIMemoryResponse,
 )
 def get_memory_record(
+    organization_id: str,
     memory_id: str,
     membership: Annotated[Membership, Depends(require_membership)],
     db: Annotated[Session, Depends(get_db)],
@@ -114,6 +117,7 @@ def get_memory_record(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def archive_memory_record(
+    organization_id: str,
     memory_id: str,
     membership: Annotated[Membership, Depends(require_membership)],
     db: Annotated[Session, Depends(get_db)],
