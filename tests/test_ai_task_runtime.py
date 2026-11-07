@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import models  # noqa: F401
+from app.ai.runtime.worker import run_worker_once
 from app.ai.runtime.tasks import (
     TaskConflict,
     TaskLeaseLost,
@@ -283,7 +284,7 @@ def test_context_handler_receives_tenant_bound_task_and_can_heartbeat(database):
         context.heartbeat()
         return {"task_id": context.task.id, "status": "context_received"}
 
-    assert run_once(
+    assert run_worker_once(
         db,
         worker_id="context-worker",
         context_handlers={"agent.run": handler},
