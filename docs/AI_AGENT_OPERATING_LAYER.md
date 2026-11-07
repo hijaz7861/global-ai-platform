@@ -205,7 +205,7 @@ Introduce new Alembic revisions after the current head (currently revision 0028)
 - `ai_tool_grants`
 - `ai_model_profiles`, `ai_usage_ledger`
 - `ai_action_approvals`, `ai_nonce_consumptions`
-- `ai_outbox_events`
+- `ai_outbox_events` (implemented in migration `0033_ai_task_outbox`)
 
 Avoid creating every table in one migration. Add schema only alongside the first working vertical slice. Use UUID/string IDs consistent with current models, indexed tenant scope, database constraints for uniqueness and valid state transitions where practical, and JSON only for bounded metadata—not as a substitute for relational authorization keys.
 
@@ -325,7 +325,7 @@ The following foundations are implemented in `feat/ai-agent-operating-layer-desi
 - a static six-tool read-only gateway with strict input schemas, tenant-aware handlers, fail-closed unknown-tool handling, approved-skill-only retrieval, and audit events;
 - a bounded single-agent JSON-decision loop connected to the model router and read-only gateway, submitted through durable tasks and run by a standalone polling worker command.
 
-Still not implemented: an external worker supervisor/health service, forceful interruption of in-flight provider HTTP calls, transactional outbox, PostgreSQL-backed nonce replacement, per-turn durable agent checkpoints/resumption, multi-agent planning/role orchestration, vector/embedding retrieval, memory retention and hard deletion, automatic skill selection, write-capable tools or memory writes, provider token/cost reservation, provider health/circuit breaking, automatic failover, DLP, and the full evaluation/observability pipeline. Agent tasks are deliberately single-attempt to avoid automatic replay of paid model calls. Do not describe these as complete.
+Still not implemented: an external worker supervisor/health service, forceful interruption of in-flight provider HTTP calls, PostgreSQL-backed nonce replacement, per-turn durable agent checkpoints/resumption, multi-agent planning/role orchestration, vector/embedding retrieval, memory retention and hard deletion, automatic skill selection, write-capable tools or memory writes, provider token/cost reservation, provider health/circuit breaking, automatic failover, DLP, and the full evaluation/observability pipeline. Agent tasks are deliberately single-attempt to avoid automatic replay of paid model calls. Do not describe these as complete.
 
 
 ## 15. Model capability router (initial implementation)
