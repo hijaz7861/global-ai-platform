@@ -67,9 +67,13 @@ def list_skills(
     membership: Annotated[Membership, Depends(require_membership)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[AISkillResponse]:
-    return [AISkillResponse.model_validate(item) for item in list_skill_versions(
-        db, organization_id=membership.organization_id, role=membership.role
-    )]
+    try:
+        records = list_skill_versions(
+            db, organization_id=membership.organization_id, role=membership.role
+        )
+    except SkillConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    return [AISkillResponse.model_validate(item) for item in records]
 
 
 @router.get(
@@ -93,6 +97,8 @@ def get_skill(
         )
     except SkillNotFound:
         raise HTTPException(status_code=404, detail="Skill version not found") from None
+    except SkillConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     return AISkillResponse.model_validate(record)
 
 
