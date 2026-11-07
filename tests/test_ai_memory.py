@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app import models  # noqa: F401
 from app.ai.memory.service import (
+    MemoryConflict,
     MemoryNotFound,
     archive_memory,
     create_memory,
@@ -154,6 +155,35 @@ def test_memory_expiry_requires_timezone_and_expired_records_are_excluded(databa
         db, actor_user_id=user.id, organization_id=organization.id, role="owner",
     )
     assert all(item.record.id != record.id for item in results)
+
+
+def test_memory_digest_mismatch_fails_closed_but_can_be_archived(database):
+    db, user, _, organization = database
+    record = create_memory(
+        db, actor_user_id=user.id, scope="user", organization_id=None,
+        memory_type="reference", content="Verified original memory content",
+    )
+    record.content = "Tampered replacement content"
+    db.commit()
+
+    with pytest.raises(MemoryConflict, match="digest"):
+        get_memory(
+            db, memory_id=record.id, actor_user_id=user.id,
+            organization_id=organization.id, role="member",
+        )
+    with pytest.raises(MemoryConflict, match="digest"):
+        search_memories(
+            db, actor_user_id=user.id, organization_id=organization.id,
+            role="member", query="tampered",
+        )
+
+    # Owners must still be able to remove a corrupt record from retrieval.
+    archive_memory(
+        db, memory_id=record.id, actor_user_id=user.id,
+        organization_id=organization.id, role="member",
+    )
+    db.refresh(record)
+    assert record.status == "archived"
 
 
 def test_archived_memory_is_not_retrievable(database):
