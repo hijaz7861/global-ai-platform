@@ -12,6 +12,7 @@ from app import models  # noqa: F401
 from app.ai.agents import runner
 from app.ai.agents.runner import AgentRunError, run_agent_task
 from app.ai.runtime.tasks import create_task
+from app.ai.runtime.worker import run_worker_once
 from app.db import Base
 from app.models import Membership, Organization, User
 
@@ -180,3 +181,24 @@ def test_agent_rechecks_membership_before_running(agent_context, monkeypatch):
         asyncio.run(run_agent_task(context))
     assert exc.value.error_code == "membership_revoked"
     assert router_instance.calls == []
+
+
+
+def test_durable_worker_executes_agent_run_task_end_to_end(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    router_instance = FakeRouter([
+        _model_response({"action": "final", "answer": "The durable agent completed its task."}),
+    ])
+    _patch_runner(monkeypatch, router_instance)
+
+    assert run_worker_once(
+        context.db,
+        worker_id="durable-agent-worker",
+        lease_seconds=300,
+    ) is True
+    context.db.refresh(context.task)
+
+    assert context.task.status == "succeeded"
+    assert context.task.result_payload["status"] == "completed"
+    assert context.task.result_payload["answer"] == "The durable agent completed its task."
+    assert context.task.max_attempts == 3
