@@ -225,6 +225,7 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
             actor_user_id=task.created_by_user_id,
             result=result,
         )
+        context.heartbeat()
         total_input_tokens += int(result.get("input_tokens", 0))
         total_output_tokens += int(result.get("output_tokens", 0))
         selected_provider = str(result.get("provider", ""))
