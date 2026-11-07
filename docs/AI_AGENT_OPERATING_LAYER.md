@@ -357,3 +357,8 @@ The draft adds a first single-agent loop:
 ## 17. Cooperative task cancellation
 
 The task runtime now stores `cancel_requested_at` and emits `cancel_requested` / `cancelled` lifecycle events. The creator can cancel their own task; organization owners/admins can cancel any task in the organization. Queued work cancels immediately. Running work is cancelled at the next worker heartbeat or completion/failure boundary. Completion and failure transitions use row locking so a pending cancellation wins. A worker that sees a cancelled expired lease does not reclaim it. This does not forcibly abort an already in-flight provider HTTP call.
+
+
+## 18. Transactional task-event outbox
+
+The task runtime now writes a durable outbox record alongside each integration-relevant lifecycle event in the same database transaction as its task/event change. The outbox uses a stable event ID, a unique source task-event constraint, organization/task scope, bounded JSON metadata, delivery leases, attempt limits, retry backoff, and a terminal dead state. A publisher claims pending or expired-lease records with row locking, then explicitly acknowledges successful downstream delivery or schedules a retry. Consumers must deduplicate on `event_id`: delivery is at-least-once, not exactly-once. High-frequency heartbeat telemetry remains in the internal task-event timeline and is deliberately excluded from the integration outbox. The first slice supplies durable storage and publisher primitives; it does not configure a remote broker, webhook destination, or external supervisor.
