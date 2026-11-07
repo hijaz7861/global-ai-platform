@@ -1028,3 +1028,130 @@ def test_concurrent_ai_task_claim_is_granted_to_exactly_one_worker():
             assert claim_events == 1
     finally:
         engine.dispose()
+
+
+
+def test_postgres_memory_isolation_separates_users_and_organizations():
+    from sqlalchemy.orm import sessionmaker
+
+    from app.ai.memory.service import create_memory, search_memories
+    from app.models import Organization, User
+
+    suffix = uuid4().hex
+    engine = create_engine(os.environ["DATABASE_URL"])
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    try:
+        with factory() as db:
+            user_a = User(email=f"pg-memory-a-{suffix}@example.com", password_hash="test-hash")
+            user_b = User(email=f"pg-memory-b-{suffix}@example.com", password_hash="test-hash")
+            org_a = Organization(name=f"Memory Tenant A {suffix[:8]}")
+            org_b = Organization(name=f"Memory Tenant B {suffix[:8]}")
+            db.add_all([user_a, user_b, org_a, org_b])
+            db.commit()
+            db.refresh(user_a)
+            db.refresh(user_b)
+            db.refresh(org_a)
+            db.refresh(org_b)
+            private = create_memory(
+                db, actor_user_id=user_a.id, scope="user", organization_id=None,
+                memory_type="preference", content="Private user memory isolation sentinel",
+            )
+            shared_a = create_memory(
+                db, actor_user_id=user_a.id, scope="organization", organization_id=org_a.id,
+                memory_type="project", content="Tenant A shared memory isolation sentinel",
+            )
+            restricted_a = create_memory(
+                db, actor_user_id=user_a.id, actor_role="owner", scope="organization",
+                organization_id=org_a.id, memory_type="reference",
+                content="Tenant A restricted memory sentinel", sensitivity="restricted",
+            )
+            shared_b = create_memory(
+                db, actor_user_id=user_b.id, scope="organization", organization_id=org_b.id,
+                memory_type="project", content="Tenant B shared memory isolation sentinel",
+            )
+            ids = {
+                "user_a": user_a.id, "user_b": user_b.id,
+                "org_a": org_a.id, "org_b": org_b.id,
+                "private": private.id, "shared_a": shared_a.id,
+                "restricted_a": restricted_a.id, "shared_b": shared_b.id,
+            }
+
+        def visible(actor: str, organization: str, role: str) -> set[str]:
+            with factory() as db:
+                return {
+                    item.record.id for item in search_memories(
+                        db, actor_user_id=actor, organization_id=organization, role=role
+                    )
+                }
+
+        a_owner = visible(ids["user_a"], ids["org_a"], "owner")
+        b_member_a = visible(ids["user_b"], ids["org_a"], "member")
+        b_admin_a = visible(ids["user_b"], ids["org_a"], "admin")
+        a_owner_b = visible(ids["user_a"], ids["org_b"], "owner")
+
+        assert ids["private"] in a_owner
+        assert ids["shared_a"] in a_owner
+        assert ids["restricted_a"] in a_owner
+        assert ids["private"] not in b_member_a
+        assert ids["restricted_a"] not in b_member_a
+        assert ids["restricted_a"] not in b_admin_a
+        assert ids["shared_a"] not in a_owner_b
+        assert ids["shared_b"] in a_owner_b
+        assert ids["private"] in a_owner_b
+    finally:
+        engine.dispose()
+
+
+def test_postgres_concurrent_memory_supersession_has_one_winner():
+    from concurrent.futures import ThreadPoolExecutor
+    from sqlalchemy.orm import sessionmaker
+
+    from app.ai.memory.service import MemoryConflict, MemoryNotFound, create_memory
+    from app.models import AIMemoryRecord, Organization, User
+
+    suffix = uuid4().hex
+    engine = create_engine(os.environ["DATABASE_URL"])
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    try:
+        with factory() as db:
+            user = User(email=f"pg-memory-race-{suffix}@example.com", password_hash="test-hash")
+            organization = Organization(name=f"Memory Supersession {suffix[:8]}")
+            db.add_all([user, organization])
+            db.commit()
+            db.refresh(user)
+            db.refresh(organization)
+            original = create_memory(
+                db, actor_user_id=user.id, scope="user", organization_id=None,
+                memory_type="project", content="Original version before concurrent correction",
+            )
+            user_id, org_id, original_id = user.id, organization.id, original.id
+
+        def supersede(index: int) -> str:
+            with factory() as db:
+                try:
+                    replacement = create_memory(
+                        db, actor_user_id=user_id, scope="user", organization_id=None,
+                        memory_type="project", content=f"Concurrent corrected memory version {index}",
+                        supersedes_id=original_id,
+                    )
+                    return replacement.id
+                except (MemoryConflict, MemoryNotFound):
+                    db.rollback()
+                    return "conflict"
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(supersede, [1, 2]))
+
+        assert sum(outcome != "conflict" for outcome in outcomes) == 1
+        with factory() as db:
+            original_row = db.get(AIMemoryRecord, original_id)
+            active_count = db.query(AIMemoryRecord).filter(
+                AIMemoryRecord.owner_user_id == user_id,
+                AIMemoryRecord.scope == "user",
+                AIMemoryRecord.status == "active",
+            ).count()
+            assert original_row is not None
+            assert original_row.status == "superseded"
+            assert active_count == 1
+    finally:
+        engine.dispose()
