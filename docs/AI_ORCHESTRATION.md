@@ -31,3 +31,20 @@ The inbound MCP endpoint, runtime security gateway, encrypted secret-manager int
 - No live provider credentials, paid API calls, payments, or deployment are used by tests.
 
 Do not describe this as a fully autonomous multi-provider agent platform yet. It is a guarded AI adapter and API foundation with separate safety primitives.
+
+
+## Durable task runtime (initial implementation)
+
+The feature branch `feat/ai-agent-operating-layer-design` adds a first task-runtime slice without changing the existing chat route or enabling live provider calls.
+
+- Submit tasks through `POST /api/v1/organizations/{organization_id}/ai/tasks` with a required `Idempotency-Key` header. The key is scoped to the submitting actor and organization; reusing it with a different task body returns HTTP 409.
+- Task creation is restricted to organization owners/admins. The creator can inspect their task; owners/admins can inspect organization tasks.
+- Inspect status through `GET /api/v1/organizations/{organization_id}/ai/tasks/{task_id}` and the minimal lifecycle timeline through the `/events` subroute.
+- Queued tasks can be cancelled by their creator. Running tasks cannot yet be force-cancelled; worker cancellation is a future cooperative-cancellation feature.
+- `app.ai.runtime.worker.run_worker_once` processes at most one task through an explicitly supplied handler registry. Unknown task types fail closed. No dynamic import, shell execution, model-generated code, or automatic provider call is performed.
+- Worker claims use database-conditional state transitions and expiring leases. An expired lease can be reclaimed; a task whose attempts are exhausted becomes failed. Step records store input/output digests rather than duplicate raw payloads.
+- Task lifecycle events deliberately omit prompts, provider output, credentials, and raw exception text.
+
+This is a durable queue/runtime primitive, not yet a continuously supervised worker service, model planner, multi-agent coordinator, memory system, skill registry, or tool gateway. The task event table is not yet wired to the platform-wide audit export/retention pipeline. Production multi-worker operation requires PostgreSQL; SQLite is for local/unit development.
+
+The implementation must pass the full Python matrix, migration consistency check, and PostgreSQL integration suite before it is considered CI-verified.
