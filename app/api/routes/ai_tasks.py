@@ -12,8 +12,8 @@ from app.ai.runtime.schemas import AITaskEventResponse, AITaskResponse, CreateAI
 from app.ai.runtime.tasks import (
     TaskConflict,
     TaskStateConflict,
-    cancel_queued_task,
     create_task,
+    request_task_cancel,
 )
 from app.api.deps import require_membership
 from app.core.config import settings
@@ -44,7 +44,6 @@ def submit_task(
 ) -> AITaskResponse:
     if membership.role not in {"owner", "admin"}:
         raise HTTPException(status_code=403, detail="Owner or admin role required to submit AI tasks")
-    input_payload = payload.input_payload
     input_payload = payload.input_payload
     if payload.task_type == "agent.run":
         try:
@@ -149,14 +148,13 @@ def cancel_task(
     ))
     _authorize_task(task, organization_id, membership)
     try:
-        cancel_queued_task(
+        updated = request_task_cancel(
             db,
             task_id=task_id,
             organization_id=membership.organization_id,
             actor_user_id=membership.user_id,
+            role=membership.role,
         )
     except TaskStateConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
-    updated = db.get(AITask, task_id)
-    assert updated is not None
     return AITaskResponse.model_validate(updated)
