@@ -107,12 +107,12 @@ Every memory record should include tenant/owner scope, type, content, source ref
 Retrieval pipeline:
 1. enforce actor/tenant/sensitivity filters before search;
 2. apply exact identifiers and metadata filters;
-3. retrieve using PostgreSQL full-text/BM25-style ranking;
+3. retrieve using BM25-style lexical ranking (the first implementation uses a bounded in-process candidate set; PostgreSQL full-text indexing is a later scale optimization);
 4. optionally add embeddings through a pluggable vector index (pgvector only when provisioned);
 5. rerank a bounded candidate set;
 6. return source citations, freshness, confidence, and why each result was selected.
 
-Vector similarity is a recall aid, not a truth or authorization mechanism. If embeddings are unavailable, lexical and metadata retrieval must still work.
+Vector similarity is a recall aid, not a truth or authorization mechanism. If embeddings are unavailable, lexical and metadata retrieval must still work. The first implementation uses BM25-style ranking over at most 500 recent eligible records, preserves source hashes and provenance, and deliberately marks user-supplied memories unverified.
 
 ### 5.4 Skill registry
 Represent a skill as versioned, signed-or-hash-pinned instructional content plus a manifest:
