@@ -9,7 +9,7 @@ import math
 import re
 from typing import Literal
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
@@ -121,9 +121,16 @@ def create_memory(
     db.add(record)
     db.flush()
     if previous is not None:
-        previous.status = "superseded"
-        previous.verification_status = "superseded"
-        previous.updated_at = now
+        transitioned = db.execute(update(AIMemoryRecord).where(
+            AIMemoryRecord.id == previous.id,
+            AIMemoryRecord.status == "active",
+        ).values(
+            status="superseded",
+            verification_status="superseded",
+            updated_at=now,
+        ).execution_options(synchronize_session=False))
+        if transitioned.rowcount != 1:
+            raise MemoryConflict("Memory record was already changed by another request")
         record_audit_event(
             db,
             actor_user_id=actor_user_id,
@@ -262,8 +269,16 @@ def archive_memory(
         raise MemoryNotFound("Memory record not found")
     if record.scope == "organization" and role not in {"owner", "admin"}:
         raise MemoryNotFound("Memory record not found")
-    record.status = "archived"
-    record.updated_at = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    transitioned = db.execute(update(AIMemoryRecord).where(
+        AIMemoryRecord.id == record.id,
+        AIMemoryRecord.status == "active",
+    ).values(
+        status="archived",
+        updated_at=now,
+    ).execution_options(synchronize_session=False))
+    if transitioned.rowcount != 1:
+        raise MemoryConflict("Memory record was already changed by another request")
     record_audit_event(
         db,
         actor_user_id=actor_user_id,
