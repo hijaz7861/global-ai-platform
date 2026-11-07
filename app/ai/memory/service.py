@@ -45,6 +45,7 @@ def create_memory(
     db: Session,
     *,
     actor_user_id: str,
+    actor_role: str = "member",
     scope: MemoryScope,
     organization_id: str | None,
     memory_type: str,
@@ -97,7 +98,7 @@ def create_memory(
         )
         if not same_scope:
             raise MemoryNotFound("Memory record to supersede was not found")
-        if previous.sensitivity == "restricted":
+        if previous.sensitivity == "restricted" and scope == "organization" and actor_role != "owner":
             raise MemoryNotFound("Memory record to supersede was not found")
 
     record = AIMemoryRecord(
