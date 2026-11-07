@@ -72,8 +72,12 @@ def create_memory(
     if source_ref is not None and len(source_ref) > 256:
         raise ValueError("source_ref must not exceed 256 characters")
     now = datetime.now(timezone.utc)
-    if expires_at is not None and expires_at <= now:
-        raise ValueError("Memory expiry must be in the future")
+    if expires_at is not None:
+        if expires_at.tzinfo is None or expires_at.utcoffset() is None:
+            raise ValueError("Memory expiry must include a timezone")
+        expires_at = expires_at.astimezone(timezone.utc)
+        if expires_at <= now:
+            raise ValueError("Memory expiry must be in the future")
 
     previous = None
     if supersedes_id is not None:
