@@ -45,6 +45,7 @@ class AITaskResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None
+    cancel_requested_at: datetime | None
     created: bool = False
 
     model_config = ConfigDict(from_attributes=True)
