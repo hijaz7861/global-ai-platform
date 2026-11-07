@@ -65,7 +65,7 @@ def _create(db, owner, organization, **overrides):
 
 
 def test_skill_is_draft_until_owner_approval_then_visible_to_members(database):
-    db, owner, member, organization = database
+    db, owner, _, organization = database
     draft = _create(db, owner, organization)
 
     assert draft.status == "draft"
@@ -137,7 +137,7 @@ def test_disabling_approved_skill_removes_it_from_member_catalog(database):
 def test_skill_manifest_rejects_unbounded_or_unknown_capabilities(database):
     db, owner, _, organization = database
     with pytest.raises(ValueError, match="capability identifier"):
-        _create(db, owner, organization, required_capabilities=["shell.execute"])
+        _create(db, owner, organization, required_capabilities=["Shell Execute!"])
     with pytest.raises(ValueError, match="source reference"):
         _create(
             db, owner, organization, source_type="imported",
@@ -209,7 +209,9 @@ def test_skill_api_registers_approves_and_disables_version(api_client):
     created = api_client.post(url, headers=headers, json=payload)
     assert created.status_code == 201, created.text
     assert created.json()["status"] == "draft"
-    assert api_client.get(url, headers=headers).json() == []
+    listed_draft = api_client.get(url, headers=headers)
+    assert listed_draft.status_code == 200
+    assert listed_draft.json()[0]["status"] == "draft"
 
     approved = api_client.post(
         f"{url}/safe-research/1.0.0/approve", headers=headers
@@ -223,4 +225,4 @@ def test_skill_api_registers_approves_and_disables_version(api_client):
     )
     assert disabled.status_code == 200, disabled.text
     assert disabled.json()["status"] == "disabled"
-    assert api_client.get(url, headers=headers).json() == []
+    assert api_client.get(url, headers=headers).json()[0]["status"] == "disabled"
