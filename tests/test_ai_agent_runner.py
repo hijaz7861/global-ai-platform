@@ -111,7 +111,7 @@ def test_agent_uses_static_tool_then_returns_final_answer(agent_context, monkeyp
     assert result["steps"][0]["tool"] == "organization.profile"
     assert result["usage"]["model_calls"] == 2
     assert router_instance.selections[0]["data_class"] == "internal"
-    assert organization.id in router_instance.calls[0]["prompt"]
+    assert organization.id in router_instance.calls[1]["prompt"]
 
 
 def test_agent_rejects_model_requested_unregistered_tool(agent_context, monkeypatch):
