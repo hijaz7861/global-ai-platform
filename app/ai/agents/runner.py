@@ -171,6 +171,7 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
 
     for turn in range(1, payload.max_steps + 1):
         context.heartbeat()
+        prompt = _build_prompt(payload.goal, tools, history)
         try:
             request_id = _reserve_model_call(
                 context.db,
@@ -191,7 +192,6 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
                 }
             raise
 
-        prompt = _build_prompt(payload.goal, tools, history)
         try:
             result = await model_router.complete(
                 route=payload.model_route,
