@@ -112,6 +112,13 @@ def create_skill_version(
     return record
 
 
+def _verify_content_digest(record: AISkillVersion) -> AISkillVersion:
+    actual = sha256(record.content.encode("utf-8")).hexdigest()
+    if actual != record.content_sha256:
+        raise SkillConflict("Skill content digest does not match its stored manifest")
+    return record
+
+
 def list_skill_versions(
     db: Session, *, organization_id: str, role: str,
 ) -> list[AISkillVersion]:
@@ -121,7 +128,7 @@ def list_skill_versions(
     records = db.scalars(
         query.order_by(AISkillVersion.skill_id, AISkillVersion.created_at.desc()).limit(200)
     ).all()
-    return records
+    return [_verify_content_digest(record) for record in records]
 
 
 def get_skill_version(
@@ -137,7 +144,7 @@ def get_skill_version(
     record = db.scalar(query)
     if record is None:
         raise SkillNotFound("Skill version not found")
-    return record
+    return _verify_content_digest(record)
 
 
 def approve_skill_version(
