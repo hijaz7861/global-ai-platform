@@ -218,3 +218,4 @@ def disable_skill_version(
         details={"status": "disabled"},
     )
     db.commit()
+    db.expire_all()
