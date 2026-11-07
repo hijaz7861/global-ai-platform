@@ -314,3 +314,13 @@ This plan is based on the current MUSE v3.10.0 source tree and the current Globa
 No local clone was executed in this review. No MUSE test suite or platform test suite was run by this review. The latest platform commit records CI run #608 as successful; the latest MUSE commit's full CI status was not independently established here. No sandbox host, penetration test, load test, or production deployment was exercised.
 
 This document is an architecture proposal and is not a claim that any proposed runtime, memory, queue, API, or schema is implemented.
+
+
+## 14. Implementation status on the feature branch
+
+The following foundations are implemented in `feat/ai-agent-operating-layer-design` and were CI-verified on run #663:
+- durable tenant-scoped task, attempt/step, and lifecycle-event persistence; idempotent task submission; lease claims, heartbeat, expiry recovery, and a bounded registered-handler worker;
+- provenance-aware user-private and organization-shared memory; source digests, confidence, sensitivity, expiry, supersession, archival, audit events, and bounded BM25-style retrieval;
+- organization-owned immutable skill versions; manifest validation, SHA-256 verification on read, draft/owner-approval/disable lifecycle, and role-scoped catalog visibility.
+
+Still not implemented: continuous worker supervision, cooperative cancellation of running work, transactional outbox, PostgreSQL-backed nonce replacement, vector/embedding retrieval, memory retention and hard deletion, automated skill selection, skill-to-agent context integration, typed tool gateway, model capability router, budget reservations, and full evaluation/observability pipeline. Do not describe these as complete.
