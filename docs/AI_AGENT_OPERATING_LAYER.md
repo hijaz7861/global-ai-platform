@@ -318,9 +318,10 @@ This document is an architecture proposal and is not a claim that any proposed r
 
 ## 14. Implementation status on the feature branch
 
-The following foundations are implemented in `feat/ai-agent-operating-layer-design` and were CI-verified on run #663:
+The following foundations are implemented in `feat/ai-agent-operating-layer-design` and were CI-verified on run #670:
 - durable tenant-scoped task, attempt/step, and lifecycle-event persistence; idempotent task submission; lease claims, heartbeat, expiry recovery, and a bounded registered-handler worker;
 - provenance-aware user-private and organization-shared memory; source digests, confidence, sensitivity, expiry, supersession, archival, audit events, and bounded BM25-style retrieval;
-- organization-owned immutable skill versions; manifest validation, SHA-256 verification on read, draft/owner-approval/disable lifecycle, and role-scoped catalog visibility.
+- organization-owned immutable skill versions; manifest validation, SHA-256 verification on read, draft/owner-approval/disable lifecycle, and role-scoped catalog visibility;
+- a static five-tool read-only gateway with strict input schemas, tenant-aware handlers, fail-closed unknown-tool handling, and audit events.
 
-Still not implemented: continuous worker supervision, cooperative cancellation of running work, transactional outbox, PostgreSQL-backed nonce replacement, vector/embedding retrieval, memory retention and hard deletion, automated skill selection, skill-to-agent context integration, typed tool gateway, model capability router, budget reservations, and full evaluation/observability pipeline. Do not describe these as complete.
+Still not implemented: continuous worker supervision, cooperative cancellation of running work, transactional outbox, PostgreSQL-backed nonce replacement, vector/embedding retrieval, memory retention and hard deletion, automated skill selection, skill-to-agent context integration, integration of the tool gateway into a model-driven agent loop, write-capable tools, model capability router, budget reservations, and full evaluation/observability pipeline. Do not describe these as complete.
