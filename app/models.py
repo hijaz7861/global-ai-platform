@@ -810,6 +810,7 @@ class AISkillVersion(Base):
             "source_type IN ('internal','user_authored','imported')",
             name="ck_ai_skill_source_type",
         ),
+        CheckConstraint("length(content_sha256) = 64", name="ck_ai_skill_digest_length"),
         Index("ix_ai_skill_org_status", "organization_id", "status", "skill_id"),
         Index("ix_ai_skill_org_created", "organization_id", "created_at"),
     )
