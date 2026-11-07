@@ -94,3 +94,36 @@ The only registered tools are:
 Each tool has a strict Pydantic input schema. Unknown tools and extra arguments fail closed. Calls are audited without recording raw arguments or results. Tool definitions are static code; users and model output cannot register handlers. All five tools are read-only. Capability labels are descriptive metadata, not grants. No arbitrary shell, SQL, filesystem, URL-fetch, generic HTTP, payment, accounting-write, or production-deployment tool is registered.
 
 The registry is not yet invoked by the task worker or an LLM tool-call loop. It is a separately callable, authenticated gateway foundation.
+
+
+## Durable constrained agent execution
+
+An agent run is submitted as a normal durable task:
+`POST /api/v1/organizations/{organization_id}/ai/tasks`
+
+Example `input_payload`:
+```json
+{
+  "goal": "Inspect the organization profile and summarize approved project context",
+  "model_route": "primary",
+  "task_type": "analyze",
+  "data_class": "internal",
+  "max_steps": 3,
+  "max_output_tokens": 256
+}
+```
+
+Set `task_type` to `agent.run` on the outer task request. The API validates the inner schema, requires live AI to be enabled, PostgreSQL, a positive rolling 24-hour request limit, and a configured model route. Agent tasks are forced to one attempt: paid model calls are not automatically replayed after a worker crash or provider failure.
+
+Run the worker in a separate process/container using the same database and provider environment:
+```bash
+# Process at most one queued task
+python -m app.ai.runtime.worker --once
+
+# Poll continuously (run under a process supervisor)
+python -m app.ai.runtime.worker --poll-seconds 2 --lease-seconds 300
+```
+
+The agent uses strict JSON decisions (`tool` or `final`), a maximum of five model turns, and only the static read-only tool catalogue. Tool results and skill content are treated as untrusted data. Each model call consumes one unit of the organization's rolling 24-hour AI request quota. No provider cost/token reservation is implemented.
+
+Current limits: this is a single-agent loop, not a multi-agent planner; there are no write tools, memory-write tools, native provider function calls, per-turn durable checkpoints, task cancellation, automatic retry/failover, or automatic resumption. If a worker dies, the single-attempt task eventually expires and fails rather than replaying paid calls. Successful task results include a bounded tool/action trace.
