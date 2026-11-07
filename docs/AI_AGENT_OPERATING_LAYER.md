@@ -319,13 +319,13 @@ This document is an architecture proposal and is not a claim that any proposed r
 ## 14. Implementation status on the feature branch
 
 The following foundations are implemented in `feat/ai-agent-operating-layer-design` and were CI-verified on run #704:
-- durable tenant-scoped task, attempt/step, and lifecycle-event persistence; idempotent task submission; lease claims, heartbeat, expiry recovery, and a bounded registered-handler worker;
+- durable tenant-scoped task, attempt/step, and lifecycle-event persistence; idempotent task submission; lease claims, heartbeat, expiry recovery, cooperative cancellation, and a bounded registered-handler worker;
 - provenance-aware user-private and organization-shared memory; source digests, confidence, sensitivity, expiry, supersession, archival, audit events, and bounded BM25-style retrieval;
 - organization-owned immutable skill versions; manifest validation, SHA-256 verification on read, draft/owner-approval/disable lifecycle, and role-scoped catalog visibility;
 - a static six-tool read-only gateway with strict input schemas, tenant-aware handlers, fail-closed unknown-tool handling, approved-skill-only retrieval, and audit events;
 - a bounded single-agent JSON-decision loop connected to the model router and read-only gateway, submitted through durable tasks and run by a standalone polling worker command.
 
-Still not implemented: an external worker supervisor/health service, cooperative cancellation of running work, transactional outbox, PostgreSQL-backed nonce replacement, per-turn durable agent checkpoints/resumption, multi-agent planning/role orchestration, vector/embedding retrieval, memory retention and hard deletion, automatic skill selection, write-capable tools or memory writes, provider token/cost reservation, provider health/circuit breaking, automatic failover, DLP, and the full evaluation/observability pipeline. Agent tasks are deliberately single-attempt to avoid automatic replay of paid model calls. Do not describe these as complete.
+Still not implemented: an external worker supervisor/health service, forceful interruption of in-flight provider HTTP calls, transactional outbox, PostgreSQL-backed nonce replacement, per-turn durable agent checkpoints/resumption, multi-agent planning/role orchestration, vector/embedding retrieval, memory retention and hard deletion, automatic skill selection, write-capable tools or memory writes, provider token/cost reservation, provider health/circuit breaking, automatic failover, DLP, and the full evaluation/observability pipeline. Agent tasks are deliberately single-attempt to avoid automatic replay of paid model calls. Do not describe these as complete.
 
 
 ## 15. Model capability router (initial implementation)
@@ -352,3 +352,8 @@ The draft adds a first single-agent loop:
 - Each model turn consumes one unit of the rolling 24-hour organization request quota. There is no token/cost reservation.
 - Agent tasks are forced to one attempt. A worker crash or provider failure does not trigger an automatic paid-call replay; the task will fail after lease expiry if not completed.
 - Successful results include a bounded trace. There is no durable per-turn checkpoint, resumable conversation, cancellation, multi-agent planner, write tool, or memory-write tool yet.
+
+
+## 17. Cooperative task cancellation
+
+The task runtime now stores `cancel_requested_at` and emits `cancel_requested` / `cancelled` lifecycle events. The creator can cancel their own task; organization owners/admins can cancel any task in the organization. Queued work cancels immediately. Running work is cancelled at the next worker heartbeat or completion/failure boundary. Completion and failure transitions use row locking so a pending cancellation wins. A worker that sees a cancelled expired lease does not reclaim it. This does not forcibly abort an already in-flight provider HTTP call.
