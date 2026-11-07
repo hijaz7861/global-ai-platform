@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from app.api.routes.accounting import router as accounting_router
 from app.api.routes.ai import router as ai_router
 from app.api.routes.ai_tasks import router as ai_tasks_router
+from app.api.routes.ai_memory import router as ai_memory_router
 from app.api.routes.audit import router as audit_router
 from app.api.routes.health import router as health_router
 from app.api.routes.identity import router as identity_router
@@ -33,3 +34,4 @@ api_router.include_router(platform_operations_router)
 api_router.include_router(procurement_router)
 api_router.include_router(ai_router)
 api_router.include_router(ai_tasks_router)
+api_router.include_router(ai_memory_router)
