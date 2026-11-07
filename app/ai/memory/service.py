@@ -154,26 +154,27 @@ def _visible_query(
     role: str,
 ):
     now = datetime.now(timezone.utc)
-    scope_filter = or_(
-        and_(
-            AIMemoryRecord.scope == "user",
-            AIMemoryRecord.owner_user_id == actor_user_id,
-        ),
-        and_(
-            AIMemoryRecord.scope == "organization",
-            AIMemoryRecord.organization_id == organization_id,
-        ),
+    user_private_scope = and_(
+        AIMemoryRecord.scope == "user",
+        AIMemoryRecord.owner_user_id == actor_user_id,
     )
-    sensitivity_filter = (
-        AIMemoryRecord.sensitivity != "restricted"
-        if role not in {"owner", "admin"}
-        else True
+    organization_scope = and_(
+        AIMemoryRecord.scope == "organization",
+        AIMemoryRecord.organization_id == organization_id,
+        (
+            AIMemoryRecord.sensitivity == "normal"
+            if role not in {"owner", "admin"}
+            else (
+                AIMemoryRecord.sensitivity != "restricted"
+                if role == "admin"
+                else True
+            )
+        ),
     )
     return select(AIMemoryRecord).where(
-        scope_filter,
+        or_(user_private_scope, organization_scope),
         AIMemoryRecord.status == "active",
         or_(AIMemoryRecord.expires_at.is_(None), AIMemoryRecord.expires_at > now),
-        sensitivity_filter,
     )
 
 
