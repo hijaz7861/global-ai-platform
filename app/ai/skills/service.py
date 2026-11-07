@@ -117,9 +117,10 @@ def list_skill_versions(
     query = select(AISkillVersion).where(AISkillVersion.organization_id == organization_id)
     if role not in {"owner", "admin"}:
         query = query.where(AISkillVersion.status == "approved")
-    return db.scalars(
-        query.order_by(AISkillVersion.skill_id, AISkillVersion.version.desc()).limit(200)
+    records = db.scalars(
+        query.order_by(AISkillVersion.skill_id, AISkillVersion.created_at.desc()).limit(200)
     ).all()
+    return records
 
 
 def get_skill_version(
