@@ -683,6 +683,7 @@ class AITask(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AITaskStep(Base):
@@ -719,7 +720,7 @@ class AITaskEvent(Base):
     __tablename__ = "ai_task_events"
     __table_args__ = (
         CheckConstraint(
-            "event_type IN ('created','claimed','heartbeat','completed','retry_scheduled','failed','cancelled','lease_expired')",
+            "event_type IN ('created','claimed','heartbeat','completed','retry_scheduled','failed','cancel_requested','cancelled','lease_expired')",
             name="ck_ai_task_events_type",
         ),
         Index("ix_ai_task_events_org_created", "organization_id", "created_at"),
