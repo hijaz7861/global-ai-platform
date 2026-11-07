@@ -264,3 +264,36 @@ def test_task_api_rejects_reused_key_with_different_payload(api_client):
     })
     assert first.status_code == 202
     assert second.status_code == 409
+
+
+
+def test_context_handler_receives_tenant_bound_task_and_can_heartbeat(database):
+    db, _, user, organization = database
+    task, _ = _create(
+        db, user, organization,
+        task_type="agent.run",
+        idempotency_key="context-handler-key-01",
+    )
+    observed = {}
+
+    def handler(context):
+        observed["task_id"] = context.task.id
+        observed["organization_id"] = context.task.organization_id
+        observed["worker_id"] = context.worker_id
+        context.heartbeat()
+        return {"task_id": context.task.id, "status": "context_received"}
+
+    assert run_once(
+        db,
+        worker_id="context-worker",
+        context_handlers={"agent.run": handler},
+        lease_seconds=60,
+    ) is True
+    db.refresh(task)
+    assert task.status == "succeeded"
+    assert task.result_payload["status"] == "context_received"
+    assert observed == {
+        "task_id": task.id,
+        "organization_id": organization.id,
+        "worker_id": "context-worker",
+    }
