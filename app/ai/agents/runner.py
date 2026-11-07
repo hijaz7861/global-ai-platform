@@ -147,7 +147,7 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
         payload = AgentTaskInput.model_validate(task.input_payload)
     except ValidationError:
         raise AgentRunError("invalid_agent_task_input") from None
-    membership = _current_authorized_membership(context)
+    _current_authorized_membership(context)
     if not settings.ai_live_calls_enabled:
         raise AgentRunError("ai_live_calls_disabled")
     try:
