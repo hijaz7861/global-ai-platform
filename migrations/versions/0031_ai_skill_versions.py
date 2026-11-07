@@ -37,6 +37,7 @@ def upgrade() -> None:
         sa.CheckConstraint("status IN ('draft','approved','disabled','deprecated')", name="ck_ai_skill_status"),
         sa.CheckConstraint("risk_level IN ('low','medium','high','critical')", name="ck_ai_skill_risk"),
         sa.CheckConstraint("source_type IN ('internal','user_authored','imported')", name="ck_ai_skill_source_type"),
+        sa.CheckConstraint("length(content_sha256) = 64", name="ck_ai_skill_digest_length"),
     )
     op.create_index("ix_ai_skill_org_status", "ai_skill_versions", ["organization_id", "status", "skill_id"])
     op.create_index("ix_ai_skill_org_created", "ai_skill_versions", ["organization_id", "created_at"])
