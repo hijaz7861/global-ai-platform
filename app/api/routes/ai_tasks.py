@@ -45,17 +45,18 @@ def submit_task(
     if membership.role not in {"owner", "admin"}:
         raise HTTPException(status_code=403, detail="Owner or admin role required to submit AI tasks")
     input_payload = payload.input_payload
+    input_payload = payload.input_payload
     if payload.task_type == "agent.run":
+        try:
+            agent_input = AgentTaskInput.model_validate(input_payload)
+        except ValidationError:
+            raise HTTPException(status_code=422, detail="Invalid agent task input") from None
         if not settings.ai_live_calls_enabled:
             raise HTTPException(status_code=503, detail="Live AI agent runs are disabled by configuration")
         if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
             raise HTTPException(status_code=503, detail="AI agent tasks require PostgreSQL")
         if settings.ai_daily_request_limit < 1:
             raise HTTPException(status_code=503, detail="A positive AI daily request limit must be configured")
-        try:
-            agent_input = AgentTaskInput.model_validate(input_payload)
-        except ValidationError:
-            raise HTTPException(status_code=422, detail="Invalid agent task input") from None
         if agent_input.max_output_tokens > settings.ai_max_output_tokens:
             raise HTTPException(status_code=422, detail="Agent output token limit exceeds configured maximum")
         try:
