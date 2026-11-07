@@ -99,7 +99,7 @@ def _event(
     event_id = str(uuid4())
     occurred_at = datetime.now(timezone.utc)
     safe_details = details or {}
-    db.add(AITaskEvent(
+    task_event = AITaskEvent(
         id=event_id,
         task_id=task.id,
         organization_id=task.organization_id,
@@ -107,7 +107,11 @@ def _event(
         event_type=event_type,
         details=safe_details,
         created_at=occurred_at,
-    ))
+    )
+    db.add(task_event)
+    # Force the source row before its FK-dependent outbox row; both remain
+    # inside the caller's transaction and commit or roll back together.
+    db.flush([task_event])
     db.add(AIOutboxEvent(
         id=event_id,
         task_event_id=event_id,
