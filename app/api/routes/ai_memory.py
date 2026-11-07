@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.memory.schemas import AIMemoryResponse, CreateAIMemoryRequest
 from app.ai.memory.service import (
+    MemoryConflict,
     MemoryNotFound,
     archive_memory,
     create_memory,
@@ -55,6 +56,8 @@ def create_memory_record(
         )
     except MemoryNotFound:
         raise HTTPException(status_code=404, detail="Memory record to supersede was not found") from None
+    except MemoryConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     return AIMemoryResponse.model_validate(record)
@@ -133,4 +136,6 @@ def archive_memory_record(
         )
     except MemoryNotFound:
         raise HTTPException(status_code=404, detail="Memory record not found") from None
+    except MemoryConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     return Response(status_code=status.HTTP_204_NO_CONTENT)
