@@ -7,12 +7,13 @@ from hashlib import sha256
 import json
 import re
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import AITask, AITaskEvent, AITaskStep
+from app.models import AIOutboxEvent, AITask, AITaskEvent, AITaskStep
 
 _WORKER_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
@@ -84,12 +85,45 @@ def _event(
     actor_user_id: str | None = None,
 ) -> None:
     # Lifecycle metadata only. Never put prompts, provider output, credentials, or raw errors here.
+    # Heartbeats are operational telemetry, not integration events. All other
+    # lifecycle transitions get a durable outbox row in the same DB transaction.
+    if event_type == "heartbeat":
+        db.add(AITaskEvent(
+            task_id=task.id,
+            organization_id=task.organization_id,
+            actor_user_id=actor_user_id,
+            event_type=event_type,
+            details=details or {},
+        ))
+        return
+    event_id = str(uuid4())
+    occurred_at = datetime.now(timezone.utc)
+    safe_details = details or {}
     db.add(AITaskEvent(
+        id=event_id,
         task_id=task.id,
         organization_id=task.organization_id,
         actor_user_id=actor_user_id,
         event_type=event_type,
-        details=details or {},
+        details=safe_details,
+        created_at=occurred_at,
+    ))
+    db.add(AIOutboxEvent(
+        id=event_id,
+        task_event_id=event_id,
+        task_id=task.id,
+        organization_id=task.organization_id,
+        event_type=event_type,
+        payload={
+            "schema_version": 1,
+            "event_id": event_id,
+            "event_type": event_type,
+            "task_id": task.id,
+            "organization_id": task.organization_id,
+            "occurred_at": occurred_at.isoformat(),
+            "details": safe_details,
+        },
+        created_at=occurred_at,
     ))
 
 
