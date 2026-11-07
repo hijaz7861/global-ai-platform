@@ -360,7 +360,7 @@ def fail_task(
         AITask.status == "running",
         AITask.claimed_by == worker_id,
         AITask.lease_expires_at > now,
-    ))
+    ).with_for_update())
     if task is None:
         db.rollback()
         raise TaskLeaseLost("Worker lease is no longer active")
