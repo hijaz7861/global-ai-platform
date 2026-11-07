@@ -974,3 +974,57 @@ def test_concurrent_procurement_awards_accept_exactly_one_supplier_quote(monkeyp
     assert statuses.count("rejected") == 1
     awarded = [item for item in requests.json() if item["id"] == request_id]
     assert len(awarded) == 1 and awarded[0]["status"] == "awarded"
+
+
+
+def test_concurrent_ai_task_claim_is_granted_to_exactly_one_worker():
+    from sqlalchemy.orm import sessionmaker
+
+    from app.ai.runtime.tasks import claim_next_task, create_task
+    from app.models import AITask, AITaskEvent, Organization, User
+
+    suffix = uuid4().hex
+    engine = create_engine(os.environ["DATABASE_URL"])
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    try:
+        with factory() as db:
+            user = User(email=f"postgres-ai-task-{suffix}@example.com", password_hash="test-hash")
+            organization = Organization(name=f"AI Task Claim {suffix[:8]}")
+            db.add_all([user, organization])
+            db.commit()
+            db.refresh(user)
+            db.refresh(organization)
+            task, created = create_task(
+                db,
+                organization_id=organization.id,
+                actor_user_id=user.id,
+                task_type="agent.inspect",
+                title="Concurrent worker claim",
+                input_payload={"scope": "read-only"},
+                idempotency_key=f"pg-ai-task-{suffix}",
+            )
+            assert created is True
+            task_id = task.id
+
+        def claim(worker_id: str) -> str | None:
+            with factory() as db:
+                claimed = claim_next_task(db, worker_id=worker_id, lease_seconds=30)
+                return claimed.id if claimed is not None else None
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            claims = list(pool.map(claim, ["worker-a", "worker-b"]))
+
+        assert claims.count(task_id) == 1
+        assert claims.count(None) == 1
+        with factory() as db:
+            stored = db.get(AITask, task_id)
+            assert stored is not None
+            assert stored.status == "running"
+            assert stored.attempt_count == 1
+            claim_events = db.query(AITaskEvent).filter(
+                AITaskEvent.task_id == task_id,
+                AITaskEvent.event_type == "claimed",
+            ).count()
+            assert claim_events == 1
+    finally:
+        engine.dispose()
