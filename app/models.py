@@ -740,6 +740,46 @@ class AITaskEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
+class AIOutboxEvent(Base):
+    """Transactional delivery record for a committed AI task lifecycle event."""
+    __tablename__ = "ai_outbox_events"
+    __table_args__ = (
+        UniqueConstraint("task_event_id", name="uq_ai_outbox_task_event"),
+        CheckConstraint(
+            "status IN ('pending','processing','delivered','dead')",
+            name="ck_ai_outbox_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND max_attempts BETWEEN 1 AND 20",
+            name="ck_ai_outbox_attempts",
+        ),
+        Index("ix_ai_outbox_dispatch", "status", "available_at", "created_at"),
+        Index("ix_ai_outbox_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    task_event_id: Mapped[str] = mapped_column(
+        ForeignKey("ai_task_events.id", ondelete="CASCADE"), nullable=False
+    )
+    task_id: Mapped[str] = mapped_column(
+        ForeignKey("ai_tasks.id", ondelete="CASCADE"), nullable=False
+    )
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=8, nullable=False)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    locked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
 class AIMemoryRecord(Base):
     """Provenance-aware user-private or organization-shared AI memory."""
     __tablename__ = "ai_memory_records"
