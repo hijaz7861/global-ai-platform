@@ -2,9 +2,12 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import ValidationError
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
+from app.ai.agents.schemas import AgentTaskInput
+from app.ai.model_router import ModelRouteError, create_model_router
 from app.ai.runtime.schemas import AITaskEventResponse, AITaskResponse, CreateAITaskRequest
 from app.ai.runtime.tasks import (
     TaskConflict,
@@ -13,6 +16,7 @@ from app.ai.runtime.tasks import (
     create_task,
 )
 from app.api.deps import require_membership
+from app.core.config import settings
 from app.db import get_db
 from app.models import AITask, AITaskEvent, Membership
 
@@ -40,6 +44,34 @@ def submit_task(
 ) -> AITaskResponse:
     if membership.role not in {"owner", "admin"}:
         raise HTTPException(status_code=403, detail="Owner or admin role required to submit AI tasks")
+    input_payload = payload.input_payload
+    if payload.task_type == "agent.run":
+        if not settings.ai_live_calls_enabled:
+            raise HTTPException(status_code=503, detail="Live AI agent runs are disabled by configuration")
+        if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
+            raise HTTPException(status_code=503, detail="AI agent tasks require PostgreSQL")
+        if settings.ai_daily_request_limit < 1:
+            raise HTTPException(status_code=503, detail="A positive AI daily request limit must be configured")
+        try:
+            agent_input = AgentTaskInput.model_validate(input_payload)
+        except ValidationError:
+            raise HTTPException(status_code=422, detail="Invalid agent task input") from None
+        if agent_input.max_output_tokens > settings.ai_max_output_tokens:
+            raise HTTPException(status_code=422, detail="Agent output token limit exceeds configured maximum")
+        try:
+            router = create_model_router(settings)
+            router.select(
+                route=agent_input.model_route,
+                task_type=agent_input.task_type,
+                data_class=agent_input.data_class,
+                max_output_tokens=agent_input.max_output_tokens,
+            )
+        except ModelRouteError as exc:
+            code = 503 if "not configured" in str(exc).lower() else 422
+            raise HTTPException(status_code=code, detail=str(exc)) from None
+        except ValueError:
+            raise HTTPException(status_code=503, detail="AI model provider configuration is incomplete") from None
+        input_payload = agent_input.model_dump(mode="json")
     try:
         task, created = create_task(
             db,
@@ -47,7 +79,7 @@ def submit_task(
             actor_user_id=membership.user_id,
             task_type=payload.task_type,
             title=payload.title,
-            input_payload=payload.input_payload,
+            input_payload=input_payload,
             idempotency_key=idempotency_key,
             max_attempts=payload.max_attempts,
         )
