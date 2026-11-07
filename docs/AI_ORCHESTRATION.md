@@ -61,3 +61,18 @@ The feature branch adds user-private and organization-shared memory records:
 - Search uses bounded BM25-style lexical ranking over at most 500 recent eligible records, with matched terms and scores returned. It is not vector search and does not yet use PostgreSQL full-text indexes or embeddings.
 - Private memory is visible only to its owner. Organization memory is visible to members only at normal sensitivity; admins may also see sensitive records, and only the organization owner may see restricted shared records.
 - Superseding creates a new record and marks the prior record superseded. Archiving is soft deletion. Retention automation, hard deletion/export workflows, verification attestations, and vector retrieval remain future work.
+
+
+## Versioned skill registry (initial implementation)
+
+The feature branch adds organization-owned skill versions:
+- `POST /api/v1/organizations/{organization_id}/ai/skills` registers a new immutable draft version. A duplicate organization/skill/version tuple returns HTTP 409.
+- `GET /api/v1/organizations/{organization_id}/ai/skills` lists drafts and disabled versions to owners/admins, but only approved versions to ordinary members.
+- `GET /api/v1/organizations/{organization_id}/ai/skills/{skill_id}/{version}` retrieves an exact visible version.
+- `POST .../skills/{skill_id}/{version}/approve` requires the organization owner. Approval rechecks the SHA-256 content digest and records the approver.
+- `POST .../skills/{skill_id}/{version}/disable` requires the organization owner and removes the version from the member catalog.
+- Skill content is immutable through the API; publish a new semantic version for changes. The stored content digest is checked on every read.
+- Each manifest records source type/reference, license identifier, risk level, data classes, and required capability labels. These labels are descriptive metadata only; they do not grant access to tools or data.
+- Skill bodies are instructional text and are never executed as code. Imported source/license claims are recorded, not independently certified.
+
+There is not yet an automatic skill selector, bulk MUSE-skill importer, cross-organization global catalog, or tool gateway that consumes capability labels.
