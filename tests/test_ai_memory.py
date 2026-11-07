@@ -103,9 +103,13 @@ def test_restricted_memory_is_hidden_from_non_admin_members(database):
     admin_results = search_memories(
         db, actor_user_id=other.id, organization_id=organization.id, role="admin"
     )
+    owner_results = search_memories(
+        db, actor_user_id=user.id, organization_id=organization.id, role="owner"
+    )
 
     assert all(item.record.id != record.id for item in member_results)
-    assert any(item.record.id == record.id for item in admin_results)
+    assert all(item.record.id != record.id for item in admin_results)
+    assert any(item.record.id == record.id for item in owner_results)
 
 
 def test_superseding_memory_preserves_history_and_updates_active_value(database):
