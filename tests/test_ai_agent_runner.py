@@ -50,6 +50,7 @@ def agent_context():
             "max_output_tokens": 64,
         },
         idempotency_key="agent-run-key-001",
+        max_attempts=1,
     )
     context = SimpleNamespace(
         db=db,
@@ -201,4 +202,4 @@ def test_durable_worker_executes_agent_run_task_end_to_end(agent_context, monkey
     assert context.task.status == "succeeded"
     assert context.task.result_payload["status"] == "completed"
     assert context.task.result_payload["answer"] == "The durable agent completed its task."
-    assert context.task.max_attempts == 3
+    assert context.task.max_attempts == 1
