@@ -1,6 +1,7 @@
 """Durable tenant-scoped AI task queue and lease lifecycle."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
@@ -28,6 +29,38 @@ class TaskLeaseLost(RuntimeError):
 
 class TaskStateConflict(RuntimeError):
     """The requested transition is not valid for the current task state."""
+
+
+class PermanentTaskError(RuntimeError):
+    """A handler failure that must not be retried."""
+
+    def __init__(self, error_code: str) -> None:
+        self.error_code = error_code
+        super().__init__(error_code)
+
+
+class RetryableTaskError(RuntimeError):
+    """A handler failure that may be retried within the task attempt budget."""
+
+    def __init__(self, error_code: str) -> None:
+        self.error_code = error_code
+        super().__init__(error_code)
+
+
+@dataclass
+class TaskExecutionContext:
+    db: Session
+    task: AITask
+    worker_id: str
+    lease_seconds: int
+
+    def heartbeat(self) -> None:
+        heartbeat_task(
+            self.db,
+            task_id=self.task.id,
+            worker_id=self.worker_id,
+            lease_seconds=self.lease_seconds,
+        )
 
 
 def _canonical_json(value: dict[str, Any], *, max_bytes: int = 32_768) -> tuple[str, str]:
@@ -323,24 +356,45 @@ def cancel_queued_task(
 
 
 def run_once(
-    db: Session, *, worker_id: str, handlers: dict[str, Any], lease_seconds: int = 60,
+    db: Session,
+    *,
+    worker_id: str,
+    handlers: dict[str, Any] | None = None,
+    context_handlers: dict[str, Any] | None = None,
+    lease_seconds: int = 60,
 ) -> bool:
-    """Execute one registered handler; unknown task types fail without dynamic execution."""
+    """Execute one statically registered handler; no dynamic imports or code execution."""
     task = claim_next_task(db, worker_id=worker_id, lease_seconds=lease_seconds)
     if task is None:
         return False
-    handler = handlers.get(task.task_type)
-    if handler is None:
+    handler = (handlers or {}).get(task.task_type)
+    context_handler = (context_handlers or {}).get(task.task_type)
+    if handler is None and context_handler is None:
         fail_task(db, task_id=task.id, worker_id=worker_id, error_code="handler_not_registered")
         return True
     start_task_step(db, task=task, worker_id=worker_id, step_name=task.task_type)
     try:
-        result = handler(dict(task.input_payload))
+        if context_handler is not None:
+            result = context_handler(TaskExecutionContext(
+                db=db, task=task, worker_id=worker_id, lease_seconds=lease_seconds
+            ))
+        else:
+            result = handler(dict(task.input_payload))
         if not isinstance(result, dict):
             raise ValueError("Task handler must return a JSON object")
         complete_task(db, task_id=task.id, worker_id=worker_id, result_payload=result)
     except TaskLeaseLost:
         raise
+    except RetryableTaskError as exc:
+        fail_task(
+            db, task_id=task.id, worker_id=worker_id,
+            error_code=exc.error_code, retryable=True,
+        )
+    except PermanentTaskError as exc:
+        fail_task(
+            db, task_id=task.id, worker_id=worker_id,
+            error_code=exc.error_code, retryable=False,
+        )
     except Exception:
         fail_task(db, task_id=task.id, worker_id=worker_id, error_code="handler_failed")
     return True
