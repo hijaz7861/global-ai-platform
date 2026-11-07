@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app import models  # noqa: F401
 from app.ai.runtime.worker import run_worker_once
 from app.ai.runtime.tasks import (
+    TaskCancelled,
     TaskConflict,
     TaskLeaseLost,
     TaskStateConflict,
@@ -18,6 +19,8 @@ from app.ai.runtime.tasks import (
     complete_task,
     create_task,
     heartbeat_task,
+    request_task_cancel,
+    fail_task,
     run_once,
     start_task_step,
 )
@@ -336,3 +339,82 @@ def test_agent_task_api_validates_input_and_requires_postgres_quota_store(api_cl
     })
     assert valid.status_code == 503
     assert "postgresql" in valid.json()["detail"].lower()
+
+
+
+def test_running_task_cancellation_is_acknowledged_on_heartbeat(database):
+    db, _, user, organization = database
+    task, _ = _create(
+        db, user, organization, idempotency_key="cancel-running-key-01"
+    )
+    claimed = claim_next_task(db, worker_id="cancel-worker", lease_seconds=60)
+    assert claimed is not None
+    request_task_cancel(
+        db, task_id=task.id, organization_id=organization.id,
+        actor_user_id=user.id, role="owner",
+    )
+
+    with pytest.raises(TaskCancelled):
+        heartbeat_task(db, task_id=task.id, worker_id="cancel-worker", lease_seconds=60)
+
+    db.refresh(task)
+    assert task.status == "cancelled"
+    assert task.claimed_by is None
+    assert task.lease_expires_at is None
+    assert task.cancel_requested_at is not None
+
+
+def test_completion_and_failure_cannot_override_a_pending_cancel(database):
+    db, _, user, organization = database
+    complete_case, _ = _create(
+        db, user, organization, idempotency_key="cancel-complete-key"
+    )
+    claim_next_task(db, worker_id="cancel-complete-worker", lease_seconds=60)
+    request_task_cancel(
+        db, task_id=complete_case.id, organization_id=organization.id,
+        actor_user_id=user.id, role="owner",
+    )
+    complete_task(
+        db, task_id=complete_case.id, worker_id="cancel-complete-worker",
+        result_payload={"should": "not persist"},
+    )
+    db.refresh(complete_case)
+    assert complete_case.status == "cancelled"
+    assert complete_case.result_payload is None
+
+    fail_case, _ = _create(
+        db, user, organization, idempotency_key="cancel-failure-key"
+    )
+    claimed = claim_next_task(db, worker_id="cancel-fail-worker", lease_seconds=60)
+    assert claimed is not None
+    request_task_cancel(
+        db, task_id=fail_case.id, organization_id=organization.id,
+        actor_user_id=user.id, role="owner",
+    )
+    fail_task(
+        db, task_id=fail_case.id, worker_id="cancel-fail-worker",
+        error_code="handler_failed",
+    )
+    db.refresh(fail_case)
+    assert fail_case.status == "cancelled"
+
+
+def test_expired_running_task_with_cancel_request_is_not_reclaimed(database):
+    db, _, user, organization = database
+    task, _ = _create(
+        db, user, organization, idempotency_key="cancel-expired-key-01"
+    )
+    claimed = claim_next_task(db, worker_id="cancel-expired-worker", lease_seconds=30)
+    assert claimed is not None
+    request_task_cancel(
+        db, task_id=task.id, organization_id=organization.id,
+        actor_user_id=user.id, role="owner",
+    )
+    task.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    db.commit()
+
+    next_task = claim_next_task(db, worker_id="replacement-worker", lease_seconds=30)
+    assert next_task is None
+    db.refresh(task)
+    assert task.status == "cancelled"
+    assert task.claimed_by is None
