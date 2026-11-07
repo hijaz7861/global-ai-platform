@@ -418,3 +418,36 @@ def test_expired_running_task_with_cancel_request_is_not_reclaimed(database):
     db.refresh(task)
     assert task.status == "cancelled"
     assert task.claimed_by is None
+
+
+def test_task_api_creator_can_cancel_queued_task_and_terminal_cancel_is_conflict(api_client):
+    token, organization_id = _owner(api_client)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": "task-cancel-api-001",
+    }
+    submitted = api_client.post(
+        f"/api/v1/organizations/{organization_id}/ai/tasks",
+        headers=headers,
+        json={
+            "task_type": "agent.inspect",
+            "title": "Cancel queued work",
+            "input_payload": {"path": "docs"},
+        },
+    )
+    assert submitted.status_code == 202
+    task_id = submitted.json()["id"]
+
+    cancelled = api_client.post(
+        f"/api/v1/organizations/{organization_id}/ai/tasks/{task_id}/cancel",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    assert cancelled.json()["cancel_requested_at"] is not None
+
+    repeated = api_client.post(
+        f"/api/v1/organizations/{organization_id}/ai/tasks/{task_id}/cancel",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert repeated.status_code == 409
