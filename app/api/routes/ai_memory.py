@@ -32,7 +32,7 @@ def create_memory_record(
 ) -> AIMemoryResponse:
     if payload.scope == "organization" and membership.role not in {"owner", "admin"}:
         raise HTTPException(status_code=403, detail="Owner or admin role required for shared memory")
-    if payload.sensitivity == "restricted" and membership.role != "owner":
+    if payload.scope == "organization" and payload.sensitivity == "restricted" and membership.role != "owner":
         raise HTTPException(status_code=403, detail="Organization owner role required for restricted memory")
     if payload.supersedes_id is not None and membership.role not in {"owner", "admin"}:
         if payload.scope == "organization":
