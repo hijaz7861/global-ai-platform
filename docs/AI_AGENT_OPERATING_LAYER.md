@@ -318,13 +318,14 @@ This document is an architecture proposal and is not a claim that any proposed r
 
 ## 14. Implementation status on the feature branch
 
-The following foundations are implemented in `feat/ai-agent-operating-layer-design` and were CI-verified on run #670:
+The following foundations are implemented in `feat/ai-agent-operating-layer-design` and were CI-verified on run #704:
 - durable tenant-scoped task, attempt/step, and lifecycle-event persistence; idempotent task submission; lease claims, heartbeat, expiry recovery, and a bounded registered-handler worker;
 - provenance-aware user-private and organization-shared memory; source digests, confidence, sensitivity, expiry, supersession, archival, audit events, and bounded BM25-style retrieval;
 - organization-owned immutable skill versions; manifest validation, SHA-256 verification on read, draft/owner-approval/disable lifecycle, and role-scoped catalog visibility;
-- a static five-tool read-only gateway with strict input schemas, tenant-aware handlers, fail-closed unknown-tool handling, and audit events.
+- a static six-tool read-only gateway with strict input schemas, tenant-aware handlers, fail-closed unknown-tool handling, approved-skill-only retrieval, and audit events;
+- a bounded single-agent JSON-decision loop connected to the model router and read-only gateway, submitted through durable tasks and run by a standalone polling worker command.
 
-Still not implemented: continuous worker supervision, cooperative cancellation of running work, transactional outbox, PostgreSQL-backed nonce replacement, vector/embedding retrieval, memory retention and hard deletion, automated skill selection, skill-to-agent context integration, integration of the tool gateway into a model-driven agent loop, write-capable tools, model capability router, budget reservations, and full evaluation/observability pipeline. Do not describe these as complete.
+Still not implemented: an external worker supervisor/health service, cooperative cancellation of running work, transactional outbox, PostgreSQL-backed nonce replacement, per-turn durable agent checkpoints/resumption, multi-agent planning/role orchestration, vector/embedding retrieval, memory retention and hard deletion, automatic skill selection, write-capable tools or memory writes, provider token/cost reservation, provider health/circuit breaking, automatic failover, DLP, and the full evaluation/observability pipeline. Agent tasks are deliberately single-attempt to avoid automatic replay of paid model calls. Do not describe these as complete.
 
 
 ## 15. Model capability router (initial implementation)
@@ -338,3 +339,16 @@ The feature branch routes the existing chat API through `app/ai/model_router.py`
 - Named hosted providers use fixed origins. Custom origins are available only through the explicitly configured OpenAI-compatible adapter. Local endpoints require `AI_ALLOW_LOCAL_ENDPOINTS=true` and a loopback hostname.
 
 The router is integrated into the chat endpoint but is not yet the planner for durable tasks or a model-driven tool loop. Token/cost reservation, provider health/circuit breaking, model evaluations, and automatic failover remain future work.
+
+
+## 16. Constrained agent execution and worker
+
+The draft adds a first single-agent loop:
+- Outer task type: `agent.run`; inner schema validates goal, explicit model route, task type, caller-declared data class, maximum five model turns, and output token cap.
+- The API rejects agent tasks unless live AI is enabled, PostgreSQL is configured, a positive daily request limit exists, and the selected model profile is compatible.
+- The standalone worker is launched with `python -m app.ai.runtime.worker`; `--once` processes at most one task, while the default mode polls continuously. Run it under an external process supervisor.
+- The worker rechecks organization membership before each model turn and tool call, heartbeats the task lease, and routes all tool requests through the static read-only registry.
+- The model must return a strict JSON decision. Unknown tools, invalid schemas, and unregistered actions fail closed. Tool results and skill bodies are untrusted.
+- Each model turn consumes one unit of the rolling 24-hour organization request quota. There is no token/cost reservation.
+- Agent tasks are forced to one attempt. A worker crash or provider failure does not trigger an automatic paid-call replay; the task will fail after lease expiry if not completed.
+- Successful results include a bounded trace. There is no durable per-turn checkpoint, resumable conversation, cancellation, multi-agent planner, write tool, or memory-write tool yet.
