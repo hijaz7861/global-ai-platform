@@ -226,3 +226,27 @@ def test_skill_api_registers_approves_and_disables_version(api_client):
     assert disabled.status_code == 200, disabled.text
     assert disabled.json()["status"] == "disabled"
     assert api_client.get(url, headers=headers).json()[0]["status"] == "disabled"
+
+
+
+def test_approved_skill_digest_is_checked_on_read(database):
+    db, owner, _, organization = database
+    record = _create(db, owner, organization)
+    approve_skill_version(
+        db,
+        organization_id=organization.id,
+        skill_id=record.skill_id,
+        version=record.version,
+        actor_user_id=owner.id,
+    )
+    record.content = "Tampered after approval"
+    db.commit()
+
+    with pytest.raises(SkillConflict, match="digest"):
+        get_skill_version(
+            db,
+            organization_id=organization.id,
+            skill_id=record.skill_id,
+            version=record.version,
+            role="owner",
+        )
