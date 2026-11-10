@@ -362,3 +362,10 @@ The task runtime now stores `cancel_requested_at` and emits `cancel_requested` /
 ## 18. Transactional task-event outbox
 
 The task runtime now writes a durable outbox record alongside each integration-relevant lifecycle event in the same database transaction as its task/event change. The outbox uses a stable event ID, a unique source task-event constraint, organization/task scope, bounded JSON metadata, delivery leases, attempt limits, retry backoff, and a terminal dead state. A publisher claims pending or expired-lease records with row locking, then explicitly acknowledges successful downstream delivery or schedules a retry. Consumers must deduplicate on `event_id`: delivery is at-least-once, not exactly-once. High-frequency heartbeat telemetry remains in the internal task-event timeline and is deliberately excluded from the integration outbox. The first slice supplies durable storage and publisher primitives; it does not configure a remote broker, webhook destination, or external supervisor.
+
+
+## 19. Shared approval nonce persistence
+
+Migration `0034_postgres_approval_nonces` adds the shared `consumed_approval_nonces` table. `app.ai.postgres_nonce_store.PostgresNonceStore` performs retention cleanup and a conflict-safe insert in one PostgreSQL transaction. The primary-key uniqueness constraint and `ON CONFLICT DO NOTHING RETURNING` ensure that concurrent workers cannot both consume the same nonce. The signed approval policy helper now accepts a nonce-consumer protocol, so callers can inject either the existing SQLite store (single-host local development) or the PostgreSQL store (shared deployment).
+
+The PostgreSQL store requires the migration to be applied and a shared PostgreSQL engine to be injected. Storage failures propagate and fail closed. This does not yet provide trusted human identity issuance, approval audit persistence, an HTTP release API, or deployment execution. The test added here validates the PostgreSQL SQL shape and dialect guard; the dedicated PostgreSQL CI integration run remains the authoritative database/concurrency verification.
