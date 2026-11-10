@@ -1154,3 +1154,21 @@ def test_postgres_concurrent_memory_supersession_has_one_winner():
             assert active_count == 1
     finally:
         engine.dispose()
+
+
+def test_concurrent_approval_nonce_consumption_is_single_use():
+    from app.ai.postgres_nonce_store import PostgresNonceStore
+
+    engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    store = PostgresNonceStore(engine)
+    nonce = f"concurrent-approval-{uuid4().hex}"
+
+    try:
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            results = list(pool.map(lambda _: store.consume_nonce(nonce), range(24)))
+        assert results.count(True) == 1
+        assert results.count(False) == 23
+        # A later attempt from another connection/process remains a replay.
+        assert store.consume_nonce(nonce) is False
+    finally:
+        engine.dispose()
