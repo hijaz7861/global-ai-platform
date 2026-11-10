@@ -9,7 +9,7 @@
 
 ## Autonomy and approval controls
 - A fail-closed gate evaluates artifact integrity, sandbox evidence, tests, security scans, regression evidence, rollback readiness, risk and approval.
-- HMAC-SHA-256 attestation binds evidence to an artifact digest; a persistent SQLite nonce store provides atomic single-host replay protection.
+- HMAC-SHA-256 attestation binds evidence to an artifact digest. SQLite provides atomic single-host nonce storage for local development; `PostgresNonceStore` uses a shared PostgreSQL primary key and `INSERT ... ON CONFLICT DO NOTHING RETURNING` for atomic multi-worker approval replay protection (migration `0034_postgres_approval_nonces`).
 - Signed human approvals cryptographically bind both the exact artifact SHA-256 digest and a distinct action identifier. Verification checks signature, actor allowlisting, expiry, maximum lifetime, future clock skew and one-time nonce consumption.
 - The gate evaluates artifact integrity, sandbox/test/security/regression evidence and rollback readiness before consuming the approval nonce. Invalid, expired, unauthorized, action-mismatched, digest-mismatched, tampered and replayed approvals fail closed.
 - The legacy caller-controlled `human_approval` boolean is ignored by signed-approval integration paths. A valid approval only makes a change eligible for staged release after all other evidence and rollback checks pass.
@@ -26,7 +26,7 @@ The inbound MCP endpoint, runtime security gateway, encrypted secret-manager int
 - Provider selection is explicit; no automatic retry/failover is enabled. The client-declared data class is a policy hint, not automatic DLP or trusted content classification.
 - Provider routing supports text generation only. Native Anthropic and Gemini adapters are integrated. The agent loop uses strict JSON decisions and a local static read-only tool gateway rather than native provider function-calling. There is no automatic fallback or health-based failover.
 - Signed approvals are integrated as library-level policy helpers, not issued through a trusted identity service or exposed through a release API.
-- SQLite nonce storage is single-host only.
+- SQLite nonce storage remains single-host only; production callers must explicitly inject `PostgresNonceStore` backed by the shared PostgreSQL engine. The approval policy helper accepts either backend through the `consume_nonce` contract.
 - CI unit tests are not proof of real Docker isolation.
 - No live provider credentials, paid API calls, payments, or deployment are used by tests.
 
