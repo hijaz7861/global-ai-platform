@@ -1,24 +1,20 @@
 """PostgreSQL-backed atomic nonce consumption for shared approval replay protection.
 
-The table is created by Alembic migration 0034. Use one shared PostgreSQL
-database across all API/worker replicas. Storage errors propagate (fail closed).
+The table is declared in app.models and created by Alembic migration 0034.
+Use one shared PostgreSQL database across all API/worker replicas. Storage
+errors propagate (fail closed).
 """
 from __future__ import annotations
 
 import time
 
-from sqlalchemy import BigInteger, Column, MetaData, String, Table, delete
+from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Engine
 
+from app.models import ConsumedApprovalNonce
 
-_metadata = MetaData()
-_consumed_nonces = Table(
-    "consumed_approval_nonces",
-    _metadata,
-    Column("nonce", String(128), primary_key=True),
-    Column("consumed_at", BigInteger, nullable=False),
-)
+_consumed_nonces = ConsumedApprovalNonce.__table__
 
 
 class PostgresNonceStore:
@@ -37,8 +33,8 @@ class PostgresNonceStore:
         if not isinstance(nonce, str) or not nonce or len(nonce) > 128:
             return False
         now = int(time.time())
-        # A single transaction makes cleanup and insertion atomic. PostgreSQL's
-        # unique primary key plus ON CONFLICT handles simultaneous workers.
+        # Cleanup and insertion share one transaction. The primary key plus
+        # ON CONFLICT makes simultaneous consumption safe across worker hosts.
         with self._engine.begin() as connection:
             connection.execute(
                 delete(_consumed_nonces).where(
