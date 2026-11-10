@@ -882,3 +882,15 @@ class AISkillVersion(Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+
+class ConsumedApprovalNonce(Base):
+    """Single-use approval nonce shared by all PostgreSQL application workers."""
+    __tablename__ = "consumed_approval_nonces"
+    __table_args__ = (
+        Index("ix_consumed_approval_nonces_time", "consumed_at"),
+    )
+
+    nonce: Mapped[str] = mapped_column(String(128), primary_key=True)
+    consumed_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
