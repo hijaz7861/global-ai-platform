@@ -10,7 +10,6 @@ import time
 from sqlalchemy import BigInteger, Column, MetaData, String, Table, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Engine
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 
 _metadata = MetaData()
