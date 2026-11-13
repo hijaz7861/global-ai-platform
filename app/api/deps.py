@@ -75,3 +75,31 @@ def require_membership(
         # Do not reveal whether an organization exists to a non-member.
         raise HTTPException(status_code=404, detail="Organization not found")
     return membership
+
+
+def require_active_role(role_key: str):
+    """Dependency factory: deny access unless this user holds an active, unexpired role."""
+    from app.models import UserRoleEntitlement
+
+    def dependency(
+        user: Annotated[User, Depends(get_current_user)],
+        db: Annotated[Session, Depends(get_db)],
+    ) -> UserRoleEntitlement:
+        entitlement = db.scalar(
+            select(UserRoleEntitlement).where(
+                UserRoleEntitlement.user_id == user.id,
+                UserRoleEntitlement.role_key == role_key,
+                UserRoleEntitlement.status == "active",
+            ).order_by(UserRoleEntitlement.activated_at.desc())
+        )
+        if entitlement is None:
+            raise HTTPException(status_code=403, detail=f"Active {role_key} role entitlement required")
+        expiry = entitlement.expires_at
+        if expiry is not None:
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if expiry <= datetime.now(timezone.utc):
+                raise HTTPException(status_code=403, detail=f"Active {role_key} role entitlement required")
+        return entitlement
+
+    return dependency
