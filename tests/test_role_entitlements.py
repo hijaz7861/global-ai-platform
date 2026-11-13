@@ -1,7 +1,8 @@
 """Tests for independent user role applications and approval gates."""
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -9,16 +10,34 @@ from app.api.routes import identity as identity_routes
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import RoleDefinition
+from app.models import RoleDefinition, RoleEntitlementEvent, UserRoleEntitlement
 
 _EMAIL_TOKENS: dict[str, str] = {}
+_TEST_SESSION_FACTORY = None
 
 
 @pytest.fixture
 def client(monkeypatch):
+    global _TEST_SESSION_FACTORY
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("""
+            CREATE TRIGGER role_entitlement_events_no_update
+            BEFORE UPDATE ON role_entitlement_events
+            BEGIN
+                SELECT RAISE(ABORT, 'role entitlement events are append-only');
+            END
+        """)
+        connection.exec_driver_sql("""
+            CREATE TRIGGER role_entitlement_events_no_delete
+            BEFORE DELETE ON role_entitlement_events
+            BEGIN
+                SELECT RAISE(ABORT, 'role entitlement events are append-only');
+            END
+        """)
+    _TEST_SESSION_FACTORY = TestingSessionLocal
     monkeypatch.setattr(settings, "secret_key", "test-only-signing-key-not-for-production")
     monkeypatch.setattr(settings, "platform_admin_emails", "platform@example.com")
     monkeypatch.setattr(settings, "require_email_verification", True)
@@ -55,6 +74,7 @@ def client(monkeypatch):
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
     _EMAIL_TOKENS.clear()
+    _TEST_SESSION_FACTORY = None
 
 
 def register(client: TestClient, email: str, *, verify: bool = True) -> str:
@@ -229,3 +249,42 @@ def test_admin_can_suspend_reinstate_and_revoke_role(client):
         json={"action": "reinstate"},
     )
     assert terminal_reinstate.status_code == 409
+
+
+
+def test_role_entitlement_events_are_immutable_and_survive_entitlement_deletion(client):
+    token = register(client, "audit-history@example.com")
+    application = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"role_key": "student"},
+    )
+    assert application.status_code == 201, application.text
+    entitlement_id = application.json()["id"]
+
+    with _TEST_SESSION_FACTORY() as db:
+        event = db.scalar(
+            select(RoleEntitlementEvent)
+            .where(RoleEntitlementEvent.entitlement_id == entitlement_id)
+            .order_by(RoleEntitlementEvent.created_at.desc())
+        )
+        assert event is not None
+        event_id = event.id
+        db.delete(db.get(UserRoleEntitlement, entitlement_id))
+        db.commit()
+
+    with _TEST_SESSION_FACTORY() as check_db:
+        assert check_db.get(RoleEntitlementEvent, event_id) is not None
+        with pytest.raises(IntegrityError):
+            check_db.execute(
+                update(RoleEntitlementEvent)
+                .where(RoleEntitlementEvent.id == event_id)
+                .values(event_type="tampered")
+            )
+            check_db.commit()
+        check_db.rollback()
+
+        with pytest.raises(IntegrityError):
+            check_db.execute(delete(RoleEntitlementEvent).where(RoleEntitlementEvent.id == event_id))
+            check_db.commit()
+        check_db.rollback()

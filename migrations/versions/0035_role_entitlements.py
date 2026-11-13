@@ -66,13 +66,48 @@ def upgrade() -> None:
         "role_entitlement_events",
         sa.Column("id", sa.String(length=36), primary_key=True),
         sa.Column("entitlement_id", sa.String(length=36), nullable=False),
-        sa.Column("actor_user_id", sa.String(length=36), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("actor_user_id", sa.String(length=36), nullable=True),
         sa.Column("event_type", sa.String(length=64), nullable=False),
         sa.Column("details", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
     op.create_index("ix_role_entitlement_events_entitlement_created", "role_entitlement_events", ["entitlement_id", "created_at"])
     op.create_index("ix_role_entitlement_events_actor_created", "role_entitlement_events", ["actor_user_id", "created_at"])
+
+    dialect = op.get_bind().dialect.name
+    if dialect == "sqlite":
+        op.execute("""
+            CREATE TRIGGER role_entitlement_events_no_update
+            BEFORE UPDATE ON role_entitlement_events
+            BEGIN
+                SELECT RAISE(ABORT, 'role entitlement events are append-only');
+            END
+        """)
+        op.execute("""
+            CREATE TRIGGER role_entitlement_events_no_delete
+            BEFORE DELETE ON role_entitlement_events
+            BEGIN
+                SELECT RAISE(ABORT, 'role entitlement events are append-only');
+            END
+        """)
+    elif dialect == "postgresql":
+        op.execute("""
+            CREATE OR REPLACE FUNCTION prevent_role_entitlement_event_mutation()
+            RETURNS trigger
+            LANGUAGE plpgsql
+            AS $
+            BEGIN
+                RAISE EXCEPTION 'role entitlement events are append-only';
+            END;
+            $
+        """)
+        op.execute("""
+            CREATE TRIGGER role_entitlement_events_no_update_or_delete
+            BEFORE UPDATE OR DELETE ON role_entitlement_events
+            FOR EACH ROW EXECUTE FUNCTION prevent_role_entitlement_event_mutation()
+        """)
+    else:
+        raise RuntimeError(f"Unsupported database dialect for role-event immutability: {dialect}")
 
     roles = sa.table(
         "role_definitions",
@@ -99,6 +134,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    dialect = op.get_bind().dialect.name
+    if dialect == "sqlite":
+        op.execute("DROP TRIGGER IF EXISTS role_entitlement_events_no_update")
+        op.execute("DROP TRIGGER IF EXISTS role_entitlement_events_no_delete")
+    elif dialect == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS role_entitlement_events_no_update_or_delete ON role_entitlement_events")
+        op.execute("DROP FUNCTION IF EXISTS prevent_role_entitlement_event_mutation()")
     op.drop_index("ix_role_entitlement_events_actor_created", table_name="role_entitlement_events")
     op.drop_index("ix_role_entitlement_events_entitlement_created", table_name="role_entitlement_events")
     op.drop_table("role_entitlement_events")

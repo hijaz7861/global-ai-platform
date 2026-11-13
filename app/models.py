@@ -977,7 +977,7 @@ class RoleEntitlementEvent(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     entitlement_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    actor_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    actor_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

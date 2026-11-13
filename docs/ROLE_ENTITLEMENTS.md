@@ -27,7 +27,7 @@ Amounts are stored as integer minor units (for PKR, paisa). These are initial Pa
 
 A paid role starts in `pending_payment`; a free role starts in `pending_review`. A user-supplied payment reference is evidence for manual review only and never marks a payment as verified. Only the platform administrator review action can mark the fee verified and activate the entitlement. The approval action also requires the administrator to affirm that age/identity evidence has been checked for adult roles.
 
-Rejected, expired, and revoked applications no longer occupy the active/pending uniqueness slot, so a user may submit a new application after a terminal decision. Pending, active, and suspended applications remain unique per user/role/scope. Entitlement event records are not cascade-deleted with the entitlement; database-level append-only permissions/triggers remain a separate release-hardening item.
+Rejected, expired, and revoked applications no longer occupy the active/pending uniqueness slot, so a user may submit a new application after a terminal decision. Pending, active, and suspended applications remain unique per user/role/scope. Entitlement event records are not cascade-deleted with the entitlement. Migration 0035 installs SQLite and PostgreSQL triggers that reject UPDATE and DELETE on the event table; actor IDs are stored as audit snapshots rather than foreign keys. Production database roles must still prevent privileged trigger removal or bypass.
 
 ## Server-side authorization
 
@@ -43,4 +43,4 @@ The current migration establishes the entitlement system and reusable authorizat
 - Age verification is an administrator attestation; no identity-document or biometric verification provider is integrated.
 - Role definitions are currently a platform-level catalogue. Country-specific fee policies and organization-scoped role entitlements need an additional policy layer before multi-country commercial launch.
 - Existing Hatchable profiles are not automatically imported or activated. A reviewed mapping and user/organization reconciliation is required.
-- Entitlement event rows survive entitlement deletion, but database-level update/delete immutability is not yet enforced; add database permissions/triggers before production release.
+- Database triggers reject application-level UPDATE/DELETE of entitlement event rows on SQLite and PostgreSQL. Production database roles must still prevent privileged trigger removal or bypass.
