@@ -118,7 +118,7 @@ Lifecycle: `not_requested -> pending_payment -> pending_review -> active`; excep
 
 Every protected API must check authenticated identity, tenant, entitlement status, permission, resource ownership and applicable quota. Never trust client-supplied role, price, approval, or payment status.
 
-**Implementation snapshot (2026-11-13):** Draft PR #23 (`feat/hijaz-one-role-entitlements`) now contains migration `0035_role_entitlements`, verified-email application gating, administrator payment/age review, suspend/reinstate/revoke transitions, a fail-closed `require_active_role` dependency, and organization-scoped supplier authorization for quote submission/revision/withdrawal and purchase-order fulfilment. Exact-head GitHub Actions Run #749 for `673df273df359846672d63b14428e0e3eaffeffd` succeeded: 254 passed/15 skipped on each Python 3.11/3.12/3.13 job and 15 PostgreSQL integration tests passed. PR #23 remains Draft, unmerged and unapproved; this is partial role-system implementation, not completion of the full DoD.
+**Implementation snapshot (2026-11-13, verified from GitHub):** Draft PR #23 (`feat/hijaz-one-role-entitlements`) is currently at head `13de2075119b4863d54e7c561bbb316ee210c9c2`. It contains migration `0035_role_entitlements`, unconditional verified-email gating, manual administrator payment/age review, suspend/reinstate/revoke lifecycle, fail-closed `require_active_role`, organization-scoped supplier procurement authorization, SQLite/PostgreSQL append-only role-event triggers, and a bounded active/suspended entitlement-expiry sweep integrated into `run_maintenance_once`. Exact-head GitHub Actions [Run #755](https://github.com/hijaz7861/global-ai-platform/actions/runs/43486152337) completed SUCCESS: 258 passed/17 skipped on each Python 3.11/3.12/3.13 job and 17 PostgreSQL integration tests passed; all five jobs succeeded. The previous PostgreSQL migration failure in Run #751 was caused by a single-dollar PL/pgSQL delimiter and was corrected before Run #753. PR #23 remains Draft, unmerged and unapproved. Role authorization is still only integrated into supplier procurement; the other business verticals, minor-student guardian consent, country fee policy and production scheduler configuration remain incomplete.
 
 ## 8. Globalization gaps
 
@@ -208,7 +208,7 @@ HIJAZ ONE is not complete until:
 - No production SMTP/SMS/WhatsApp credentials supplied.
 - Read-only Hatchable Version 40 inventory is recorded in `docs/HATCHABLE_V40_INVENTORY.md`: 46 tables, 75 files, 25 API functions and 14 SQL migrations. The current admin-only backup endpoint exports only 17 of 46 tables and no import endpoint is present in the inventory. Full source-to-target mapping, storage-file manifest, staging export/import and reconciliation remain incomplete.
 - PR #20 MCP bridge remains draft pending authorized POST protocol tests.
-- PR #23 role-entitlement implementation remains Draft/unmerged with zero approvals; current-head CI passes, but role gates are not yet applied to transport, property, workforce, education and construction endpoints. Expiry state transitions, database-level role-event immutability and student-minor guardian consent remain incomplete.
+- PR #23 remains Draft/unmerged with zero approvals; exact-head Run #755 for `13de2075119b4863d54e7c561bbb316ee210c9c2` passes all five jobs. Role gates currently protect supplier procurement actions only; construction, transport, property, workforce and education routes still need implementation/migration. Bounded active/suspended expiry transitions and SQLite/PostgreSQL role-event immutability are implemented and tested; production cron scheduling and database-privilege hardening remain. Student-minor guardian consent is not implemented.
 - Existing HIJAZ ONE AI calls, OTP and external messaging were previously blocked by missing provider credentials; re-test after migration rather than assuming they work.
 
 ## 13. Immediate engineering backlog
@@ -217,7 +217,7 @@ HIJAZ ONE is not complete until:
 2. Review PR #20 and run authenticated Streamable HTTP POST protocol tests.
 3. Complete source-to-target table/API mapping, safe staging export/import tooling, storage-object manifest and record-count reconciliation from the Version 40 inventory.
 4. Export and map Hatchable database/files into a staging copy; reconcile counts.
-5. Complete central role entitlements across all verticals, add expiry state transitions/scheduling, database-level role-event immutability, student-minor guardian consent, and full tenant/role negative tests; PR #23 currently supplies only the initial implementation and supplier procurement integration.
+5. Extend central role authorization to every implemented/ported vertical endpoint with tenant and ownership negative tests; implement student-minor guardian consent, country-specific fee policy, identity evidence handling and an admin review queue. PR #23 now supplies supplier procurement gating, tested append-only event triggers and a bounded expiry sweep; still configure the production cron/CronJob and harden database privileges against trigger bypass.
 6. Port HIJAZ ONE business verticals incrementally.
 7. Complete portable deployment, worker health, backup/restore and independent-host rehearsal.
 8. Rename repository only after the release gates above pass.
