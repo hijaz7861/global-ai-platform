@@ -46,10 +46,19 @@ def upgrade() -> None:
         sa.Column("activated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.UniqueConstraint("user_id", "role_key", "organization_id", name="uq_user_role_entitlement_scope"),
         sa.CheckConstraint("status IN ('pending_payment','pending_review','active','rejected','expired','suspended','revoked')", name="ck_user_role_entitlements_status"),
         sa.CheckConstraint("payment_status IN ('not_required','pending','verified','rejected')", name="ck_user_role_entitlements_payment_status"),
         sa.CheckConstraint("fee_amount_minor >= 0", name="ck_user_role_entitlements_fee_nonnegative"),
+    )
+    op.create_index(
+        "uq_user_role_entitlement_global", "user_role_entitlements", ["user_id", "role_key"],
+        unique=True, postgresql_where=sa.text("organization_id IS NULL"),
+        sqlite_where=sa.text("organization_id IS NULL"),
+    )
+    op.create_index(
+        "uq_user_role_entitlement_org", "user_role_entitlements", ["user_id", "role_key", "organization_id"],
+        unique=True, postgresql_where=sa.text("organization_id IS NOT NULL"),
+        sqlite_where=sa.text("organization_id IS NOT NULL"),
     )
     op.create_index("ix_user_role_entitlements_user_status", "user_role_entitlements", ["user_id", "status"])
     op.create_index("ix_user_role_entitlements_role_status", "user_role_entitlements", ["role_key", "status"])
@@ -94,6 +103,8 @@ def downgrade() -> None:
     op.drop_index("ix_role_entitlement_events_entitlement_created", table_name="role_entitlement_events")
     op.drop_table("role_entitlement_events")
     op.drop_index("ix_user_role_entitlements_role_status", table_name="user_role_entitlements")
+    op.drop_index("uq_user_role_entitlement_org", table_name="user_role_entitlements")
+    op.drop_index("uq_user_role_entitlement_global", table_name="user_role_entitlements")
     op.drop_index("ix_user_role_entitlements_user_status", table_name="user_role_entitlements")
     op.drop_table("user_role_entitlements")
     op.drop_table("role_definitions")
