@@ -1268,3 +1268,75 @@ def test_role_entitlement_events_are_immutable_in_postgresql(monkeypatch):
                 )
     finally:
         engine.dispose()
+
+
+def test_postgres_maintenance_expires_due_role_entitlements_and_is_idempotent():
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.maintenance import run_maintenance_once
+    from app.models import RoleEntitlementEvent, User, UserRoleEntitlement
+
+    suffix = uuid4().hex
+    now = datetime.now(timezone.utc)
+    engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    try:
+        with factory() as db:
+            users = [
+                User(email=f"postgres-role-expiry-{index}-{suffix}@example.com", password_hash="test-hash")
+                for index in range(2)
+            ]
+            db.add_all(users)
+            db.flush()
+            entitlements = [
+                UserRoleEntitlement(
+                    user_id=users[0].id,
+                    role_key="student",
+                    status="active",
+                    payment_status="not_required",
+                    fee_amount_minor=0,
+                    fee_currency="PKR",
+                    activated_at=now - timedelta(days=30),
+                    expires_at=now - timedelta(seconds=1),
+                ),
+                UserRoleEntitlement(
+                    user_id=users[1].id,
+                    role_key="student",
+                    status="suspended",
+                    payment_status="not_required",
+                    fee_amount_minor=0,
+                    fee_currency="PKR",
+                    activated_at=now - timedelta(days=30),
+                    expires_at=now - timedelta(seconds=1),
+                ),
+            ]
+            db.add_all(entitlements)
+            db.commit()
+            entitlement_ids = {item.id for item in entitlements}
+
+        first = run_maintenance_once(factory, role_entitlement_limit=10, now=now)
+        assert first["expired_role_entitlements"] == 2
+        assert set(first["expired_role_entitlement_ids"]) == entitlement_ids
+
+        second = run_maintenance_once(factory, role_entitlement_limit=10, now=now)
+        assert second["expired_role_entitlements"] == 0
+        assert second["expired_role_entitlement_ids"] == []
+
+        with factory() as db:
+            statuses = {
+                item.id: item.status
+                for item in db.query(UserRoleEntitlement).filter(
+                    UserRoleEntitlement.id.in_(entitlement_ids)
+                ).all()
+            }
+            assert statuses == {item_id: "expired" for item_id in entitlement_ids}
+            events = db.query(RoleEntitlementEvent).filter(
+                RoleEntitlementEvent.entitlement_id.in_(entitlement_ids),
+                RoleEntitlementEvent.event_type == "expired",
+            ).all()
+            assert len(events) == 2
+            assert {event.details["previous_status"] for event in events} == {"active", "suspended"}
+    finally:
+        engine.dispose()

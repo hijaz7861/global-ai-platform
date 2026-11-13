@@ -1,4 +1,6 @@
 """Tests for independent user role applications and approval gates."""
+from datetime import timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete, select, update
@@ -10,7 +12,8 @@ from app.api.routes import identity as identity_routes
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import RoleDefinition, RoleEntitlementEvent, UserRoleEntitlement
+from app.models import RoleDefinition, RoleEntitlementEvent, UserRoleEntitlement, utc_now
+from app.services.role_entitlement_expiry import expire_due_role_entitlements
 
 _EMAIL_TOKENS: dict[str, str] = {}
 _TEST_SESSION_FACTORY = None
@@ -288,3 +291,41 @@ def test_role_entitlement_events_are_immutable_and_survive_entitlement_deletion(
             check_db.execute(delete(RoleEntitlementEvent).where(RoleEntitlementEvent.id == event_id))
             check_db.commit()
         check_db.rollback()
+
+
+def test_expired_role_entitlement_can_be_reapplied(client):
+    user_token = register(client, "expired-reapply@example.com")
+    admin_token = register(client, "platform@example.com")
+    headers = {"Authorization": f"Bearer {user_token}"}
+    application = client.post(
+        "/api/v1/me/role-entitlements",
+        headers=headers,
+        json={"role_key": "student"},
+    )
+    assert application.status_code == 201, application.text
+    entitlement_id = application.json()["id"]
+
+    approved = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/review",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"decision": "approve", "validity_days": 1},
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "active"
+
+    with _TEST_SESSION_FACTORY() as db:
+        now = utc_now()
+        entitlement = db.get(UserRoleEntitlement, entitlement_id)
+        entitlement.expires_at = now - timedelta(seconds=1)
+        db.commit()
+        expired_ids = expire_due_role_entitlements(db, now=now)
+        db.commit()
+    assert expired_ids == [entitlement_id]
+
+    reapplied = client.post(
+        "/api/v1/me/role-entitlements",
+        headers=headers,
+        json={"role_key": "student"},
+    )
+    assert reapplied.status_code == 201, reapplied.text
+    assert reapplied.json()["id"] != entitlement_id
