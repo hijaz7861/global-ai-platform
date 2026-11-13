@@ -77,29 +77,46 @@ def require_membership(
     return membership
 
 
-def require_active_role(role_key: str):
-    """Dependency factory: deny access unless this user holds an active, unexpired role."""
-    from app.models import UserRoleEntitlement
+def require_active_role(role_key: str, *, organization_scoped: bool = False):
+    """Require a verified, paid/fee-exempt, age-cleared, active role in the exact scope."""
+    from app.models import RoleDefinition, UserRoleEntitlement
 
     def dependency(
         user: Annotated[User, Depends(get_current_user)],
         db: Annotated[Session, Depends(get_db)],
+        organization_id: str | None = None,
     ) -> UserRoleEntitlement:
-        entitlement = db.scalar(
-            select(UserRoleEntitlement).where(
-                UserRoleEntitlement.user_id == user.id,
-                UserRoleEntitlement.role_key == role_key,
-                UserRoleEntitlement.status == "active",
-            ).order_by(UserRoleEntitlement.activated_at.desc())
+        detail = f"Active verified {role_key} role entitlement required"
+        if not user.email_verified:
+            raise HTTPException(status_code=403, detail="Verified email required for platform role access")
+        if organization_scoped and not organization_id:
+            raise HTTPException(status_code=403, detail=detail)
+
+        statement = select(UserRoleEntitlement).where(
+            UserRoleEntitlement.user_id == user.id,
+            UserRoleEntitlement.role_key == role_key,
+            UserRoleEntitlement.status == "active",
         )
-        if entitlement is None:
-            raise HTTPException(status_code=403, detail=f"Active {role_key} role entitlement required")
+        if organization_scoped:
+            statement = statement.where(UserRoleEntitlement.organization_id == organization_id)
+        else:
+            statement = statement.where(UserRoleEntitlement.organization_id.is_(None))
+        entitlement = db.scalar(statement.order_by(UserRoleEntitlement.activated_at.desc()))
+        role = db.get(RoleDefinition, role_key)
+        if entitlement is None or role is None or not role.is_active:
+            raise HTTPException(status_code=403, detail=detail)
+        if entitlement.fee_amount_minor > 0 and entitlement.payment_status != "verified":
+            raise HTTPException(status_code=403, detail=detail)
+        if entitlement.fee_amount_minor == 0 and entitlement.payment_status not in {"not_required", "verified"}:
+            raise HTTPException(status_code=403, detail=detail)
+        if role.min_age > 0 and not entitlement.age_verified:
+            raise HTTPException(status_code=403, detail=detail)
         expiry = entitlement.expires_at
         if expiry is not None:
             if expiry.tzinfo is None:
                 expiry = expiry.replace(tzinfo=timezone.utc)
             if expiry <= datetime.now(timezone.utc):
-                raise HTTPException(status_code=403, detail=f"Active {role_key} role entitlement required")
+                raise HTTPException(status_code=403, detail=detail)
         return entitlement
 
     return dependency

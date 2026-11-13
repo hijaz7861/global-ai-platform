@@ -52,20 +52,20 @@ def upgrade() -> None:
     )
     op.create_index(
         "uq_user_role_entitlement_global", "user_role_entitlements", ["user_id", "role_key"],
-        unique=True, postgresql_where=sa.text("organization_id IS NULL"),
-        sqlite_where=sa.text("organization_id IS NULL"),
+        unique=True, postgresql_where=sa.text("organization_id IS NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
+        sqlite_where=sa.text("organization_id IS NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
     )
     op.create_index(
         "uq_user_role_entitlement_org", "user_role_entitlements", ["user_id", "role_key", "organization_id"],
-        unique=True, postgresql_where=sa.text("organization_id IS NOT NULL"),
-        sqlite_where=sa.text("organization_id IS NOT NULL"),
+        unique=True, postgresql_where=sa.text("organization_id IS NOT NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
+        sqlite_where=sa.text("organization_id IS NOT NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
     )
     op.create_index("ix_user_role_entitlements_user_status", "user_role_entitlements", ["user_id", "status"])
     op.create_index("ix_user_role_entitlements_role_status", "user_role_entitlements", ["role_key", "status"])
     op.create_table(
         "role_entitlement_events",
         sa.Column("id", sa.String(length=36), primary_key=True),
-        sa.Column("entitlement_id", sa.String(length=36), sa.ForeignKey("user_role_entitlements.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("entitlement_id", sa.String(length=36), nullable=False),
         sa.Column("actor_user_id", sa.String(length=36), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
         sa.Column("event_type", sa.String(length=64), nullable=False),
         sa.Column("details", sa.JSON(), nullable=False),

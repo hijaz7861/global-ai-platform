@@ -1,6 +1,6 @@
 """Independent user role applications, fees and platform-admin review."""
-from datetime import timedelta
-from typing import Annotated
+from datetime import timedelta, timezone
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
@@ -35,11 +35,15 @@ class RoleApplicationCreate(BaseModel):
 
 
 class RoleReviewRequest(BaseModel):
-    decision: str = Field(pattern="^(approve|reject)$")
+    decision: Literal["approve", "reject"]
     payment_verified: bool = False
     age_verified: bool = False
     notes: str | None = Field(default=None, max_length=1000)
     validity_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class RoleLifecycleRequest(BaseModel):
+    action: Literal["suspend", "revoke", "reinstate"]
 
 
 class RoleDefinitionUpdate(BaseModel):
@@ -124,8 +128,8 @@ def apply_for_role(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    if settings.require_email_verification and not user.email_verified:
-        raise HTTPException(status_code=403, detail="Email verification required before applying for a platform role")
+    if not user.email_verified:
+        raise HTTPException(status_code=403, detail="Verified email required before applying for a platform role")
     role = db.get(RoleDefinition, payload.role_key)
     if role is None or not role.is_active:
         raise HTTPException(status_code=404, detail="Role is unavailable")
@@ -192,8 +196,8 @@ def update_role_definition(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    if not _is_platform_admin(user.email):
-        raise HTTPException(status_code=403, detail="Platform administrator role required")
+    if not user.email_verified or not _is_platform_admin(user.email):
+        raise HTTPException(status_code=403, detail="Verified platform administrator required")
     role = db.get(RoleDefinition, role_key)
     if role is None:
         raise HTTPException(status_code=404, detail="Role not found")
@@ -219,8 +223,8 @@ def review_role_entitlement(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
-    if not _is_platform_admin(user.email):
-        raise HTTPException(status_code=403, detail="Platform administrator role required")
+    if not user.email_verified or not _is_platform_admin(user.email):
+        raise HTTPException(status_code=403, detail="Verified platform administrator required")
     item = db.get(UserRoleEntitlement, entitlement_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Role application not found")
@@ -262,6 +266,74 @@ def review_role_entitlement(
         db, actor_user_id=user.id, organization_id=item.organization_id,
         action="role_entitlement.reviewed", entity_type="user_role_entitlement",
         entity_id=item.id, details={"role_key": item.role_key, "status": item.status},
+    )
+    db.commit()
+    db.refresh(item)
+    return _entitlement_payload(item, role)
+
+
+
+@router.post("/platform/role-entitlements/{entitlement_id}/lifecycle")
+def update_role_entitlement_lifecycle(
+    entitlement_id: str,
+    payload: RoleLifecycleRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """Suspend, revoke, or safely reinstate an existing role entitlement."""
+    if not user.email_verified or not _is_platform_admin(user.email):
+        raise HTTPException(status_code=403, detail="Verified platform administrator required")
+    item = db.get(UserRoleEntitlement, entitlement_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Role entitlement not found")
+    role = db.get(RoleDefinition, item.role_key)
+    if role is None:
+        raise HTTPException(status_code=409, detail="Role definition is unavailable")
+
+    now = utc_now()
+    if payload.action == "suspend":
+        if item.status != "active":
+            raise HTTPException(status_code=409, detail="Only active entitlements can be suspended")
+        item.status = "suspended"
+    elif payload.action == "revoke":
+        if item.status in {"revoked", "expired"}:
+            raise HTTPException(status_code=409, detail="Entitlement is already terminal")
+        item.status = "revoked"
+    else:
+        if item.status != "suspended":
+            raise HTTPException(status_code=409, detail="Only suspended entitlements can be reinstated")
+        expiry = item.expires_at
+        if expiry is not None:
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if expiry <= now:
+                raise HTTPException(status_code=409, detail="Expired entitlements cannot be reinstated")
+        owner = db.get(User, item.user_id)
+        if owner is None or not owner.is_active or not owner.email_verified or not role.is_active:
+            raise HTTPException(status_code=409, detail="Verified account and active role definition are required")
+        if item.fee_amount_minor > 0 and item.payment_status != "verified":
+            raise HTTPException(status_code=409, detail="Verified payment is required for reinstatement")
+        if item.fee_amount_minor == 0 and item.payment_status not in {"not_required", "verified"}:
+            raise HTTPException(status_code=409, detail="Valid fee-exempt payment state is required")
+        if role.min_age > 0 and not item.age_verified:
+            raise HTTPException(status_code=409, detail="Verified age and identity evidence is required")
+        item.status = "active"
+
+    item.updated_at = now
+    db.add(RoleEntitlementEvent(
+        entitlement_id=item.id,
+        actor_user_id=user.id,
+        event_type=payload.action,
+        details={"role_key": item.role_key, "status": item.status},
+    ))
+    record_audit_event(
+        db,
+        actor_user_id=user.id,
+        organization_id=item.organization_id,
+        action=f"role_entitlement.{payload.action}",
+        entity_type="user_role_entitlement",
+        entity_id=item.id,
+        details={"role_key": item.role_key, "status": item.status},
     )
     db.commit()
     db.refresh(item)

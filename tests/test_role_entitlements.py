@@ -5,10 +5,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import models  # noqa: F401
+from app.api.routes import identity as identity_routes
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
+from app.models import RoleDefinition
+
+_EMAIL_TOKENS: dict[str, str] = {}
 
 
 @pytest.fixture
@@ -18,6 +21,25 @@ def client(monkeypatch):
     Base.metadata.create_all(bind=engine)
     monkeypatch.setattr(settings, "secret_key", "test-only-signing-key-not-for-production")
     monkeypatch.setattr(settings, "platform_admin_emails", "platform@example.com")
+    monkeypatch.setattr(settings, "require_email_verification", True)
+    _EMAIL_TOKENS.clear()
+    monkeypatch.setattr(
+        identity_routes,
+        "send_email_verification",
+        lambda email, token: _EMAIL_TOKENS.__setitem__(email, token),
+    )
+    with TestingSessionLocal() as db:
+        db.add_all([
+            RoleDefinition(role_key="student", display_name="Student", description="Student account", min_age=0,
+                           fee_amount_minor=0, fee_currency="PKR", requires_review=True, is_active=True),
+            RoleDefinition(role_key="teacher", display_name="Teacher", description="Teacher profile", min_age=18,
+                           fee_amount_minor=20_000, fee_currency="PKR", requires_review=True, is_active=True),
+            RoleDefinition(role_key="contractor", display_name="Contractor", description="Contractor profile", min_age=18,
+                           fee_amount_minor=50_000, fee_currency="PKR", requires_review=True, is_active=True),
+            RoleDefinition(role_key="supplier", display_name="Supplier", description="Supplier profile", min_age=18,
+                           fee_amount_minor=None, fee_currency="PKR", requires_review=True, is_active=True),
+        ])
+        db.commit()
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -32,11 +54,17 @@ def client(monkeypatch):
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
+    _EMAIL_TOKENS.clear()
 
 
-def register(client: TestClient, email: str) -> str:
+def register(client: TestClient, email: str, *, verify: bool = True) -> str:
     password = "correct-horse-battery-12"
-    assert client.post("/api/v1/auth/register", json={"email": email, "password": password}).status_code == 201
+    created = client.post("/api/v1/auth/register", json={"email": email, "password": password})
+    assert created.status_code == 201, created.text
+    if verify:
+        raw_token = _EMAIL_TOKENS.pop(email)
+        verified = client.post("/api/v1/auth/email-verification/confirm", json={"token": raw_token})
+        assert verified.status_code == 204, verified.text
     token = client.post("/api/v1/auth/token", json={"email": email, "password": password})
     assert token.status_code == 200, token.text
     return token.json()["access_token"]
@@ -52,10 +80,24 @@ def test_user_can_apply_for_multiple_independent_roles(client):
     assert student.json()["status"] == "pending_review"
     assert student.json()["payment_status"] == "not_required"
     assert teacher.json()["status"] == "pending_payment"
-    assert teacher.json()["fee_amount_minor"] == 20000
+    assert teacher.json()["fee_amount_minor"] == 20_000
+    duplicate = client.post("/api/v1/me/role-entitlements", headers=headers, json={"role_key": "student"})
+    assert duplicate.status_code == 409
     roles = client.get("/api/v1/me/role-entitlements", headers=headers)
     assert roles.status_code == 200
     assert {row["role_key"] for row in roles.json()} == {"student", "teacher"}
+
+
+def test_unverified_email_cannot_apply_even_when_global_toggle_is_disabled(client, monkeypatch):
+    monkeypatch.setattr(settings, "require_email_verification", False)
+    token = register(client, "unverified@example.com", verify=False)
+    response = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"role_key": "student"},
+    )
+    assert response.status_code == 403
+    assert "verified email" in response.json()["detail"].lower()
 
 
 def test_role_with_unconfigured_fee_cannot_be_requested(client):
@@ -71,8 +113,11 @@ def test_role_with_unconfigured_fee_cannot_be_requested(client):
 def test_paid_role_cannot_be_activated_without_verified_payment(client):
     user_token = register(client, "teacher@example.com")
     admin_token = register(client, "platform@example.com")
-    headers = {"Authorization": f"Bearer {user_token}"}
-    application = client.post("/api/v1/me/role-entitlements", headers=headers, json={"role_key": "teacher"})
+    application = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"role_key": "teacher"},
+    )
     entitlement_id = application.json()["id"]
     review = client.post(
         f"/api/v1/platform/role-entitlements/{entitlement_id}/review",
@@ -92,6 +137,13 @@ def test_paid_role_requires_admin_payment_and_age_verification(client):
         json={"role_key": "contractor", "payment_reference": "MANUAL-REF-001"},
     )
     entitlement_id = application.json()["id"]
+    missing_age = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/review",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"decision": "approve", "payment_verified": True},
+    )
+    assert missing_age.status_code == 409
+    assert "age" in missing_age.json()["detail"].lower()
     response = client.post(
         f"/api/v1/platform/role-entitlements/{entitlement_id}/review",
         headers={"Authorization": f"Bearer {admin_token}"},
@@ -116,3 +168,64 @@ def test_non_admin_cannot_review_role_applications(client):
         json={"decision": "approve"},
     )
     assert response.status_code == 403
+
+
+def test_rejected_application_can_be_reapplied_for(client):
+    user_token = register(client, "reapply@example.com")
+    admin_token = register(client, "platform@example.com")
+    headers = {"Authorization": f"Bearer {user_token}"}
+    first = client.post("/api/v1/me/role-entitlements", headers=headers, json={"role_key": "student"})
+    assert first.status_code == 201
+    rejected = client.post(
+        f"/api/v1/platform/role-entitlements/{first.json()['id']}/review",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"decision": "reject", "notes": "Test rejection"},
+    )
+    assert rejected.status_code == 200
+    second = client.post("/api/v1/me/role-entitlements", headers=headers, json={"role_key": "student"})
+    assert second.status_code == 201, second.text
+    assert second.json()["id"] != first.json()["id"]
+
+
+def test_admin_can_suspend_reinstate_and_revoke_role(client):
+    user_token = register(client, "lifecycle@example.com")
+    admin_token = register(client, "platform@example.com")
+    application = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"role_key": "student"},
+    )
+    entitlement_id = application.json()["id"]
+    approved = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/review",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"decision": "approve"},
+    )
+    assert approved.status_code == 200
+    suspended = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/lifecycle",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"action": "suspend"},
+    )
+    assert suspended.status_code == 200
+    assert suspended.json()["status"] == "suspended"
+    reinstated = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/lifecycle",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"action": "reinstate"},
+    )
+    assert reinstated.status_code == 200
+    assert reinstated.json()["status"] == "active"
+    revoked = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/lifecycle",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"action": "revoke"},
+    )
+    assert revoked.status_code == 200
+    assert revoked.json()["status"] == "revoked"
+    terminal_reinstate = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/lifecycle",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"action": "reinstate"},
+    )
+    assert terminal_reinstate.status_code == 409

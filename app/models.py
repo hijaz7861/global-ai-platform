@@ -927,13 +927,13 @@ class UserRoleEntitlement(Base):
     __table_args__ = (
         Index(
             "uq_user_role_entitlement_global", "user_id", "role_key", unique=True,
-            postgresql_where=text("organization_id IS NULL"),
-            sqlite_where=text("organization_id IS NULL"),
+            postgresql_where=text("organization_id IS NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
+            sqlite_where=text("organization_id IS NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
         ),
         Index(
             "uq_user_role_entitlement_org", "user_id", "role_key", "organization_id", unique=True,
-            postgresql_where=text("organization_id IS NOT NULL"),
-            sqlite_where=text("organization_id IS NOT NULL"),
+            postgresql_where=text("organization_id IS NOT NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
+            sqlite_where=text("organization_id IS NOT NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
         ),
         CheckConstraint(
             "status IN ('pending_payment','pending_review','active','rejected','expired','suspended','revoked')",
@@ -976,7 +976,7 @@ class RoleEntitlementEvent(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    entitlement_id: Mapped[str] = mapped_column(ForeignKey("user_role_entitlements.id", ondelete="CASCADE"), nullable=False)
+    entitlement_id: Mapped[str] = mapped_column(String(36), nullable=False)
     actor_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)

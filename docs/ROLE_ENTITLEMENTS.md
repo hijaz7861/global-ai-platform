@@ -19,18 +19,23 @@ Amounts are stored as integer minor units (for PKR, paisa). These are initial Pa
 ## API lifecycle
 
 - `GET /api/v1/role-definitions`: list active role definitions and whether the fee is configured.
-- `POST /api/v1/me/role-entitlements`: apply for a role; the server snapshots the configured fee and currency.
+- `POST /api/v1/me/role-entitlements`: apply for a role; the server snapshots the configured fee and currency. A verified email is mandatory even when general email-verification enforcement is disabled.
 - `GET /api/v1/me/role-entitlements`: list only the authenticated user's applications.
 - `PATCH /api/v1/platform/role-definitions/{role_key}`: platform-admin-only fee/currency/minimum-age/availability configuration.
 - `POST /api/v1/platform/role-entitlements/{id}/review`: platform-admin-only approve/reject; activation requires explicit payment verification for paid roles and explicit age verification where required.
+- `POST /api/v1/platform/role-entitlements/{id}/lifecycle`: platform-admin-only suspend, reinstate, or permanently revoke an entitlement. Reinstatement rechecks the entitlement owner's verified email, role availability, payment, age, and expiry gates.
 
 A paid role starts in `pending_payment`; a free role starts in `pending_review`. A user-supplied payment reference is evidence for manual review only and never marks a payment as verified. Only the platform administrator review action can mark the fee verified and activate the entitlement. The approval action also requires the administrator to affirm that age/identity evidence has been checked for adult roles.
 
+Rejected, expired, and revoked applications no longer occupy the active/pending uniqueness slot, so a user may submit a new application after a terminal decision. Pending, active, and suspended applications remain unique per user/role/scope. Entitlement event records are not cascade-deleted with the entitlement; database-level append-only permissions/triggers remain a separate release-hardening item.
+
 ## Server-side authorization
 
-Use `require_active_role("role_key")` as a FastAPI dependency on every role-specific route. It rejects missing, pending, rejected, expired, suspended, and revoked entitlements. Organization membership checks remain separate and must also be applied where a role action is organization-scoped.
+Use `require_active_role("role_key")` as a FastAPI dependency on every role-specific route. It requires a verified email, active role definition, active unexpired entitlement, verified payment for paid roles, and age verification for adult roles. `organization_scoped=True` requires an entitlement for the exact `organization_id` path scope; it never silently substitutes a role from another organization. Organization membership and resource ownership checks remain separate and must also be applied.
 
-The current migration establishes the entitlement system and reusable authorization dependency. Existing supplier, transport, property, workforce, education and construction endpoints still need to be migrated to this dependency before the corresponding vertical can be declared protected by the central role system.
+The supplier procurement workflow now requires an active organization-scoped supplier entitlement for quote submission, revision, withdrawal, and purchase-order fulfilment. Supplier profile creation/submission and platform review remain available as the onboarding path before activation.
+
+The current migration establishes the entitlement system and reusable authorization dependency. Existing transport, property, workforce, education and construction endpoints still need to be migrated to this dependency before those verticals can be declared protected by the central role system.
 
 ## Security limitations and next work
 
@@ -38,4 +43,4 @@ The current migration establishes the entitlement system and reusable authorizat
 - Age verification is an administrator attestation; no identity-document or biometric verification provider is integrated.
 - Role definitions are currently a platform-level catalogue. Country-specific fee policies and organization-scoped role entitlements need an additional policy layer before multi-country commercial launch.
 - Existing Hatchable profiles are not automatically imported or activated. A reviewed mapping and user/organization reconciliation is required.
-- Role-entitlement events are append-only by application convention; production database permissions/trigger hardening should be added to the audit hardening phase.
+- Entitlement event rows survive entitlement deletion, but database-level update/delete immutability is not yet enforced; add database permissions/triggers before production release.
