@@ -146,7 +146,7 @@ Hatchable can remain a temporary front-end/hosting environment. Do not let Hatch
 ## 10. Delivery phases and acceptance criteria
 
 ### Phase 0 — Inventory
-- Inventory master, PRs, branches, migrations, dependencies, tests, deployment files and Hatchable schema.
+- Inventory master, PRs, branches, migrations, dependencies, tests, deployment files and Hatchable schema. The read-only Hatchable Version 40 inventory is recorded in `docs/HATCHABLE_V40_INVENTORY.md`; no business data was exported or copied.
 - Produce source-to-target table/API mapping and identify duplicate/contradictory rules.
 - No destructive migration.
 
@@ -204,7 +204,7 @@ HIJAZ ONE is not complete until:
 - No hosting budget or paid plan authorized.
 - No payment provider credentials/webhook setup supplied.
 - No production SMTP/SMS/WhatsApp credentials supplied.
-- Hatchable data export and schema mapping not yet completed.
+- Read-only Hatchable Version 40 inventory is recorded in `docs/HATCHABLE_V40_INVENTORY.md`: 46 tables, 75 files, 25 API functions and 14 SQL migrations. The current admin-only backup endpoint exports only 17 of 46 tables and no import endpoint is present in the inventory. Full source-to-target mapping, storage-file manifest, staging export/import and reconciliation remain incomplete.
 - PR #20 MCP bridge remains draft pending authorized POST protocol tests.
 - Existing HIJAZ ONE AI calls, OTP and external messaging were previously blocked by missing provider credentials; re-test after migration rather than assuming they work.
 
@@ -212,7 +212,7 @@ HIJAZ ONE is not complete until:
 
 1. Verify current master after PR #21 merge and inspect Alembic head consistency.
 2. Review PR #20 and run authenticated Streamable HTTP POST protocol tests.
-3. Inventory all current source files, migrations, test coverage and provider integrations.
+3. Complete source-to-target table/API mapping, safe staging export/import tooling, storage-object manifest and record-count reconciliation from the Version 40 inventory.
 4. Export and map Hatchable database/files into a staging copy; reconcile counts.
 5. Implement central role entitlements with full authorization tests.
 6. Port HIJAZ ONE business verticals incrementally.
