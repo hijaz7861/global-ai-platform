@@ -318,6 +318,7 @@ def update_role_entitlement_lifecycle(
         if role.min_age > 0 and not item.age_verified:
             raise HTTPException(status_code=409, detail="Verified age and identity evidence is required")
         item.status = "active"
+        item.activated_at = now
 
     item.updated_at = now
     db.add(RoleEntitlementEvent(

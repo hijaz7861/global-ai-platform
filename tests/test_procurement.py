@@ -361,13 +361,20 @@ def test_procurement_requires_approved_supplier_and_matching_currency(client):
     assert unapproved.status_code == 403
 
     admin_token = register(client, "platform-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
     approve_supplier(
         client,
         supplier_token,
         supplier_org,
         "Unapproved Supplier Ltd",
-        {"Authorization": f"Bearer {admin_token}"},
+        admin_headers,
     )
+    approved_profile_without_role = client.post(
+        quote_url,
+        headers={"Authorization": f"Bearer {supplier_token}"},
+        json={"unit_price_minor": 500, "currency": "PKR", "lead_time_days": 4},
+    )
+    assert approved_profile_without_role.status_code == 403
     configure_supplier_role(client, admin_headers)
     entitlement_id = apply_supplier_role(client, supplier_token, supplier_org)
     pending_role = client.post(
