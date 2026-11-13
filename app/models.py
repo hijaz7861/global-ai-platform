@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
     true,
     false,
 )
@@ -924,7 +925,16 @@ class UserRoleEntitlement(Base):
     """A user's independent request, payment and approval lifecycle for one platform role."""
     __tablename__ = "user_role_entitlements"
     __table_args__ = (
-        UniqueConstraint("user_id", "role_key", "organization_id", name="uq_user_role_entitlement_scope"),
+        Index(
+            "uq_user_role_entitlement_global", "user_id", "role_key", unique=True,
+            postgresql_where=text("organization_id IS NULL"),
+            sqlite_where=text("organization_id IS NULL"),
+        ),
+        Index(
+            "uq_user_role_entitlement_org", "user_id", "role_key", "organization_id", unique=True,
+            postgresql_where=text("organization_id IS NOT NULL"),
+            sqlite_where=text("organization_id IS NOT NULL"),
+        ),
         CheckConstraint(
             "status IN ('pending_payment','pending_review','active','rejected','expired','suspended','revoked')",
             name="ck_user_role_entitlements_status",
