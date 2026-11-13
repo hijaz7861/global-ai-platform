@@ -844,7 +844,14 @@ def test_journal_posting_serializes_with_period_closure_and_trigger_blocks_close
 
 def test_concurrent_procurement_awards_accept_exactly_one_supplier_quote(monkeypatch):
     from app.core.config import settings
+    from app.api.routes import identity as identity_routes
 
+    verification_tokens: dict[str, str] = {}
+    monkeypatch.setattr(
+        identity_routes,
+        "send_email_verification",
+        lambda email, token: verification_tokens.__setitem__(email, token),
+    )
     suffix = uuid4().hex
     password = "correct-horse-battery-12"
     admin_email = f"postgres-proc-admin-{suffix}@example.com"
@@ -861,6 +868,12 @@ def test_concurrent_procurement_awards_accept_exactly_one_supplier_quote(monkeyp
             json={"email": email, "password": password},
         )
         assert registered.status_code == 201, registered.text
+        raw_token = verification_tokens.pop(email)
+        verified = client.post(
+            "/api/v1/auth/email-verification/confirm",
+            json={"token": raw_token},
+        )
+        assert verified.status_code == 204, verified.text
         login = client.post(
             "/api/v1/auth/token",
             json={"email": email, "password": password},
@@ -871,6 +884,12 @@ def test_concurrent_procurement_awards_accept_exactly_one_supplier_quote(monkeyp
     with TestClient(app) as client:
         admin_token = register_and_login(client, admin_email)
         admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        configured_role = client.patch(
+            "/api/v1/platform/role-definitions/supplier",
+            headers=admin_headers,
+            json={"fee_amount_minor": 100, "fee_currency": "PKR", "min_age": 18, "is_active": True},
+        )
+        assert configured_role.status_code == 200, configured_role.text
         buyer_token = register_and_login(client, buyer_email)
         buyer_org = client.post(
             "/api/v1/organizations",
@@ -917,6 +936,19 @@ def test_concurrent_procurement_awards_accept_exactly_one_supplier_quote(monkeyp
                 json={"decision": "approved", "notes": "CI test approval"},
             )
             assert reviewed.status_code == 200, reviewed.text
+            entitlement = client.post(
+                "/api/v1/me/role-entitlements",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"role_key": "supplier", "organization_id": supplier_org_id},
+            )
+            assert entitlement.status_code == 201, entitlement.text
+            role_review = client.post(
+                f"/api/v1/platform/role-entitlements/{entitlement.json()['id']}/review",
+                headers=admin_headers,
+                json={"decision": "approve", "payment_verified": True, "age_verified": True},
+            )
+            assert role_review.status_code == 200, role_review.text
+            assert role_review.json()["status"] == "active"
 
         request = client.post(
             f"/api/v1/organizations/{buyer_org_id}/procurement-requests",
