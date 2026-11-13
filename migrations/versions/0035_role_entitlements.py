@@ -95,11 +95,11 @@ def upgrade() -> None:
             CREATE OR REPLACE FUNCTION prevent_role_entitlement_event_mutation()
             RETURNS trigger
             LANGUAGE plpgsql
-            AS $
+            AS $$
             BEGIN
                 RAISE EXCEPTION 'role entitlement events are append-only';
             END;
-            $
+            $$
         """)
         op.execute("""
             CREATE TRIGGER role_entitlement_events_no_update_or_delete
