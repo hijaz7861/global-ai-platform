@@ -13,7 +13,7 @@ from app.audit import record_audit_event
 from app.core.config import settings
 from app.db import get_db
 from app.models import (
-    Membership, Organization, RoleDefinition, RoleEntitlementEvent,
+    Membership, RoleDefinition, RoleEntitlementEvent,
     User, UserRoleEntitlement, utc_now,
 )
 
@@ -162,19 +162,19 @@ def apply_for_role(
         payment_reference=payload.payment_reference,
     )
     db.add(item)
-    db.flush()
-    db.add(RoleEntitlementEvent(
+    try:
+        db.flush()
+        db.add(RoleEntitlementEvent(
         entitlement_id=item.id,
         actor_user_id=user.id,
         event_type="application_submitted",
         details={"role_key": role.role_key, "fee_amount_minor": fee, "fee_currency": role.fee_currency},
-    ))
-    record_audit_event(
-        db, actor_user_id=user.id, organization_id=payload.organization_id,
-        action="role_entitlement.applied", entity_type="user_role_entitlement",
-        entity_id=item.id, details={"role_key": role.role_key, "status": status_value},
-    )
-    try:
+        ))
+        record_audit_event(
+            db, actor_user_id=user.id, organization_id=payload.organization_id,
+            action="role_entitlement.applied", entity_type="user_role_entitlement",
+            entity_id=item.id, details={"role_key": role.role_key, "status": status_value},
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -236,7 +236,7 @@ def review_role_entitlement(
             raise HTTPException(status_code=409, detail="Verified payment is required before role activation")
         if item.fee_amount_minor > 0:
             item.payment_status = "verified"
-        if role.min_age >= 18 and not payload.age_verified:
+        if role.min_age > 0 and not payload.age_verified:
             raise HTTPException(status_code=409, detail="Verified age and identity evidence is required for this role")
         item.age_verified = payload.age_verified
         item.status = "active"
