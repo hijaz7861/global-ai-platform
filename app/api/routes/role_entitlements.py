@@ -124,6 +124,8 @@ def apply_for_role(
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
+    if settings.require_email_verification and not user.email_verified:
+        raise HTTPException(status_code=403, detail="Email verification required before applying for a platform role")
     role = db.get(RoleDefinition, payload.role_key)
     if role is None or not role.is_active:
         raise HTTPException(status_code=404, detail="Role is unavailable")
@@ -165,10 +167,10 @@ def apply_for_role(
     try:
         db.flush()
         db.add(RoleEntitlementEvent(
-        entitlement_id=item.id,
-        actor_user_id=user.id,
-        event_type="application_submitted",
-        details={"role_key": role.role_key, "fee_amount_minor": fee, "fee_currency": role.fee_currency},
+            entitlement_id=item.id,
+            actor_user_id=user.id,
+            event_type="application_submitted",
+            details={"role_key": role.role_key, "fee_amount_minor": fee, "fee_currency": role.fee_currency},
         ))
         record_audit_event(
             db, actor_user_id=user.id, organization_id=payload.organization_id,
