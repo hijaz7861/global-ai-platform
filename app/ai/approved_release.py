@@ -1,21 +1,17 @@
-"""Bridge signed human approvals into the fail-closed staged-release gate.
-
-This is a policy helper, not an HTTP endpoint or deployment executor. The caller
-must authenticate the request, supply a trusted allowlist/key, and keep nonce
-storage durable. It never deploys or performs external side effects.
-"""
+"""Bridge signed human approvals into the fail-closed staged-release gate."""
 from __future__ import annotations
 
 from collections.abc import Collection
 from dataclasses import replace
 from hashlib import sha256
+from typing import Protocol
 
 from app.ai.autonomy_gate import ChangeEvidence, GateDecision, GateResult, evaluate_change
-from app.ai.human_approval import (
-    SignedHumanApproval,
-    verify_human_approval_with_sqlite_store,
-)
-from app.ai.nonce_store import SQLiteNonceStore
+from app.ai.human_approval import SignedHumanApproval, verify_human_approval
+
+
+class NonceConsumer(Protocol):
+    def consume_nonce(self, nonce: str) -> bool: ...
 
 
 def evaluate_change_with_signed_approval(
@@ -24,14 +20,14 @@ def evaluate_change_with_signed_approval(
     *,
     approval_key: bytes,
     allowed_actor_ids: Collection[str],
-    nonce_store: SQLiteNonceStore,
+    nonce_store: NonceConsumer,
     now: int | None = None,
 ) -> GateResult:
     """Require a valid one-time approval bound to the exact artifact before release.
 
-    All artifact/evidence/rollback checks run before consuming the approval nonce.
-    Approval cannot override a failed check or turn a sandbox-only request into a
-    release request. The function only returns a decision; it never deploys.
+    Pass SQLiteNonceStore for local single-host use or PostgresNonceStore for
+    shared production workers. Storage errors propagate and therefore fail closed.
+    This function only returns a policy decision; it never deploys.
     """
     actual_digest = sha256(evidence.artifact).hexdigest()
     if not evidence.production_release_requested:
@@ -41,18 +37,16 @@ def evaluate_change_with_signed_approval(
             actual_digest,
         )
 
-    # Ignore the legacy boolean supplied on the evidence object: this path accepts
-    # only a cryptographically verified, action-bound approval.
     preliminary = evaluate_change(replace(evidence, human_approval=False))
     if preliminary.decision is GateDecision.DENY:
         return preliminary
 
-    valid, reason = verify_human_approval_with_sqlite_store(
+    valid, reason = verify_human_approval(
         signed_approval,
         key=approval_key,
         expected_action_sha256=actual_digest,
         allowed_actor_ids=allowed_actor_ids,
-        nonce_store=nonce_store,
+        consume_nonce=nonce_store.consume_nonce,
         now=now,
     )
     if not valid:

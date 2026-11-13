@@ -17,7 +17,7 @@ These modules are policy/evidence components. They are not an AI agent, code exe
 3. Compute SHA-256 on the exact artifact bytes and compare against the recorded digest. A digest detects content changes relative to a trusted expected value; it does not authenticate the proposer.
 4. Execute the proposal only in an isolated disposable runner with no production credentials, no production network access by default, resource/time limits, and an allowlisted dependency source.
 5. A trusted sandbox controller signs the test/security/regression result, exact artifact digest, run ID, sandbox ID, issue time, and unique nonce using HMAC-SHA-256. Keep the HMAC key in a secret manager; never expose it to model prompts or candidate code.
-6. Verify the attestation and atomically consume its nonce in durable shared storage. The verification API accepts a callback for this purpose, but the production storage implementation is not included yet. In-memory sets are not sufficient across workers or restarts.
+6. Verify the attestation and atomically consume its nonce in durable shared storage. Use `PostgresNonceStore` (migration `0034_postgres_approval_nonces`) across production workers; retain `SQLiteNonceStore` for single-host local development. In-memory sets are not sufficient across workers or restarts.
 7. Pass independently authenticated evidence to the deterministic gate. Missing, stale, mismatched, replayed, or failed evidence denies release.
 8. Keep changes sandbox-only by default. High/critical risk and all production releases require human approval. Production release additionally requires a verified rollback plan.
 9. Deploy only through a separate, least-privilege staged deployment service. The gate itself must never execute commands or deploy code.
@@ -37,6 +37,6 @@ These modules are policy/evidence components. They are not an AI agent, code exe
 
 ## Current implementation boundary
 
-Implemented in this draft: deterministic release gate, HMAC-SHA-256 evidence signing/verification helpers, freshness and artifact-binding checks, replay protection via an injected nonce-consumption contract, and unit tests.
+Implemented in this draft: deterministic release gate, HMAC-SHA-256 evidence signing/verification helpers, freshness and artifact-binding checks, replay protection via an injected nonce-consumption contract, SQLite local storage, shared PostgreSQL storage (`PostgresNonceStore`), and concurrent PostgreSQL replay integration coverage.
 
-Still not implemented: actual disposable sandbox provisioning, hardened resource/network isolation, scanner integrations, durable atomic nonce storage, trusted evidence-signing service and key rotation, queue/workflow persistence, admin UI and RBAC, signed human approvals, append-only audit integration, staged deployment, monitoring, and automated rollback. Do not connect these modules to production deployment until these controls have been implemented and independently tested.
+Still not implemented: actual disposable sandbox provisioning, hardened resource/network isolation, scanner integrations, trusted evidence-signing service and key rotation, queue/workflow persistence, admin UI and RBAC, trusted human approval issuance/audit service, append-only audit integration, staged deployment, monitoring, and automated rollback. Do not connect these modules to production deployment until these controls have been implemented and independently tested.

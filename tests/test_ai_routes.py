@@ -98,3 +98,70 @@ def test_ai_fallback_requires_complete_configuration(client, monkeypatch):
     )
     assert response.status_code == 503
     assert "fallback provider configuration is incomplete" in response.json()["detail"].lower()
+
+
+
+def test_ai_chat_uses_model_router_and_preserves_task_classification(client, monkeypatch):
+    token, org_id = owner(client)
+    monkeypatch.setattr(settings, "ai_live_calls_enabled", True)
+    monkeypatch.setattr(settings, "ai_daily_request_limit", 3)
+    monkeypatch.setattr(settings, "ai_max_output_tokens", 32)
+    monkeypatch.setattr(settings, "database_url", "postgresql://configured-for-route-test")
+    calls = {}
+
+    class FakeRouter:
+        def select(self, **kwargs):
+            calls["selected"] = kwargs
+            return object()
+
+        async def complete(self, **kwargs):
+            calls["completed"] = kwargs
+            return {
+                "provider": "stub",
+                "model": "stub-model",
+                "content": "safe answer",
+                "input_tokens": 5,
+                "output_tokens": 2,
+            }
+
+    monkeypatch.setattr(
+        "app.api.routes.ai.create_model_router",
+        lambda config: FakeRouter(),
+    )
+    response = client.post(
+        f"/api/v1/organizations/{org_id}/ai/chat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "prompt": "Summarize the public release note",
+            "task_type": "summarize",
+            "data_class": "public",
+            "max_output_tokens": 8,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["provider"] == "stub"
+    assert calls["selected"]["task_type"] == "summarize"
+    assert calls["selected"]["data_class"] == "public"
+    assert calls["completed"]["route"] == "primary"
+
+
+def test_ai_chat_rejects_confidential_data_before_provider_call(client, monkeypatch):
+    token, org_id = owner(client)
+    monkeypatch.setattr(settings, "ai_live_calls_enabled", True)
+    monkeypatch.setattr(settings, "ai_daily_request_limit", 3)
+    monkeypatch.setattr(settings, "ai_max_output_tokens", 32)
+    monkeypatch.setattr(settings, "ai_api_key", "primary-test-key")
+    monkeypatch.setattr(settings, "ai_base_url", "https://provider.example/v1")
+    monkeypatch.setattr(settings, "ai_model", "primary-model")
+    response = client.post(
+        f"/api/v1/organizations/{org_id}/ai/chat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "prompt": "This should never be sent to an external model",
+            "data_class": "confidential",
+            "max_output_tokens": 8,
+        },
+    )
+    assert response.status_code == 422
+    assert "data classification" in response.json()["detail"]

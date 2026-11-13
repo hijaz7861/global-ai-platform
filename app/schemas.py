@@ -271,6 +271,8 @@ class ChatRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=8000)
     max_output_tokens: int = Field(default=256, ge=1, le=2048)
     provider: Literal["primary", "fallback"] = "primary"
+    task_type: Literal["chat", "summarize", "analyze", "extract"] = "chat"
+    data_class: Literal["public", "internal", "confidential", "restricted"] = "internal"
 
     @field_validator("prompt")
     @classmethod

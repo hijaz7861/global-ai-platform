@@ -13,7 +13,7 @@ from collections.abc import Collection
 
 from app.ai.human_approval import (
     SignedHumanApproval,
-    verify_human_approval_with_sqlite_store,
+    verify_human_approval,
 )
 
 
@@ -146,12 +146,12 @@ def evaluate_change_with_signed_approval(
             preliminary.verified_sha256,
         )
 
-    valid, reason = verify_human_approval_with_sqlite_store(
+    valid, reason = verify_human_approval(
         signed_approval,
         key=approval_key,
         expected_action_sha256=preliminary.verified_sha256,
         allowed_actor_ids=allowed_actor_ids,
-        nonce_store=nonce_store,
+        consume_nonce=nonce_store.consume_nonce,
         expected_action=evidence.action,
         now=now,
         max_lifetime_seconds=max_lifetime_seconds,

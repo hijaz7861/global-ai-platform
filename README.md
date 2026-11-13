@@ -1,6 +1,6 @@
 # Global AI-Powered Business Ecosystem
 
-A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, a double-entry ledger foundation, audit events, and a guarded OpenAI-compatible AI adapter. It is not yet a complete business ecosystem.
+A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, a double-entry ledger foundation, audit events, and a guarded multi-provider AI adapter with a constrained, tenant-scoped agent operating layer. It is not yet a complete business ecosystem.
 
 ## Current foundation
 
@@ -18,7 +18,8 @@ A private, modular project for building a global business platform incrementally
 - Buyer-only order reads, seller-scoped order summaries, and unpaid-order cancellation with one-time stock release.
 - Owner/admin chart of accounts, balanced idempotent journal posting, immutable reversals, accounting period controls, period trial balance, paginated account ledger, income statement, balance sheet, and a manual bank reconciliation workflow.
 - Transaction-bound allowlisted audit events for organization, catalog, order, and ledger operations.
-- Guarded OpenAI-compatible AI chat adapter with explicit primary/optional fallback provider selection per request; automatic failover and monetary budgets remain future work. External calls are disabled by default and require explicit opt-in, a positive request limit, and PostgreSQL.
+- Guarded AI chat and capability-aware multi-provider routing; tenant-scoped durable AI tasks, a bounded single-agent runner with read-only tools, provenance-aware memory, approved versioned skills, and cooperative task cancellation. Live model calls remain disabled by default.
+- Initial tenant-scoped AI operating-layer foundations on the feature branch: durable idempotent tasks, lease recovery and cooperative cancellation; provenance-aware user/organization memory; owner-approved versioned skills; a static audited read-only tool gateway; explicit multi-provider text routing; and a bounded single-agent loop executed by the durable worker. No model-generated code or write tools are enabled. External calls are disabled by default and require explicit opt-in, a positive request limit, and PostgreSQL.
 - Orders remain `pending_payment`; no payment is charged or processed.
 - SQLAlchemy models and Alembic migrations for identity, rotating refresh-token families, tenants, catalog, inventory adjustment history, orders, audit, accounting periods, journal entries and reversals, token revocation, password reset, and supplier profiles.
 - GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks. The test requirements include `httpx2` for the current Starlette `TestClient` and `httpx` for the AI adapter's async provider client.

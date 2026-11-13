@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     platform_admin_emails: str = ""
     trusted_proxy_ips: str = ""
     ai_live_calls_enabled: bool = False
+    ai_primary_provider: str = "openai-compatible"
+    ai_fallback_provider: str | None = None
+    ai_allow_local_endpoints: bool = False
     ai_api_key: str | None = None
     ai_base_url: str | None = None
     ai_model: str | None = None

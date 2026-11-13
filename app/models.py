@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     true,
     false,
@@ -636,3 +637,260 @@ class AuthAttempt(Base):
     scope: Mapped[str] = mapped_column(String(32), nullable=False)
     subject_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class AITask(Base):
+    """Durable tenant-scoped unit of AI work with a renewable worker lease."""
+    __tablename__ = "ai_tasks"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "created_by_user_id", "idempotency_key",
+            name="uq_ai_task_actor_idempotency",
+        ),
+        CheckConstraint(
+            "status IN ('queued','running','succeeded','failed','cancelled')",
+            name="ck_ai_tasks_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND max_attempts BETWEEN 1 AND 10",
+            name="ck_ai_tasks_attempts",
+        ),
+        Index("ix_ai_tasks_claim", "status", "available_at", "created_at"),
+        Index("ix_ai_tasks_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    input_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    result_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="queued", nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    claimed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AITaskStep(Base):
+    """Append-oriented execution attempt record; payload content is represented by digests."""
+    __tablename__ = "ai_task_steps"
+    __table_args__ = (
+        UniqueConstraint("task_id", "sequence_number", name="uq_ai_task_step_sequence"),
+        CheckConstraint(
+            "status IN ('running','succeeded','failed','abandoned')",
+            name="ck_ai_task_steps_status",
+        ),
+        CheckConstraint("sequence_number > 0", name="ck_ai_task_steps_sequence_positive"),
+        Index("ix_ai_task_steps_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    task_id: Mapped[str] = mapped_column(ForeignKey("ai_tasks.id", ondelete="CASCADE"), nullable=False)
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    step_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="running", nullable=False)
+    input_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class AITaskEvent(Base):
+    """Minimal task lifecycle event; deliberately excludes prompts and raw outputs."""
+    __tablename__ = "ai_task_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('created','claimed','heartbeat','completed','retry_scheduled','failed','cancel_requested','cancelled','lease_expired')",
+            name="ck_ai_task_events_type",
+        ),
+        Index("ix_ai_task_events_org_created", "organization_id", "created_at"),
+        Index("ix_ai_task_events_task_created", "task_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    task_id: Mapped[str] = mapped_column(ForeignKey("ai_tasks.id", ondelete="CASCADE"), nullable=False)
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    actor_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    event_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class AIOutboxEvent(Base):
+    """Transactional delivery record for a committed AI task lifecycle event."""
+    __tablename__ = "ai_outbox_events"
+    __table_args__ = (
+        UniqueConstraint("task_event_id", name="uq_ai_outbox_task_event"),
+        CheckConstraint(
+            "status IN ('pending','processing','delivered','dead')",
+            name="ck_ai_outbox_status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND max_attempts BETWEEN 1 AND 20",
+            name="ck_ai_outbox_attempts",
+        ),
+        Index("ix_ai_outbox_dispatch", "status", "available_at", "created_at"),
+        Index("ix_ai_outbox_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    task_event_id: Mapped[str] = mapped_column(
+        ForeignKey("ai_task_events.id", ondelete="CASCADE"), nullable=False
+    )
+    task_id: Mapped[str] = mapped_column(
+        ForeignKey("ai_tasks.id", ondelete="CASCADE"), nullable=False
+    )
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=8, nullable=False)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    locked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class AIMemoryRecord(Base):
+    """Provenance-aware user-private or organization-shared AI memory."""
+    __tablename__ = "ai_memory_records"
+    __table_args__ = (
+        CheckConstraint(
+            "(scope = 'user' AND owner_user_id IS NOT NULL AND organization_id IS NULL) OR "
+            "(scope = 'organization' AND organization_id IS NOT NULL AND owner_user_id IS NULL)",
+            name="ck_ai_memory_scope_owner",
+        ),
+        CheckConstraint("scope IN ('user','organization')", name="ck_ai_memory_scope"),
+        CheckConstraint(
+            "memory_type IN ('preference','feedback','project','reference','decision','session_summary')",
+            name="ck_ai_memory_type",
+        ),
+        CheckConstraint("sensitivity IN ('normal','sensitive','restricted')", name="ck_ai_memory_sensitivity"),
+        CheckConstraint(
+            "verification_status IN ('unverified','verified','superseded')",
+            name="ck_ai_memory_verification",
+        ),
+        CheckConstraint("status IN ('active','archived','superseded')", name="ck_ai_memory_status"),
+        CheckConstraint("confidence_percent BETWEEN 0 AND 100", name="ck_ai_memory_confidence"),
+        Index("ix_ai_memory_org_scope_status", "organization_id", "scope", "status", "updated_at"),
+        Index("ix_ai_memory_owner_scope_status", "owner_user_id", "scope", "status", "updated_at"),
+        Index("ix_ai_memory_type_created", "memory_type", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    organization_id: Mapped[str | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    )
+    owner_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    memory_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    confidence_percent: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    sensitivity: Mapped[str] = mapped_column(String(16), default="normal", nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(16), default="unverified", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="active", nullable=False)
+    supersedes_id: Mapped[str | None] = mapped_column(
+        ForeignKey("ai_memory_records.id", ondelete="SET NULL"), nullable=True
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class AISkillVersion(Base):
+    """Version-pinned instructional skill content; never executable authorization."""
+    __tablename__ = "ai_skill_versions"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "skill_id", "version", name="uq_ai_skill_org_id_version"),
+        CheckConstraint(
+            "status IN ('draft','approved','disabled','deprecated')",
+            name="ck_ai_skill_status",
+        ),
+        CheckConstraint(
+            "risk_level IN ('low','medium','high','critical')",
+            name="ck_ai_skill_risk",
+        ),
+        CheckConstraint(
+            "source_type IN ('internal','user_authored','imported')",
+            name="ck_ai_skill_source_type",
+        ),
+        CheckConstraint("length(content_sha256) = 64", name="ck_ai_skill_digest_length"),
+        Index("ix_ai_skill_org_status", "organization_id", "status", "skill_id"),
+        Index("ix_ai_skill_org_created", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    skill_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    license_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    required_capabilities: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    data_classes: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(16), default="low", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    approved_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+
+class ConsumedApprovalNonce(Base):
+    """Single-use approval nonce shared by all PostgreSQL application workers."""
+    __tablename__ = "consumed_approval_nonces"
+    __table_args__ = (
+        Index("ix_consumed_approval_nonces_time", "consumed_at"),
+    )
+
+    nonce: Mapped[str] = mapped_column(String(128), primary_key=True)
+    consumed_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
