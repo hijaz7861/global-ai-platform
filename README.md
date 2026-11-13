@@ -1,4 +1,6 @@
-# Global AI-Powered Business Ecosystem
+# HIJAZ ONE — Integrated Business & Services Ecosystem
+
+The product formerly developed as Global AI Platform is now the technical foundation for **HIJAZ ONE**, a portable, global business ecosystem. See [the architecture and integration roadmap](docs/HIJAZ_ONE_GLOBAL_ARCHITECTURE.md).
 
 A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, a double-entry ledger foundation, audit events, and a guarded multi-provider AI adapter with a constrained, tenant-scoped agent operating layer. It is not yet a complete business ecosystem.
 
@@ -26,9 +28,11 @@ A private, modular project for building a global business platform incrementally
 - Platform-admin security cleanup endpoint for expired credentials and stale throttle records; schedule it through a trusted external scheduler.
 - Optional Docker packaging that applies migrations before starting the API.
 
-## Current delivery focus
+## Product direction
 
-The current branch prioritizes the Global AI Platform itself: secure identity and tenancy, commerce and supplier workflows, accounting integrity, guarded AI access, deployment safety, and reproducible verification. External workflow engines remain optional future integrations and are not required to run the core platform.
+HIJAZ ONE combines the reusable identity, tenancy, marketplace, procurement, accounting, audit, and AI foundations in this repository with construction, materials, transport, property, workforce, education, and customer-engagement business modules. The global product is being integrated incrementally as a portable modular monolith. The detailed gap register, role-entitlement design, migration strategy, and release gates are in [HIJAZ ONE Global Architecture](docs/HIJAZ_ONE_GLOBAL_ARCHITECTURE.md).
+
+The platform is not yet a complete global ecosystem or production-certified. Payment gateways, external notifications, country-specific compliance, full multi-role entitlements, and the remaining AI operating-layer controls require implementation and end-to-end verification.
 
 ## Run locally
 
