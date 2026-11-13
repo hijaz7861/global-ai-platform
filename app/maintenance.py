@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.audit import record_audit_event
 from app.db import SessionLocal
 from app.services.order_expiry import expire_due_orders
+from app.services.role_entitlement_expiry import expire_due_role_entitlements
 from app.services.security_maintenance import cleanup_expired_security_records
 
 
@@ -16,14 +17,20 @@ def run_maintenance_once(
     session_factory: Callable[[], Session] = SessionLocal,
     *,
     order_limit: int = 100,
+    role_entitlement_limit: int = 100,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Run one bounded, transactionally committed maintenance batch."""
     if not 1 <= order_limit <= 500:
         raise ValueError("order_limit must be between 1 and 500")
+    if not 1 <= role_entitlement_limit <= 500:
+        raise ValueError("role_entitlement_limit must be between 1 and 500")
     with session_factory() as db:
         with db.begin():
             expired_order_ids = expire_due_orders(db, limit=order_limit, now=now)
+            expired_role_entitlement_ids = expire_due_role_entitlements(
+                db, limit=role_entitlement_limit, now=now
+            )
             cleanup_counts = cleanup_expired_security_records(db, now=now)
             record_audit_event(
                 db,
@@ -37,6 +44,8 @@ def run_maintenance_once(
         return {
             "expired_orders": len(expired_order_ids),
             "expired_order_ids": expired_order_ids,
+            "expired_role_entitlements": len(expired_role_entitlement_ids),
+            "expired_role_entitlement_ids": expired_role_entitlement_ids,
             "security_cleanup": cleanup_counts,
         }
 

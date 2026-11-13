@@ -18,6 +18,7 @@ from app.api.routes.procurement import router as procurement_router
 from app.api.routes.reconciliation import router as reconciliation_router
 from app.api.routes.orders import router as orders_router
 from app.api.routes.seller import router as seller_router
+from app.api.routes.role_entitlements import router as role_entitlements_router
 from app.api.routes.suppliers import router as suppliers_router
 
 api_router = APIRouter()
@@ -31,6 +32,7 @@ api_router.include_router(audit_router)
 api_router.include_router(accounting_router)
 api_router.include_router(reconciliation_router)
 api_router.include_router(seller_router)
+api_router.include_router(role_entitlements_router)
 api_router.include_router(suppliers_router)
 api_router.include_router(platform_operations_router)
 api_router.include_router(procurement_router)
