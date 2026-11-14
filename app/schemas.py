@@ -908,7 +908,7 @@ class TransportVehicleUpdate(BaseModel):
 
 
 class TransportProfileReviewRequest(BaseModel):
-    decision: Literal["approve", "reject", "suspend"]
+    decision: Literal["approve", "reject", "suspend", "reinstate"]
     evidence_checked: bool = False
     notes: str = Field(min_length=3, max_length=1000)
 
@@ -919,7 +919,7 @@ class TransportProfileReviewRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_profile_evidence(self):
-        if self.decision == "approve" and not self.evidence_checked:
+        if self.decision in {"approve", "reinstate"} and not self.evidence_checked:
             raise ValueError("Manual business and age evidence review is required")
         if len(self.notes) < 3:
             raise ValueError("Review notes must contain at least three characters")

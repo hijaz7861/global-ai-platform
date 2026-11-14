@@ -378,18 +378,24 @@ def review_profile(
     item = db.get(TransportProviderProfile, profile_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Transport profile not found")
+    if payload.decision in {"approve", "reinstate"} and _current_entitlement(db, item) is None:
+        raise HTTPException(status_code=409, detail="An active verified transporter role is required")
     if payload.decision == "approve":
-        if item.status != "submitted" or _current_entitlement(db, item) is None:
+        if item.status != "submitted":
             raise HTTPException(status_code=409, detail="Submitted profile and active transporter role required")
         item.status = "approved"
     elif payload.decision == "reject":
         if item.status != "submitted":
             raise HTTPException(status_code=409, detail="Only submitted profiles can be rejected")
         item.status = "rejected"
-    else:
+    elif payload.decision == "suspend":
         if item.status != "approved":
             raise HTTPException(status_code=409, detail="Only approved profiles can be suspended")
         item.status = "suspended"
+    else:
+        if item.status != "suspended":
+            raise HTTPException(status_code=409, detail="Only suspended profiles can be reinstated")
+        item.status = "approved"
     item.review_notes = payload.notes
     item.reviewed_by_user_id = user.id
     item.reviewed_at = utc_now()
@@ -443,7 +449,7 @@ def review_vehicle(
     if payload.decision == "verify":
         if profile.status != "approved" or _current_entitlement(db, profile) is None:
             raise HTTPException(status_code=409, detail="Approved profile and active transporter role required")
-        if item.verification_status not in {"pending", "rejected"}:
+        if item.verification_status not in {"pending", "rejected", "suspended"}:
             raise HTTPException(status_code=409, detail="Vehicle is not awaiting verification")
         item.verification_status = "verified"
     elif payload.decision == "reject":

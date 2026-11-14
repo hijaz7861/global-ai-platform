@@ -147,6 +147,17 @@ def test_transport_role_gate_moderation_and_public_redaction(client):
     assert item["rate_minor"] == 125000 and item["currency"] == "PKR"
     assert "organization_id" not in item and "review_notes" not in item
     assert "owner_user_id" not in item and "contact_phone" not in item
+    profile_id = client.get(f"/api/v1/organizations/{org_id}/transport-profile",
+        headers={"Authorization": f"Bearer {token}"}).json()["id"]
+    suspended_profile = client.post(f"/api/v1/platform/transport-profiles/{profile_id}/review",
+        headers=admin_headers, json={"decision": "suspend", "notes": "Profile paused"})
+    assert suspended_profile.status_code == 200
+    assert client.get("/api/v1/transport/vehicles").json() == []
+    restored_profile = client.post(f"/api/v1/platform/transport-profiles/{profile_id}/review",
+        headers=admin_headers, json={"decision": "reinstate", "evidence_checked": True,
+                                     "notes": "Profile evidence rechecked"})
+    assert restored_profile.status_code == 200
+    assert len(client.get("/api/v1/transport/vehicles").json()) == 1
     changed = client.patch(f"/api/v1/organizations/{org_id}/transport-vehicles/{vehicle_id}",
         headers={"Authorization": f"Bearer {token}"}, json={"title": "Updated dumper"})
     assert changed.status_code == 200
