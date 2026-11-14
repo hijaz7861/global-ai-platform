@@ -136,11 +136,13 @@ def test_construction_project_boq_decimal_totals_and_audit(client):
         assert len(events) == 3
 
 
-def test_construction_missing_role_and_unverified_email_are_denied(client):
+def test_construction_missing_role_and_unverified_email_are_denied(client, monkeypatch):
     token = register(client, "no-role@example.com")
     org_id = organization(client, token, "No Role Org")
     assert create_client_record(client, token, org_id).status_code == 403
 
+    # Permit token issuance only for this test; require_active_role must still reject the unverified identity.
+    monkeypatch.setattr(settings, "require_email_verification", False)
     unverified = register(client, "unverified-construction@example.com", verify=False)
     with _TEST_SESSION_FACTORY() as db:
         user = db.scalar(select(User).where(User.email == "unverified-construction@example.com"))
