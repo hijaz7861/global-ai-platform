@@ -558,8 +558,7 @@ class TransportVehicle(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     organization_id: Mapped[str] = mapped_column(
         ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
-    provider_profile_id: Mapped[str] = mapped_column(
-        ForeignKey("transport_provider_profiles.id", ondelete="RESTRICT"), nullable=False)
+    provider_profile_id: Mapped[str] = mapped_column(String(36), nullable=False)
     created_by_user_id: Mapped[str] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     vehicle_type: Mapped[str] = mapped_column(String(40), nullable=False)
