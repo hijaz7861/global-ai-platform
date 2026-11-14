@@ -34,6 +34,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("organization_id", name="uq_transport_provider_profiles_org"),
+        sa.UniqueConstraint("id", "organization_id", name="uq_transport_provider_profiles_id_org"),
         sa.CheckConstraint("status IN ('draft','submitted','approved','rejected','suspended')",
                            name="ck_transport_provider_profiles_status"),
         sa.CheckConstraint("length(country_code) = 2 AND country_code = upper(country_code)",
@@ -46,8 +47,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=36), primary_key=True),
         sa.Column("organization_id", sa.String(length=36),
                   sa.ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
-        sa.Column("provider_profile_id", sa.String(length=36),
-                  sa.ForeignKey("transport_provider_profiles.id", ondelete="RESTRICT"), nullable=False),
+        sa.Column("provider_profile_id", sa.String(length=36), nullable=False),
         sa.Column("created_by_user_id", sa.String(length=36),
                   sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("vehicle_type", sa.String(length=40), nullable=False),
@@ -72,6 +72,10 @@ def upgrade() -> None:
         sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.ForeignKeyConstraint(
+            ["provider_profile_id", "organization_id"],
+            ["transport_provider_profiles.id", "transport_provider_profiles.organization_id"],
+            ondelete="RESTRICT", name="fk_transport_vehicles_profile_org"),
         sa.CheckConstraint(
             "vehicle_type IN ('loader_rickshaw','qingqi','tractor_trolley','tractor_bucket',"
             "'dumper','truck','mazda','pickup','crane','jcb','excavator','backhoe_loader',"

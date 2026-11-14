@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -491,6 +492,7 @@ class TransportProviderProfile(Base):
     __tablename__ = "transport_provider_profiles"
     __table_args__ = (
         UniqueConstraint("organization_id", name="uq_transport_provider_profiles_org"),
+        UniqueConstraint("id", "organization_id", name="uq_transport_provider_profiles_id_org"),
         CheckConstraint("status IN ('draft','submitted','approved','rejected','suspended')",
                         name="ck_transport_provider_profiles_status"),
         CheckConstraint("length(country_code) = 2 AND country_code = upper(country_code)",
@@ -547,6 +549,11 @@ class TransportVehicle(Base):
               "vehicle_type", "country_code", "city"),
         Index("ix_transport_vehicles_org_created", "organization_id", "created_at"),
         Index("ix_transport_vehicles_profile", "provider_profile_id"),
+        ForeignKeyConstraint(
+            ["provider_profile_id", "organization_id"],
+            ["transport_provider_profiles.id", "transport_provider_profiles.organization_id"],
+            ondelete="RESTRICT", name="fk_transport_vehicles_profile_org",
+        ),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     organization_id: Mapped[str] = mapped_column(

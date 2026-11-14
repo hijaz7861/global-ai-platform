@@ -918,7 +918,7 @@ class TransportProfileReviewRequest(BaseModel):
         return value.strip()
 
     @model_validator(mode="after")
-    def require_profile_evidence(cls):
+    def require_profile_evidence(self):
         if self.decision == "approve" and not self.evidence_checked:
             raise ValueError("Manual business and age evidence review is required")
         if len(self.notes) < 3:
