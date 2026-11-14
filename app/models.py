@@ -1,5 +1,6 @@
 """Identity, commerce, audit, accounting, and security data models."""
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
@@ -14,6 +15,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -1081,4 +1083,86 @@ class RoleEntitlementEvent(Base):
     actor_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class ConstructionClient(Base):
+    """Tenant-owned construction client; contact PII is excluded from this first slice."""
+    __tablename__ = "construction_clients"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_construction_clients_id_org"),
+        Index("ix_construction_clients_org_name", "organization_id", "display_name"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class ConstructionProject(Base):
+    """Organization-scoped construction project with bounded lifecycle and PKR minor-unit contract value."""
+    __tablename__ = "construction_projects"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_construction_projects_id_org"),
+        ForeignKeyConstraint(["client_id", "organization_id"],
+            ["construction_clients.id", "construction_clients.organization_id"],
+            ondelete="RESTRICT", name="fk_construction_projects_client_org"),
+        CheckConstraint("work_type IN ('grey_structure','superstructure','complete_construction','renovation','other')",
+                        name="ck_construction_projects_work_type"),
+        CheckConstraint("contract_type IN ('labour_only','labour_material')",
+                        name="ck_construction_projects_contract_type"),
+        CheckConstraint("contract_amount_minor >= 0", name="ck_construction_projects_amount_nonnegative"),
+        CheckConstraint("currency = 'PKR'", name="ck_construction_projects_currency_pkr"),
+        CheckConstraint("status IN ('lead','quoted','approved','in_progress','on_hold','completed','cancelled')",
+                        name="ck_construction_projects_status"),
+        CheckConstraint("progress_percent BETWEEN 0 AND 100", name="ck_construction_projects_progress"),
+        Index("ix_construction_projects_org_status_created", "organization_id", "status", "created_at"),
+        Index("ix_construction_projects_client", "client_id"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    client_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    work_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    contract_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    contract_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    location_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="lead", nullable=False)
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(1500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class ConstructionBoqItem(Base):
+    """Tenant-scoped BOQ line using Decimal quantity and integer PKR minor units."""
+    __tablename__ = "construction_boq_items"
+    __table_args__ = (
+        ForeignKeyConstraint(["project_id", "organization_id"],
+            ["construction_projects.id", "construction_projects.organization_id"],
+            ondelete="RESTRICT", name="fk_construction_boq_project_org"),
+        UniqueConstraint("project_id", "line_number", name="uq_construction_boq_project_line"),
+        CheckConstraint("line_number BETWEEN 1 AND 10000", name="ck_construction_boq_line_number"),
+        CheckConstraint("quantity > 0", name="ck_construction_boq_quantity_positive"),
+        CheckConstraint("unit_rate_minor >= 0", name="ck_construction_boq_rate_nonnegative"),
+        CheckConstraint("line_total_minor >= 0", name="ck_construction_boq_total_nonnegative"),
+        Index("ix_construction_boq_org_project", "organization_id", "project_id", "line_number"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    project_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    item_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    unit: Mapped[str] = mapped_column(String(30), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    unit_rate_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    line_total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

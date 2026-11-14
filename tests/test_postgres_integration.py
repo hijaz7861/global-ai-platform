@@ -1326,3 +1326,53 @@ def test_postgres_maintenance_expires_due_role_entitlements_and_is_idempotent():
             assert {event.details["previous_status"] for event in events} == {"active", "suspended"}
     finally:
         engine.dispose()
+
+
+def test_postgres_construction_composite_tenant_keys_and_decimal_boq():
+    from decimal import Decimal
+    from sqlalchemy.orm import sessionmaker
+    from app.models import ConstructionBoqItem, ConstructionClient, ConstructionProject, Organization, User
+
+    suffix = uuid4().hex
+    engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    try:
+        with factory() as db:
+            user = User(email=f"postgres-construction-{suffix}@example.com", password_hash="test-hash")
+            org_a = Organization(name=f"Construction A {suffix[:8]}")
+            org_b = Organization(name=f"Construction B {suffix[:8]}")
+            db.add_all([user, org_a, org_b])
+            db.flush()
+            user_id, org_b_id = user.id, org_b.id
+            client = ConstructionClient(organization_id=org_a.id, created_by_user_id=user.id,
+                display_name="Construction Client", city="Lahore")
+            db.add(client)
+            db.flush()
+            project = ConstructionProject(organization_id=org_a.id, client_id=client.id,
+                created_by_user_id=user.id, title="Composite tenant test", work_type="grey_structure",
+                contract_type="labour_material", contract_amount_minor=250000, currency="PKR")
+            db.add(project)
+            db.flush()
+            item = ConstructionBoqItem(organization_id=org_a.id, project_id=project.id,
+                created_by_user_id=user.id, line_number=1, item_name="Cement", unit="bag",
+                quantity=Decimal("0.001"), unit_rate_minor=500, line_total_minor=1)
+            db.add(item)
+            db.commit()
+            project_id, client_id = project.id, client.id
+            assert item.line_total_minor == 1
+
+        with factory() as db:
+            db.add(ConstructionProject(organization_id=org_b_id, client_id=client_id,
+                created_by_user_id=user_id, title="Cross-tenant client reference",
+                work_type="grey_structure", contract_type="labour_material"))
+            with pytest.raises(DBAPIError):
+                db.flush()
+            db.rollback()
+            db.add(ConstructionBoqItem(organization_id=org_b_id, project_id=project_id,
+                created_by_user_id=user_id, line_number=2, item_name="Cross-tenant BOQ",
+                unit="bag", quantity=Decimal("1.000"), unit_rate_minor=100, line_total_minor=100))
+            with pytest.raises(DBAPIError):
+                db.flush()
+            db.rollback()
+    finally:
+        engine.dispose()
