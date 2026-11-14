@@ -20,6 +20,7 @@ from app.api.routes.orders import router as orders_router
 from app.api.routes.seller import router as seller_router
 from app.api.routes.role_entitlements import router as role_entitlements_router
 from app.api.routes.suppliers import router as suppliers_router
+from app.api.routes.transport import router as transport_router
 
 api_router = APIRouter()
 api_router.include_router(health_router, tags=["health"])
@@ -34,6 +35,7 @@ api_router.include_router(reconciliation_router)
 api_router.include_router(seller_router)
 api_router.include_router(role_entitlements_router)
 api_router.include_router(suppliers_router)
+api_router.include_router(transport_router)
 api_router.include_router(platform_operations_router)
 api_router.include_router(procurement_router)
 api_router.include_router(ai_router)

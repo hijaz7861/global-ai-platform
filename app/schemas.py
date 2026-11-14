@@ -785,3 +785,161 @@ class SupplierReviewRequest(BaseModel):
         if self.decision == "rejected" and len(self.notes) < 3:
             raise ValueError("A rejection reason of at least three characters is required")
         return self
+
+
+class TransportProfileCreate(BaseModel):
+    business_name: str | None = Field(default=None, max_length=160)
+    city: str = Field(min_length=1, max_length=100)
+    state_region: str | None = Field(default=None, max_length=100)
+    country_code: str = Field(default="PK", min_length=2, max_length=2)
+    service_description: str = Field(default="", max_length=1000)
+
+    @field_validator("business_name", "state_region")
+    @classmethod
+    def clean_profile_optional(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+    @field_validator("city", "service_description")
+    @classmethod
+    def clean_profile_text(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("country_code")
+    @classmethod
+    def clean_profile_country(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value.isascii() or not value.isalpha():
+            raise ValueError("Country must be a two-letter code")
+        return value
+
+
+class TransportVehicleCreate(BaseModel):
+    vehicle_type: Literal[
+        "loader_rickshaw", "qingqi", "tractor_trolley", "tractor_bucket", "dumper",
+        "truck", "mazda", "pickup", "crane", "jcb", "excavator", "backhoe_loader",
+        "forklift", "water_tanker", "concrete_mixer", "other"]
+    title: str = Field(min_length=2, max_length=160)
+    make_model: str | None = Field(default=None, max_length=100)
+    capacity_description: str | None = Field(default=None, max_length=160)
+    operator_included: bool = True
+    city: str = Field(min_length=1, max_length=100)
+    state_region: str | None = Field(default=None, max_length=100)
+    country_code: str = Field(default="PK", min_length=2, max_length=2)
+    pricing_basis: Literal["per_trip", "per_hour", "per_day", "per_km", "fixed_job"]
+    rate_minor: int = Field(ge=0, le=9_000_000_000_000_000)
+    currency: str = Field(default="PKR", min_length=3, max_length=3)
+    minimum_charge_minor: int | None = Field(default=None, ge=0, le=9_000_000_000_000_000)
+    service_radius_km: int = Field(default=30, ge=1, le=2000)
+    description: str = Field(default="", max_length=1500)
+
+    @field_validator("title", "city")
+    @classmethod
+    def clean_required_vehicle_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field must not be blank")
+        return value
+
+    @field_validator("make_model", "capacity_description", "state_region")
+    @classmethod
+    def clean_vehicle_optional(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+    @field_validator("description")
+    @classmethod
+    def clean_vehicle_description(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("country_code")
+    @classmethod
+    def clean_vehicle_country(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value.isascii() or not value.isalpha():
+            raise ValueError("Country must be a two-letter code")
+        return value
+
+    @field_validator("currency")
+    @classmethod
+    def clean_vehicle_currency(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not value.isascii() or not value.isalpha():
+            raise ValueError("Currency must be a three-letter code")
+        return value
+
+
+class TransportVehicleUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=2, max_length=160)
+    city: str | None = Field(default=None, min_length=1, max_length=100)
+    availability: Literal["available", "busy", "offline"] | None = None
+    rate_minor: int | None = Field(default=None, ge=0, le=9_000_000_000_000_000)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    description: str | None = Field(default=None, max_length=1500)
+
+    @model_validator(mode="after")
+    def require_update(self):
+        if not self.model_fields_set:
+            raise ValueError("At least one field must be supplied")
+        return self
+
+    @field_validator("title", "city")
+    @classmethod
+    def clean_update_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("This field must not be blank")
+        return value
+
+    @field_validator("currency")
+    @classmethod
+    def clean_update_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip().upper()
+        if not value.isascii() or not value.isalpha():
+            raise ValueError("Currency must be a three-letter code")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def clean_update_description(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
+
+
+class TransportProfileReviewRequest(BaseModel):
+    decision: Literal["approve", "reject", "suspend"]
+    evidence_checked: bool = False
+    notes: str = Field(min_length=3, max_length=1000)
+
+    @field_validator("notes")
+    @classmethod
+    def clean_profile_review_notes(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def require_profile_evidence(cls):
+        if self.decision == "approve" and not self.evidence_checked:
+            raise ValueError("Manual business and age evidence review is required")
+        if len(self.notes) < 3:
+            raise ValueError("Review notes must contain at least three characters")
+        return self
+
+
+class TransportVehicleReviewRequest(BaseModel):
+    decision: Literal["verify", "reject", "suspend"]
+    evidence_checked: bool = False
+    notes: str = Field(min_length=3, max_length=1000)
+
+    @field_validator("notes")
+    @classmethod
+    def clean_vehicle_review_notes(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def require_vehicle_evidence(self):
+        if self.decision == "verify" and not self.evidence_checked:
+            raise ValueError("Vehicle evidence must be checked by an administrator")
+        if len(self.notes) < 3:
+            raise ValueError("Review notes must contain at least three characters")
+        return self
