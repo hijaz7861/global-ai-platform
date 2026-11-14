@@ -6,9 +6,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import models  # noqa: F401
+from app.api.routes import identity as identity_routes
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
+from app.models import RoleDefinition
+
+_EMAIL_TOKENS: dict[str, str] = {}
 
 
 @pytest.fixture
@@ -21,6 +25,21 @@ def client(monkeypatch):
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
     monkeypatch.setattr(settings, "secret_key", "test-only-signing-key-not-for-production")
+    monkeypatch.setattr(settings, "platform_admin_emails", "platform-admin@example.com")
+    monkeypatch.setattr(settings, "require_email_verification", True)
+    _EMAIL_TOKENS.clear()
+    monkeypatch.setattr(
+        identity_routes,
+        "send_email_verification",
+        lambda email, token: _EMAIL_TOKENS.__setitem__(email, token),
+    )
+    with TestingSessionLocal() as db:
+        db.add(RoleDefinition(
+            role_key="supplier", display_name="Supplier", description="Supplier profile",
+            min_age=18, fee_amount_minor=None, fee_currency="PKR",
+            requires_review=True, is_active=True,
+        ))
+        db.commit()
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -35,6 +54,7 @@ def client(monkeypatch):
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
+    _EMAIL_TOKENS.clear()
 
 
 def account(client: TestClient, email: str) -> tuple[str, str]:
@@ -43,6 +63,9 @@ def account(client: TestClient, email: str) -> tuple[str, str]:
         json={"email": email, "password": "correct-horse-battery-12"},
     )
     assert registered.status_code == 201, registered.text
+    raw_token = _EMAIL_TOKENS.pop(email)
+    verified = client.post("/api/v1/auth/email-verification/confirm", json={"token": raw_token})
+    assert verified.status_code == 204, verified.text
     login = client.post(
         "/api/v1/auth/token",
         json={"email": email, "password": "correct-horse-battery-12"},
@@ -58,9 +81,36 @@ def account(client: TestClient, email: str) -> tuple[str, str]:
     return token, org.json()["id"]
 
 
+def activate_supplier_role(client: TestClient, token: str, org_id: str) -> tuple[str, dict[str, str]]:
+    admin_token, _ = account(client, "platform-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    configured = client.patch(
+        "/api/v1/platform/role-definitions/supplier",
+        headers=admin_headers,
+        json={"fee_amount_minor": 100, "fee_currency": "PKR", "min_age": 18, "is_active": True},
+    )
+    assert configured.status_code == 200, configured.text
+    applied = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"role_key": "supplier", "organization_id": org_id},
+    )
+    assert applied.status_code == 201, applied.text
+    entitlement_id = applied.json()["id"]
+    reviewed = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/review",
+        headers=admin_headers,
+        json={"decision": "approve", "payment_verified": True, "age_verified": True},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["status"] == "active"
+    return entitlement_id, admin_headers
+
+
 def test_listing_is_draft_until_owner_publishes(client):
     token, org_id = account(client, "seller@example.com")
     headers = {"Authorization": f"Bearer {token}"}
+    activate_supplier_role(client, token, org_id)
     created = client.post(
         f"/api/v1/organizations/{org_id}/listings",
         headers=headers,
@@ -104,6 +154,7 @@ def test_non_member_cannot_read_or_create_tenant_listings(client):
 
 def test_invalid_price_and_currency_are_rejected(client):
     token, org_id = account(client, "validator@example.com")
+    activate_supplier_role(client, token, org_id)
     response = client.post(
         f"/api/v1/organizations/{org_id}/listings",
         headers={"Authorization": f"Bearer {token}"},
@@ -114,6 +165,7 @@ def test_invalid_price_and_currency_are_rejected(client):
 def test_public_marketplace_search_and_price_filters(client):
     token, org_id = account(client, "searchseller@example.com")
     headers = {"Authorization": f"Bearer {token}"}
+    activate_supplier_role(client, token, org_id)
     items = [
         {"title": "Organic cotton shirt", "description": "Soft fabric", "price_minor": 1800, "currency": "PKR"},
         {"title": "Notebook set", "description": "Recycled paper", "price_minor": 450, "currency": "PKR"},
@@ -143,6 +195,7 @@ def test_public_marketplace_search_and_price_filters(client):
 def test_inventory_adjustments_are_recorded_atomically_and_tenant_scoped(client):
     token, org_id = account(client, "inventory-history@example.com")
     headers = {"Authorization": f"Bearer {token}"}
+    activate_supplier_role(client, token, org_id)
     created = client.post(
         f"/api/v1/organizations/{org_id}/listings",
         headers=headers,
@@ -198,6 +251,7 @@ def test_inventory_adjustment_history_does_not_cross_tenants(client):
     owner_token, org_id = account(client, "inventory-owner@example.com")
     outsider_token, _ = account(client, "inventory-outsider@example.com")
     headers = {"Authorization": f"Bearer {owner_token}"}
+    activate_supplier_role(client, owner_token, org_id)
     created = client.post(
         f"/api/v1/organizations/{org_id}/listings",
         headers=headers,
@@ -210,3 +264,68 @@ def test_inventory_adjustment_history_does_not_cross_tenants(client):
         headers={"Authorization": f"Bearer {outsider_token}"},
     )
     assert response.status_code == 404
+
+
+
+def test_catalog_routes_fail_closed_without_active_supplier_role_and_exact_scope(client):
+    token, org_id = account(client, "role-guard@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    denied_create = client.post(
+        f"/api/v1/organizations/{org_id}/listings",
+        headers=headers,
+        json={"title": "Denied item", "description": "No supplier entitlement",
+              "price_minor": 100, "currency": "PKR"},
+    )
+    assert denied_create.status_code == 403
+    denied_read = client.get(f"/api/v1/organizations/{org_id}/listings", headers=headers)
+    assert denied_read.status_code == 403
+
+    second_org = client.post(
+        "/api/v1/organizations",
+        headers=headers,
+        json={"name": "Second supplier organization"},
+    )
+    assert second_org.status_code == 201, second_org.text
+    second_org_id = second_org.json()["id"]
+
+    entitlement_id, admin_headers = activate_supplier_role(client, token, org_id)
+    wrong_scope = client.post(
+        f"/api/v1/organizations/{second_org_id}/listings",
+        headers=headers,
+        json={"title": "Wrong scope", "description": "Entitlement belongs to another org",
+              "price_minor": 100, "currency": "PKR"},
+    )
+    assert wrong_scope.status_code == 403
+
+    created = client.post(
+        f"/api/v1/organizations/{org_id}/listings",
+        headers=headers,
+        json={"title": "Authorized item", "description": "Active supplier",
+              "price_minor": 100, "currency": "PKR"},
+    )
+    assert created.status_code == 201, created.text
+    listing_id = created.json()["id"]
+    assert client.get(f"/api/v1/organizations/{org_id}/listings", headers=headers).status_code == 200
+
+    suspended = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/lifecycle",
+        headers=admin_headers,
+        json={"action": "suspend"},
+    )
+    assert suspended.status_code == 200, suspended.text
+
+    assert client.get(f"/api/v1/organizations/{org_id}/listings", headers=headers).status_code == 403
+    assert client.post(
+        f"/api/v1/organizations/{org_id}/listings/{listing_id}/publish",
+        headers=headers,
+    ).status_code == 403
+    assert client.post(
+        f"/api/v1/organizations/{org_id}/listings/{listing_id}/inventory-adjustments",
+        headers=headers,
+        json={"delta": 1},
+    ).status_code == 403
+    assert client.get(
+        f"/api/v1/organizations/{org_id}/listings/{listing_id}/inventory-adjustments",
+        headers=headers,
+    ).status_code == 403
