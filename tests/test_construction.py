@@ -1,5 +1,7 @@
 """Construction entitlement, tenant isolation, lifecycle, and BOQ regression tests."""
 
+from decimal import Decimal
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, select
@@ -11,7 +13,7 @@ from app.api.routes import identity as identity_routes
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import AuditEvent, Membership, Organization, RoleDefinition, User, UserRoleEntitlement, utc_now
+from app.models import AuditEvent, ConstructionBoqItem, Membership, Organization, RoleDefinition, User, UserRoleEntitlement, utc_now
 
 _EMAIL_TOKENS: dict[str, str] = {}
 _TEST_SESSION_FACTORY = None
@@ -230,3 +232,37 @@ def test_construction_project_updates_are_creator_or_admin_only(client):
     denied = client.patch(f"/api/v1/organizations/{org_id}/construction/projects/{project.json()['id']}",
         headers={"Authorization": f"Bearer {member_token}"}, json={"progress_percent": 10})
     assert denied.status_code == 403
+
+
+def test_construction_project_boq_total_includes_lines_beyond_detail_limit(client):
+    token = register(client, "construction-large-boq@example.com")
+    org_id = organization(client, token, "Construction Large BOQ Org")
+    admin = register(client, "platform-admin@example.com")
+    activate_role(client, token, org_id, {"Authorization": f"Bearer {admin}"})
+    client_row = create_client_record(client, token, org_id)
+    project = create_project(client, token, org_id, client_row.json()["id"])
+    project_id = project.json()["id"]
+    with _TEST_SESSION_FACTORY() as db:
+        user = db.scalar(select(User).where(User.email == "construction-large-boq@example.com"))
+        db.add_all([
+            ConstructionBoqItem(
+                organization_id=org_id,
+                project_id=project_id,
+                created_by_user_id=user.id,
+                line_number=index,
+                item_name=f"BOQ line {index}",
+                unit="unit",
+                quantity=Decimal("1.000"),
+                unit_rate_minor=100,
+                line_total_minor=100,
+            )
+            for index in range(1, 502)
+        ])
+        db.commit()
+    detail = client.get(
+        f"/api/v1/organizations/{org_id}/construction/projects/{project_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert detail.status_code == 200, detail.text
+    assert len(detail.json()["boq_items"]) == 500
+    assert detail.json()["boq_total_minor"] == 50100

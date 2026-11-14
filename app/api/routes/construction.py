@@ -5,7 +5,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -132,10 +132,14 @@ def get_construction_project(
         ConstructionBoqItem.project_id == project.id,
         ConstructionBoqItem.organization_id == membership.organization_id
     ).order_by(ConstructionBoqItem.line_number, ConstructionBoqItem.id).limit(500)).all()
+    total = db.scalar(select(func.coalesce(func.sum(ConstructionBoqItem.line_total_minor), 0)).where(
+        ConstructionBoqItem.project_id == project.id,
+        ConstructionBoqItem.organization_id == membership.organization_id,
+    )) or 0
     return ConstructionProjectDetailResponse(
         project=ConstructionProjectResponse.model_validate(project),
         boq_items=[ConstructionBoqItemResponse.model_validate(item) for item in items],
-        boq_total_minor=sum(item.line_total_minor for item in items))
+        boq_total_minor=int(total))
 
 
 @router.post("/organizations/{organization_id}/construction/projects/{project_id}/boq-items",
