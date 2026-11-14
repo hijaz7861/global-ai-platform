@@ -12,7 +12,7 @@ from app.main import app
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, verified_user_factory, active_supplier_role_factory):
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -31,6 +31,11 @@ def client(monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
+        test_client.testing_sessions = TestingSessionLocal
+        test_client.register_verified = lambda email: verified_user_factory(test_client, email)
+        test_client.activate_supplier_role = lambda token, org_id, admin_email="platform-admin@example.com": (
+            active_supplier_role_factory(test_client, token, org_id, admin_email=admin_email)
+        )
         yield test_client
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
@@ -38,14 +43,12 @@ def client(monkeypatch):
 
 
 def test_audit_events_are_scoped_and_details_are_allowlisted(client):
-    password = "correct-horse-battery-12"
-    assert client.post("/api/v1/auth/register", json={"email": "owner@example.com", "password": password}).status_code == 201
-    login = client.post("/api/v1/auth/token", json={"email": "owner@example.com", "password": password})
-    token = login.json()["access_token"]
+    token = client.register_verified("owner@example.com")
     headers = {"Authorization": f"Bearer {token}"}
     org = client.post("/api/v1/organizations", headers=headers, json={"name": "Audit Org"})
     assert org.status_code == 201, org.text
     org_id = org.json()["id"]
+    client.activate_supplier_role(token, org_id)
 
     created = client.post(
         f"/api/v1/organizations/{org_id}/listings",
@@ -66,11 +69,8 @@ def test_audit_events_are_scoped_and_details_are_allowlisted(client):
 
 
 def test_non_member_cannot_read_tenant_audit_events(client):
-    password = "correct-horse-battery-12"
-    for email in ("owner@example.com", "outsider@example.com"):
-        assert client.post("/api/v1/auth/register", json={"email": email, "password": password}).status_code == 201
-    owner = client.post("/api/v1/auth/token", json={"email": "owner@example.com", "password": password}).json()["access_token"]
-    outsider = client.post("/api/v1/auth/token", json={"email": "outsider@example.com", "password": password}).json()["access_token"]
+    owner = client.register_verified("owner@example.com")
+    outsider = client.register_verified("outsider@example.com")
     org = client.post("/api/v1/organizations", headers={"Authorization": f"Bearer {owner}"}, json={"name": "Private Audit"}).json()
     response = client.get(
         f"/api/v1/organizations/{org['id']}/audit-events",
