@@ -15,7 +15,7 @@ from app.models import Order, utc_now
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, verified_user_factory, active_supplier_role_factory):
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -35,6 +35,10 @@ def client(monkeypatch):
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
         test_client.testing_sessions = TestingSessionLocal
+        test_client.register_verified = lambda email: verified_user_factory(test_client, email)
+        test_client.activate_supplier_role = lambda token, org_id, admin_email="platform-admin@example.com": (
+            active_supplier_role_factory(test_client, token, org_id, admin_email=admin_email)
+        )
         yield test_client
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
@@ -42,12 +46,7 @@ def client(monkeypatch):
 
 
 def register_login(client: TestClient, email: str) -> str:
-    password = "correct-horse-battery-12"
-    response = client.post("/api/v1/auth/register", json={"email": email, "password": password})
-    assert response.status_code == 201, response.text
-    response = client.post("/api/v1/auth/token", json={"email": email, "password": password})
-    assert response.status_code == 200, response.text
-    return response.json()["access_token"]
+    return client.register_verified(email)
 
 
 def make_active_listing(client: TestClient, quantity: int = 3) -> tuple[str, str, str]:
@@ -56,6 +55,7 @@ def make_active_listing(client: TestClient, quantity: int = 3) -> tuple[str, str
     org = client.post("/api/v1/organizations", headers=headers, json={"name": "Seller Org"})
     assert org.status_code == 201, org.text
     org_id = org.json()["id"]
+    client.activate_supplier_role(token, org_id)
     created = client.post(
         f"/api/v1/organizations/{org_id}/listings",
         headers=headers,

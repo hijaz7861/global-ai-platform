@@ -12,7 +12,7 @@ from app.main import app
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, verified_user_factory, active_supplier_role_factory):
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -32,6 +32,11 @@ def client(monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as test_client:
+        test_client.testing_sessions = sessions
+        test_client.register_verified = lambda email: verified_user_factory(test_client, email)
+        test_client.activate_supplier_role = lambda token, org_id, admin_email="platform-admin@example.com": (
+            active_supplier_role_factory(test_client, token, org_id, admin_email=admin_email)
+        )
         yield test_client
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
@@ -39,18 +44,7 @@ def client(monkeypatch):
 
 
 def register_and_login(client: TestClient, email: str) -> str:
-    password = "correct-horse-battery-12"
-    registered = client.post(
-        "/api/v1/auth/register",
-        json={"email": email, "password": password},
-    )
-    assert registered.status_code == 201, registered.text
-    login = client.post(
-        "/api/v1/auth/token",
-        json={"email": email, "password": password},
-    )
-    assert login.status_code == 200, login.text
-    return login.json()["access_token"]
+    return client.register_verified(email)
 
 
 def create_organization(client: TestClient, token: str, name: str) -> str:
@@ -105,6 +99,7 @@ def test_self_service_export_never_includes_credential_material(client):
 def test_self_service_export_includes_only_the_buyers_own_orders(client):
     seller_token = register_and_login(client, "privacy-export-seller@example.com")
     seller_org_id = create_organization(client, seller_token, "Export Seller Org")
+    client.activate_supplier_role(seller_token, seller_org_id)
     seller_headers = {"Authorization": f"Bearer {seller_token}"}
     listing = client.post(
         f"/api/v1/organizations/{seller_org_id}/listings",
