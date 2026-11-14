@@ -69,11 +69,8 @@ def test_audit_events_are_scoped_and_details_are_allowlisted(client):
 
 
 def test_non_member_cannot_read_tenant_audit_events(client):
-    password = "correct-horse-battery-12"
-    for email in ("owner@example.com", "outsider@example.com"):
-        assert client.post("/api/v1/auth/register", json={"email": email, "password": password}).status_code == 201
-    owner = client.post("/api/v1/auth/token", json={"email": "owner@example.com", "password": password}).json()["access_token"]
-    outsider = client.post("/api/v1/auth/token", json={"email": "outsider@example.com", "password": password}).json()["access_token"]
+    owner = client.register_verified("owner@example.com")
+    outsider = client.register_verified("outsider@example.com")
     org = client.post("/api/v1/organizations", headers={"Authorization": f"Bearer {owner}"}, json={"name": "Private Audit"}).json()
     response = client.get(
         f"/api/v1/organizations/{org['id']}/audit-events",
