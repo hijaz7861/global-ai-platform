@@ -251,18 +251,3 @@ HIJAZ ONE is not complete until:
 8. Complete global commerce: ISO 4217 currency metadata/exponents, decimal-safe multi-currency ledger, FX audit, tax hooks, signed/idempotent payment webhooks, refunds, disputes, settlement and reconciliation. Do not enable real providers without owner-supplied credentials and explicit setup.
 9. Complete AI operating controls still missing from the merged operating layer: trusted human approval issuer/release API, durable checkpoints/resumption, bounded multi-agent orchestration, memory retention/deletion, automatic skill selection, token/cost reservations, provider circuit breaker/failover, DLP, evaluation and observability.
 10. Complete release gates: security review, role/tenant/ownership negative tests, PostgreSQL migration tests, dependency audit, load checks where available, backup restore, portable-host rehearsal and operational runbooks. Rename the repository to `hijaz-one` only after all Definition of Done gates pass and the owner confirms the domain/deployment plan.
-
-
-
-
-
-1. Keep PR #20 blocked until an authorized POST-capable client completes Streamable HTTP `initialize`, `tools/list`, and one read-only `tools/call`; Vercel preview READY and CI #611 do not prove protocol interoperability.
-2. Owner-review the dependent Draft PR chain #23 → #24 → #25 → #26. PR #23 role foundation, PR #24 supplier gates, PR #25 transport gates and PR #26 construction project/BOQ slice all have exact-head CI passing. No PR is approved or merged.
-3. Complete the construction vertical: quote generation/acceptance, rate-book governance, cashbook/journal posting, labour, materials, attachments and auditable customer delivery.
-4. Port property, workforce/contractor hiring and education incrementally, with separate age/guardian-consent, moderation, tenant, ownership and fee/payment gates.
-5. Complete Version 40 source-to-target mapping, including the 29 tables omitted by the current 17-table backup function, object-file manifest, staging export/import, idempotent import and record/financial reconciliation. Do not copy live data before an approved rehearsal.
-6. Complete portable API/worker/scheduler separation, PostgreSQL/Compose setup, S3-compatible object adapter, provider-neutral integrations, health/readiness, structured logs, secret management and backup/restore rehearsal.
-7. Complete global commerce: ISO 4217 registry/exponents, multi-currency ledger and FX audit, tax hooks, signed/idempotent payment webhooks, refunds/disputes/settlement/reconciliation.
-8. Complete AI controls still missing from the merged operating layer: trusted approval issuer/release API, durable checkpoints/resumption, bounded multi-agent orchestration, memory retention/deletion, automatic skill selection, cost reservations, provider circuit breaker/failover, DLP and evaluation/observability.
-9. Add security review, tenant/role/ownership negative tests, PostgreSQL upgrade tests, dependency audit, restore and portable-host rehearsals. Establish branch protection and required review/check policy with owner authorization.
-10. Rename the repository only after every Definition of Done gate passes and the owner confirms domain ownership and deployment plan.
