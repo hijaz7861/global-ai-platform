@@ -274,6 +274,7 @@ class JournalEntry(Base):
     __tablename__ = "journal_entries"
     __table_args__ = (
         UniqueConstraint("organization_id", "idempotency_key", name="uq_journal_org_idempotency"),
+        Index("uq_journal_entries_id_org", "id", "organization_id", unique=True),
         CheckConstraint("total_minor > 0", name="ck_journal_total_positive"),
         CheckConstraint("status = 'posted'", name="ck_journal_posted_only"),
         UniqueConstraint("reversal_of_id", name="uq_journal_reversal_source"),
@@ -1246,3 +1247,51 @@ class ConstructionQuoteLine(Base):
     unit_rate_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     line_total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class ConstructionCashbookEntry(Base):
+    """Immutable project cashbook event linked to one balanced journal entry."""
+    __tablename__ = "construction_cashbook_entries"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "organization_id"],
+            ["construction_projects.id", "construction_projects.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_construction_cashbook_project_org",
+        ),
+        ForeignKeyConstraint(
+            ["journal_entry_id", "organization_id"],
+            ["journal_entries.id", "journal_entries.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_construction_cashbook_journal_org",
+        ),
+        UniqueConstraint("journal_entry_id", name="uq_construction_cashbook_journal_entry"),
+        CheckConstraint("direction IN ('income','expense')", name="ck_construction_cashbook_direction"),
+        CheckConstraint(
+            "amount_minor > 0 AND amount_minor <= 9000000000000000",
+            name="ck_construction_cashbook_amount",
+        ),
+        CheckConstraint("currency = 'PKR'", name="ck_construction_cashbook_currency_pkr"),
+        Index(
+            "ix_construction_cashbook_org_project_created",
+            "organization_id", "project_id", "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    project_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    journal_entry_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
