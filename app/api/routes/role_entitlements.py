@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import PROFESSIONAL_ROLE_KEYS, get_current_user
 from app.audit import record_audit_event
 from app.core.config import settings
 from app.db import get_db
@@ -48,6 +48,7 @@ class RoleLifecycleRequest(BaseModel):
 
 class RoleDefinitionUpdate(BaseModel):
     fee_amount_minor: int | None = Field(default=None, ge=0, le=9_000_000_000_000_000)
+    clear_fee: bool = False
     fee_currency: str | None = Field(default=None, min_length=3, max_length=3)
     min_age: int | None = Field(default=None, ge=0, le=120)
     is_active: bool | None = None
@@ -202,6 +203,18 @@ def update_role_definition(
     if role is None:
         raise HTTPException(status_code=404, detail="Role not found")
     changes = payload.model_dump(exclude_unset=True)
+    clear_fee = changes.pop("clear_fee", False)
+    requested_fee = changes.pop("fee_amount_minor", None)
+    if clear_fee and requested_fee is not None:
+        raise HTTPException(status_code=422, detail="Set either clear_fee or fee_amount_minor, not both")
+    if clear_fee:
+        role.fee_amount_minor = None
+    elif requested_fee is not None:
+        role.fee_amount_minor = requested_fee
+    requested_min_age = changes.get("min_age")
+    if (requested_min_age is not None and role_key in PROFESSIONAL_ROLE_KEYS
+            and requested_min_age < 18):
+        raise HTTPException(status_code=422, detail="Professional roles cannot have a minimum age below 18")
     for key, value in changes.items():
         if value is not None:
             setattr(role, key, value)
@@ -238,11 +251,17 @@ def review_role_entitlement(
         if item.payment_status == "pending":
             item.payment_status = "rejected"
     else:
+        owner = db.get(User, item.user_id)
+        if not role.is_active:
+            raise HTTPException(status_code=409, detail="Inactive role definitions cannot be approved")
+        if owner is None or not owner.is_active or not owner.email_verified:
+            raise HTTPException(status_code=409, detail="The applicant must have an active account and verified email at approval time")
         if item.fee_amount_minor > 0 and not payload.payment_verified:
             raise HTTPException(status_code=409, detail="Verified payment is required before role activation")
         if item.fee_amount_minor > 0:
             item.payment_status = "verified"
-        if role.min_age > 0 and not payload.age_verified:
+        required_age = max(role.min_age, 18 if role.role_key in PROFESSIONAL_ROLE_KEYS else 0)
+        if required_age > 0 and not payload.age_verified:
             raise HTTPException(status_code=409, detail="Verified age and identity evidence is required for this role")
         item.age_verified = payload.age_verified
         item.status = "active"

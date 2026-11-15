@@ -15,6 +15,13 @@ from app.models import Membership, RefreshToken, TokenRevocation, User
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
+# Professional marketplace/service roles must never be configured below adulthood.
+PROFESSIONAL_ROLE_KEYS = frozenset({
+    "teacher", "contractor", "mason", "labour", "supplier",
+    "transporter", "property_agent", "construction_provider",
+})
+
+
 def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     db: Annotated[Session, Depends(get_db)],
@@ -109,7 +116,8 @@ def require_active_role(role_key: str, *, organization_scoped: bool = False):
             raise HTTPException(status_code=403, detail=detail)
         if entitlement.fee_amount_minor == 0 and entitlement.payment_status not in {"not_required", "verified"}:
             raise HTTPException(status_code=403, detail=detail)
-        if role.min_age > 0 and not entitlement.age_verified:
+        required_age = max(role.min_age, 18 if role_key in PROFESSIONAL_ROLE_KEYS else 0)
+        if required_age > 0 and not entitlement.age_verified:
             raise HTTPException(status_code=403, detail=detail)
         expiry = entitlement.expires_at
         if expiry is not None:

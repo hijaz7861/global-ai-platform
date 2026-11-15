@@ -12,7 +12,7 @@ from app.api.routes import identity as identity_routes
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import RoleDefinition, RoleEntitlementEvent, UserRoleEntitlement, utc_now
+from app.models import RoleDefinition, RoleEntitlementEvent, User, UserRoleEntitlement, utc_now
 from app.services.role_entitlement_expiry import expire_due_role_entitlements
 
 _EMAIL_TOKENS: dict[str, str] = {}
@@ -329,3 +329,107 @@ def test_expired_role_entitlement_can_be_reapplied(client):
     )
     assert reapplied.status_code == 201, reapplied.text
     assert reapplied.json()["id"] != entitlement_id
+
+
+
+def test_platform_admin_can_clear_role_fee_and_applications_fail_closed(client):
+    admin_token = register(client, "platform@example.com")
+    cleared = client.patch(
+        "/api/v1/platform/role-definitions/teacher",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"clear_fee": True},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["fee_configured"] is False
+    applicant_token = register(client, "teacher-after-fee-clear@example.com")
+    application = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {applicant_token}"},
+        json={"role_key": "teacher"},
+    )
+    assert application.status_code == 409
+
+
+def test_platform_admin_cannot_lower_professional_role_age_floor(client):
+    admin_token = register(client, "platform@example.com")
+    response = client.patch(
+        "/api/v1/platform/role-definitions/contractor",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"min_age": 17},
+    )
+    assert response.status_code == 422
+    assert "below 18" in response.json()["detail"]
+
+
+def test_disabled_role_definition_cannot_be_approved(client):
+    user_token = register(client, "disabled-role-applicant@example.com")
+    admin_token = register(client, "platform@example.com")
+    application = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"role_key": "student"},
+    )
+    entitlement_id = application.json()["id"]
+    disabled = client.patch(
+        "/api/v1/platform/role-definitions/student",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"is_active": False},
+    )
+    assert disabled.status_code == 200
+    approval = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/review",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"decision": "approve"},
+    )
+    assert approval.status_code == 409
+    assert "inactive role" in approval.json()["detail"].lower()
+    with _TEST_SESSION_FACTORY() as db:
+        assert db.get(UserRoleEntitlement, entitlement_id).status == "pending_review"
+
+
+def test_approval_rechecks_applicant_verified_email(client):
+    user_token = register(client, "email-recheck@example.com")
+    admin_token = register(client, "platform@example.com")
+    application = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"role_key": "student"},
+    )
+    entitlement_id = application.json()["id"]
+    with _TEST_SESSION_FACTORY() as db:
+        owner = db.scalar(select(User).where(User.email == "email-recheck@example.com"))
+        owner.email_verified = False
+        db.commit()
+    approval = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/review",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"decision": "approve"},
+    )
+    assert approval.status_code == 409
+    assert "verified email" in approval.json()["detail"].lower()
+    with _TEST_SESSION_FACTORY() as db:
+        assert db.get(UserRoleEntitlement, entitlement_id).status == "pending_review"
+
+
+def test_approval_rechecks_applicant_active_account(client):
+    user_token = register(client, "inactive-applicant@example.com")
+    admin_token = register(client, "platform@example.com")
+    application = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"role_key": "student"},
+    )
+    entitlement_id = application.json()["id"]
+    with _TEST_SESSION_FACTORY() as db:
+        owner = db.scalar(select(User).where(User.email == "inactive-applicant@example.com"))
+        owner.is_active = False
+        db.commit()
+    approval = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/review",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"decision": "approve"},
+    )
+    assert approval.status_code == 409
+    assert "active account" in approval.json()["detail"].lower()
+    with _TEST_SESSION_FACTORY() as db:
+        assert db.get(UserRoleEntitlement, entitlement_id).status == "pending_review"
