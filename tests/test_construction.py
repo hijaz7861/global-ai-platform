@@ -535,13 +535,17 @@ def test_construction_cashbook_rejects_cross_tenant_wrong_type_currency_and_inva
             organization_id=foreign_org.id, code="1000", name="Foreign Cash",
             account_type="asset", currency="PKR", is_active=True,
         )
+        inactive_cash = models.Account(
+            organization_id=org_id, code="1001", name="Inactive Cash",
+            account_type="asset", currency="PKR", is_active=False,
+        )
         usd_revenue = models.Account(
             organization_id=org_id, code="4001", name="USD Revenue",
             account_type="revenue", currency="USD", is_active=True,
         )
-        db.add_all([foreign_cash, usd_revenue])
+        db.add_all([foreign_cash, inactive_cash, usd_revenue])
         db.commit()
-        foreign_cash_id, usd_revenue_id = foreign_cash.id, usd_revenue.id
+        foreign_cash_id, inactive_cash_id, usd_revenue_id = foreign_cash.id, inactive_cash.id, usd_revenue.id
 
     endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}/cashbook"
     auth = {"Authorization": f"Bearer {token}"}
@@ -558,6 +562,9 @@ def test_construction_cashbook_rejects_cross_tenant_wrong_type_currency_and_inva
     wrong_currency = client.post(endpoint, headers={**auth, "Idempotency-Key": "cashbook-currency-01"},
         json={**base, "category_account_id": usd_revenue_id})
     assert wrong_currency.status_code == 422
+    inactive = client.post(endpoint, headers={**auth, "Idempotency-Key": "cashbook-inactive-01"},
+        json={**base, "cash_account_id": inactive_cash_id})
+    assert inactive.status_code == 422
     same_account = client.post(endpoint, headers={**auth, "Idempotency-Key": "cashbook-sameacct-01"},
         json={**base, "category_account_id": accounts["cash"]})
     assert same_account.status_code == 422
@@ -580,6 +587,7 @@ def test_construction_cashbook_denies_non_creator_member_but_allows_tenant_read(
         client, "construction-cashbook-owner-access@example.com"
     )
     member_token = register(client, "construction-cashbook-member@example.com")
+    unentitled_token = register(client, "construction-cashbook-unentitled@example.com")
     with _TEST_SESSION_FACTORY() as db:
         member = db.scalar(select(User).where(User.email == "construction-cashbook-member@example.com"))
         db.add(Membership(user_id=member.id, organization_id=org_id, role="member"))
@@ -588,6 +596,8 @@ def test_construction_cashbook_denies_non_creator_member_but_allows_tenant_read(
             status="active", payment_status="verified", fee_amount_minor=1000,
             fee_currency="PKR", age_verified=True, activated_at=utc_now(),
         ))
+        unentitled = db.scalar(select(User).where(User.email == "construction-cashbook-unentitled@example.com"))
+        db.add(Membership(user_id=unentitled.id, organization_id=org_id, role="member"))
         db.commit()
     endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}/cashbook"
     member_headers = {"Authorization": f"Bearer {member_token}"}
@@ -600,6 +610,10 @@ def test_construction_cashbook_denies_non_creator_member_but_allows_tenant_read(
     listed = client.get(endpoint, headers=member_headers)
     assert listed.status_code == 200
     assert listed.json() == []
+    denied_without_role = client.get(
+        endpoint, headers={"Authorization": f"Bearer {unentitled_token}"}
+    )
+    assert denied_without_role.status_code == 403
 
 
 def test_construction_cashbook_rejects_closed_projects_and_closed_accounting_periods(client):
