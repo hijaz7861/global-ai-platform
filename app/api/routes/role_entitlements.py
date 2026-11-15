@@ -202,6 +202,12 @@ def update_role_definition(
     role = db.get(RoleDefinition, role_key)
     if role is None:
         raise HTTPException(status_code=404, detail="Role not found")
+    previous_values = {
+        "fee_amount_minor": role.fee_amount_minor,
+        "fee_currency": role.fee_currency,
+        "min_age": role.min_age,
+        "is_active": role.is_active,
+    }
     changes = payload.model_dump(exclude_unset=True)
     clear_fee = changes.pop("clear_fee", False)
     requested_fee = changes.pop("fee_amount_minor", None)
@@ -219,10 +225,21 @@ def update_role_definition(
         if value is not None:
             setattr(role, key, value)
     role.updated_at = utc_now()
+    updated_values = {
+        "fee_amount_minor": role.fee_amount_minor,
+        "fee_currency": role.fee_currency,
+        "min_age": role.min_age,
+        "is_active": role.is_active,
+    }
+    changed_values = {
+        key: {"before": previous_values[key], "after": updated_values[key]}
+        for key in previous_values
+        if previous_values[key] != updated_values[key]
+    }
     record_audit_event(
         db, actor_user_id=user.id, organization_id=None,
         action="role_definition.updated", entity_type="role_definition",
-        entity_id=role.role_key, details={key: value for key, value in changes.items()},
+        entity_id=role.role_key, details={"changes": changed_values},
     )
     db.commit()
     db.refresh(role)
@@ -334,7 +351,8 @@ def update_role_entitlement_lifecycle(
             raise HTTPException(status_code=409, detail="Verified payment is required for reinstatement")
         if item.fee_amount_minor == 0 and item.payment_status not in {"not_required", "verified"}:
             raise HTTPException(status_code=409, detail="Valid fee-exempt payment state is required")
-        if role.min_age > 0 and not item.age_verified:
+        required_age = max(role.min_age, 18 if role.role_key in PROFESSIONAL_ROLE_KEYS else 0)
+        if required_age > 0 and not item.age_verified:
             raise HTTPException(status_code=409, detail="Verified age and identity evidence is required")
         item.status = "active"
         item.activated_at = now

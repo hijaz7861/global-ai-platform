@@ -12,7 +12,7 @@ from app.api.routes import identity as identity_routes
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import RoleDefinition, RoleEntitlementEvent, User, UserRoleEntitlement, utc_now
+from app.models import AuditEvent, RoleDefinition, RoleEntitlementEvent, User, UserRoleEntitlement, utc_now
 from app.services.role_entitlement_expiry import expire_due_role_entitlements
 
 _EMAIL_TOKENS: dict[str, str] = {}
@@ -433,3 +433,98 @@ def test_approval_rechecks_applicant_active_account(client):
     assert "active account" in approval.json()["detail"].lower()
     with _TEST_SESSION_FACTORY() as db:
         assert db.get(UserRoleEntitlement, entitlement_id).status == "pending_review"
+
+def test_role_fee_configuration_audit_records_before_and_after_values(client):
+    admin_token = register(client, "platform@example.com")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    updated = client.patch(
+        "/api/v1/platform/role-definitions/teacher",
+        headers=headers,
+        json={"fee_amount_minor": 25_000},
+    )
+    assert updated.status_code == 200, updated.text
+    with _TEST_SESSION_FACTORY() as db:
+        event = db.scalar(
+            select(AuditEvent)
+            .where(
+                AuditEvent.entity_type == "role_definition",
+                AuditEvent.entity_id == "teacher",
+                AuditEvent.action == "role_definition.updated",
+            )
+            .order_by(AuditEvent.created_at.desc())
+        )
+        assert event is not None
+        assert event.details["changes"]["fee_amount_minor"] == {
+            "before": 20_000,
+            "after": 25_000,
+        }
+
+    cleared = client.patch(
+        "/api/v1/platform/role-definitions/teacher",
+        headers=headers,
+        json={"clear_fee": True},
+    )
+    assert cleared.status_code == 200, cleared.text
+    with _TEST_SESSION_FACTORY() as db:
+        events = db.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.entity_type == "role_definition",
+                AuditEvent.entity_id == "teacher",
+                AuditEvent.action == "role_definition.updated",
+            )
+            .order_by(AuditEvent.created_at.desc())
+        ).all()
+        assert any(
+            event.details["changes"].get("fee_amount_minor") == {
+                "before": 25_000,
+                "after": None,
+            }
+            for event in events
+        )
+
+
+def test_reinstatement_enforces_professional_age_floor_after_database_tampering(client):
+    user_token = register(client, "professional-age-floor@example.com")
+    admin_token = register(client, "platform@example.com")
+    application = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {user_token}"},
+        json={"role_key": "contractor"},
+    )
+    assert application.status_code == 201, application.text
+    entitlement_id = application.json()["id"]
+
+    approved = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/review",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"decision": "approve", "payment_verified": True, "age_verified": True},
+    )
+    assert approved.status_code == 200, approved.text
+    suspended = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/lifecycle",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"action": "suspend"},
+    )
+    assert suspended.status_code == 200, suspended.text
+
+    # Simulate an out-of-band catalogue mutation and a missing age attestation.
+    # The reinstatement path must still enforce the professional floor.
+    with _TEST_SESSION_FACTORY() as db:
+        role = db.get(RoleDefinition, "contractor")
+        entitlement = db.get(UserRoleEntitlement, entitlement_id)
+        role.min_age = 0
+        entitlement.age_verified = False
+        db.commit()
+
+    reinstated = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/lifecycle",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"action": "reinstate"},
+    )
+    assert reinstated.status_code == 409
+    assert "age" in reinstated.json()["detail"].lower()
+    with _TEST_SESSION_FACTORY() as db:
+        assert db.get(UserRoleEntitlement, entitlement_id).status == "suspended"
+
