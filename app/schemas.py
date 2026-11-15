@@ -1146,3 +1146,42 @@ class ConstructionQuoteLineResponse(BaseModel):
 class ConstructionQuoteDetailResponse(BaseModel):
     quote: ConstructionQuoteResponse
     lines: list[ConstructionQuoteLineResponse]
+
+
+
+class ConstructionCashbookCreate(BaseModel):
+    direction: Literal["income", "expense"]
+    cash_account_id: str = Field(min_length=1, max_length=36)
+    category_account_id: str = Field(min_length=1, max_length=36)
+    category: str = Field(min_length=1, max_length=80)
+    amount_minor: int = Field(gt=0, le=9_000_000_000_000_000, strict=True)
+    description: str | None = Field(default=None, max_length=500)
+
+    @field_validator("category", "description")
+    @classmethod
+    def normalize_cashbook_text(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value is not None else None
+        if value is not None and not normalized:
+            raise ValueError("Cashbook text fields must not be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def require_distinct_accounts(self):
+        if self.cash_account_id == self.category_account_id:
+            raise ValueError("Cash and category accounts must be different")
+        return self
+
+
+class ConstructionCashbookResponse(BaseModel):
+    id: str
+    organization_id: str
+    project_id: str
+    journal_entry_id: str
+    created_by_user_id: str
+    direction: str
+    category: str
+    description: str | None
+    amount_minor: int
+    currency: str
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)

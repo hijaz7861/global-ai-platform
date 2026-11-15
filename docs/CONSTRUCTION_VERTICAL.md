@@ -1,6 +1,6 @@
 # HIJAZ ONE Construction Vertical — Portable Project and BOQ Foundation
 
-**Status:** Implemented in Draft PR #26; not merged or deployed.
+**Status:** Project/BOQ and quote slices are implemented in Draft PRs #26–#27; project cashbook is implemented in Draft PR #28. None is merged or deployed.
 
 ## Source inventory and evidence
 
@@ -17,7 +17,8 @@ The source management API uses global tables without organization ownership. Its
 | Quote \`line_items\` / BOQ | \`construction_boq_items\` | Normalized project lines, Decimal quantity and integer PKR minor-unit rate/total. |
 | \`quotes\` | \`construction_quotes\` + \`construction_quote_lines\` | BOQ-only quote snapshots, integer PKR minor units, overhead/profit/discount/tax estimate fields and bounded draft/sent/accepted/rejected/expired lifecycle. |
 | \`pricing_items\` | Not implemented | Tenant rate-book governance and pricing-item moderation remain separate work. |
-| \`transactions\`, \`labour_entries\`, \`material_entries\` | Not implemented | Cashbook, workforce/labour and material registers remain separate work. |
+| \`transactions\` | \`construction_cashbook_entries\` + \`journal_entries\` | Project cashbook events are linked to balanced, append-only double-entry journal postings; no source rows are copied. |
+| \`labour_entries\`, \`material_entries\` | Not implemented | Labour and material registers remain separate work. |
 
 All endpoints require organization membership and an active, verified, fee-cleared, age-cleared \`construction_provider\` entitlement. Project updates require the creator or organization owner/admin; only owner/admin may approve. Status transitions are bounded and closed projects are terminal.
 
@@ -29,7 +30,7 @@ Missing entitlement and unverified email are denied; cross-tenant references and
 
 ## Explicitly not implemented
 
-No Hatchable rows or files were exported, copied, reconciled or imported. No source-to-target identity mapping exists. Tenant rate-book governance, cashbook/journal posting, labour, materials, contractor hiring, attachments, notifications, external payments, tax/FX and production migration remain out of scope. The live Hatchable application was not modified.
+No Hatchable rows or files were exported, copied, reconciled or imported. No source-to-target identity mapping exists. Tenant rate-book governance, labour, materials, contractor hiring, attachments, notifications, external payments, tax/FX and production migration remain out of scope. The live Hatchable application was not modified.
 
 This is a first portable construction slice, not a complete construction vertical or production-readiness claim.
 
@@ -49,3 +50,23 @@ Implemented in the focused Draft PR:
 - Regression tests cover Decimal totals and rounding, BOQ snapshot stability, send/accept/expiry, missing BOQ, invalid percentages and member decision denial.
 
 No Hatchable rows, private contact fields, identity documents, property deeds or media were exported or copied. The live Version 40 project remains unchanged. PR #27 is implemented but its exact-head CI and review are pending until GitHub confirms them.
+
+
+
+## Draft PR #28 — Project cashbook linked to the double-entry ledger
+
+The read-only Hatchable Version 40 schema confirms that source `transactions` contains `project_id`, `direction`, `category`, `amount`, `description` and `transaction_date`. The legacy admin-only `api/management.js` writes global rows and converts money through JavaScript `Number`; those semantics and all live rows are deliberately not copied.
+
+The portable cashbook adds `construction_cashbook_entries` as a project-scoped index of financial events, each linked one-to-one to an immutable `journal_entries` record. It does not maintain a second balance store:
+
+- Income posts debit to an active same-tenant asset account and credit to a same-tenant revenue account.
+- Expense posts debit to a same-tenant expense account and credit to an active asset account.
+- Both accounts must use the project's currency (currently PKR); amounts are positive integer minor units.
+- Every post requires an organization-scoped active `construction_provider` entitlement, existing membership, project creator or owner/admin authority, and an `Idempotency-Key`.
+- Only approved, in-progress or on-hold projects accept new entries. Configured accounting periods must have an open period covering the current UTC date.
+- Journal entry, cashbook row and audit events commit in one transaction. Duplicate keys replay the original result only for the identical request fingerprint; key reuse with different content returns conflict.
+- Composite foreign keys enforce that the project and journal entry belong to the same organization. The original cashbook event is retained; corrections use the existing journal reversal API rather than editing/deleting the cashbook record.
+
+Regression coverage includes income/expense balancing, idempotent replay and payload mismatch, foreign-tenant and wrong-type/currency accounts, same-account and non-positive amount rejection, non-creator member write denial with tenant read, closed-project/closed-period denial, and SQLite/PostgreSQL migration checks for composite tenant foreign keys and database-enforced append-only cashbook rows.
+
+This is a project cashbook posting slice, not bank integration, payment collection, tax, FX, supplier settlement or a full accounting close workflow. No Hatchable rows/files were exported or imported, and the live Version 40 application was not changed.

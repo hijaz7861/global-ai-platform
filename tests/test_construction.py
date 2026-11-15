@@ -417,3 +417,235 @@ def test_construction_quote_decision_is_owner_admin_only(client):
         headers={"Authorization": f"Bearer {member_token}"}, json={"decision": "accept"})
     assert denied.status_code == 403
     assert client.get(f"{endpoint}/{quote_id}", headers={"Authorization": f"Bearer {member_token}"}).status_code == 200
+
+
+
+def _create_cashbook_fixture(client, email: str):
+    token = register(client, email)
+    org_id = organization(client, token, f"Cashbook Org {email.split('@')[0]}")
+    admin = register(client, "platform-admin@example.com")
+    activate_role(client, token, org_id, {"Authorization": f"Bearer {admin}"})
+    client_row = create_client_record(client, token, org_id)
+    project = create_project(client, token, org_id, client_row.json()["id"])
+    project_id = project.json()["id"]
+    with _TEST_SESSION_FACTORY() as db:
+        project_row = db.get(models.ConstructionProject, project_id)
+        project_row.status = "approved"
+        cash = models.Account(
+            organization_id=org_id, code="1000", name="Project Cash",
+            account_type="asset", currency="PKR", is_active=True,
+        )
+        revenue = models.Account(
+            organization_id=org_id, code="4000", name="Construction Revenue",
+            account_type="revenue", currency="PKR", is_active=True,
+        )
+        expense = models.Account(
+            organization_id=org_id, code="5000", name="Construction Expense",
+            account_type="expense", currency="PKR", is_active=True,
+        )
+        db.add_all([cash, revenue, expense])
+        db.flush()
+        account_ids = {"cash": cash.id, "revenue": revenue.id, "expense": expense.id}
+        db.commit()
+    return token, org_id, project_id, account_ids, email
+
+
+def test_construction_cashbook_posts_balanced_income_expense_and_is_idempotent(client):
+    token, org_id, project_id, accounts, _ = _create_cashbook_fixture(
+        client, "construction-cashbook-owner@example.com"
+    )
+    endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}/cashbook"
+    headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "cashbook-income-0001"}
+    income_payload = {
+        "direction": "income", "cash_account_id": accounts["cash"],
+        "category_account_id": accounts["revenue"], "category": "Client advance",
+        "amount_minor": 12500, "description": "Approved project advance",
+    }
+    income = client.post(endpoint, headers=headers, json=income_payload)
+    assert income.status_code == 201, income.text
+    repeated = client.post(endpoint, headers=headers, json=income_payload)
+    assert repeated.status_code == 201, repeated.text
+    assert repeated.json()["id"] == income.json()["id"]
+
+    changed_payload = {**income_payload, "amount_minor": 13000}
+    conflict = client.post(endpoint, headers=headers, json=changed_payload)
+    assert conflict.status_code == 409
+
+    expense = client.post(
+        endpoint,
+        headers={"Authorization": f"Bearer {token}", "Idempotency-Key": "cashbook-expense-0001"},
+        json={
+            "direction": "expense", "cash_account_id": accounts["cash"],
+            "category_account_id": accounts["expense"], "category": "Cement purchase",
+            "amount_minor": 4300, "description": "Project materials",
+        },
+    )
+    assert expense.status_code == 201, expense.text
+
+    with _TEST_SESSION_FACTORY() as db:
+        cashbook_rows = db.scalars(select(models.ConstructionCashbookEntry).where(
+            models.ConstructionCashbookEntry.project_id == project_id
+        )).all()
+        assert len(cashbook_rows) == 2
+        journal_ids = {row.journal_entry_id for row in cashbook_rows}
+        journal_entries = db.scalars(select(models.JournalEntry).where(
+            models.JournalEntry.id.in_(journal_ids)
+        )).all()
+        assert len(journal_entries) == 2
+        for entry in journal_entries:
+            lines = db.scalars(select(models.JournalLine).where(
+                models.JournalLine.journal_entry_id == entry.id
+            )).all()
+            assert sum(line.debit_minor for line in lines) == entry.total_minor
+            assert sum(line.credit_minor for line in lines) == entry.total_minor
+        income_entry = next(item for item in journal_entries if item.id == income.json()["journal_entry_id"])
+        income_lines = db.scalars(select(models.JournalLine).where(
+            models.JournalLine.journal_entry_id == income_entry.id
+        )).all()
+        assert {line.account_id: (line.debit_minor, line.credit_minor) for line in income_lines} == {
+            accounts["cash"]: (12500, 0), accounts["revenue"]: (0, 12500)
+        }
+        expense_entry = next(item for item in journal_entries if item.id == expense.json()["journal_entry_id"])
+        expense_lines = db.scalars(select(models.JournalLine).where(
+            models.JournalLine.journal_entry_id == expense_entry.id
+        )).all()
+        assert {line.account_id: (line.debit_minor, line.credit_minor) for line in expense_lines} == {
+            accounts["expense"]: (4300, 0), accounts["cash"]: (0, 4300)
+        }
+        events = db.scalars(select(AuditEvent).where(
+            AuditEvent.organization_id == org_id,
+            AuditEvent.action == "construction_cashbook.posted",
+        )).all()
+        assert len(events) == 2
+
+    listed = client.get(endpoint, headers={"Authorization": f"Bearer {token}"})
+    assert listed.status_code == 200
+    assert len(listed.json()) == 2
+
+
+def test_construction_cashbook_rejects_cross_tenant_wrong_type_currency_and_invalid_amount(client):
+    token, org_id, project_id, accounts, _ = _create_cashbook_fixture(
+        client, "construction-cashbook-validation@example.com"
+    )
+    with _TEST_SESSION_FACTORY() as db:
+        foreign_org = Organization(name="Foreign Cashbook Organization")
+        db.add(foreign_org)
+        db.flush()
+        foreign_cash = models.Account(
+            organization_id=foreign_org.id, code="1000", name="Foreign Cash",
+            account_type="asset", currency="PKR", is_active=True,
+        )
+        inactive_cash = models.Account(
+            organization_id=org_id, code="1001", name="Inactive Cash",
+            account_type="asset", currency="PKR", is_active=False,
+        )
+        usd_revenue = models.Account(
+            organization_id=org_id, code="4001", name="USD Revenue",
+            account_type="revenue", currency="USD", is_active=True,
+        )
+        db.add_all([foreign_cash, inactive_cash, usd_revenue])
+        db.commit()
+        foreign_cash_id, inactive_cash_id, usd_revenue_id = foreign_cash.id, inactive_cash.id, usd_revenue.id
+
+    endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}/cashbook"
+    auth = {"Authorization": f"Bearer {token}"}
+    base = {
+        "direction": "income", "cash_account_id": accounts["cash"],
+        "category_account_id": accounts["revenue"], "category": "Advance", "amount_minor": 1000,
+    }
+    foreign = client.post(endpoint, headers={**auth, "Idempotency-Key": "cashbook-foreign-01"},
+        json={**base, "cash_account_id": foreign_cash_id})
+    assert foreign.status_code == 422
+    wrong_type = client.post(endpoint, headers={**auth, "Idempotency-Key": "cashbook-wrongtype-01"},
+        json={**base, "category_account_id": accounts["expense"]})
+    assert wrong_type.status_code == 422
+    wrong_currency = client.post(endpoint, headers={**auth, "Idempotency-Key": "cashbook-currency-01"},
+        json={**base, "category_account_id": usd_revenue_id})
+    assert wrong_currency.status_code == 422
+    inactive = client.post(endpoint, headers={**auth, "Idempotency-Key": "cashbook-inactive-01"},
+        json={**base, "cash_account_id": inactive_cash_id})
+    assert inactive.status_code == 422
+    same_account = client.post(endpoint, headers={**auth, "Idempotency-Key": "cashbook-sameacct-01"},
+        json={**base, "category_account_id": accounts["cash"]})
+    assert same_account.status_code == 422
+    zero_amount = client.post(endpoint, headers={**auth, "Idempotency-Key": "cashbook-zero-amount"},
+        json={**base, "amount_minor": 0})
+    assert zero_amount.status_code == 422
+    fractional_amount = client.post(
+        endpoint, headers={**auth, "Idempotency-Key": "cashbook-fractional"},
+        json={**base, "amount_minor": 1000.5},
+    )
+    assert fractional_amount.status_code == 422
+    with _TEST_SESSION_FACTORY() as db:
+        assert db.scalar(select(models.JournalEntry.id).where(
+            models.JournalEntry.organization_id == org_id
+        )) is None
+
+
+def test_construction_cashbook_denies_non_creator_member_but_allows_tenant_read(client):
+    token, org_id, project_id, accounts, _ = _create_cashbook_fixture(
+        client, "construction-cashbook-owner-access@example.com"
+    )
+    member_token = register(client, "construction-cashbook-member@example.com")
+    unentitled_token = register(client, "construction-cashbook-unentitled@example.com")
+    with _TEST_SESSION_FACTORY() as db:
+        member = db.scalar(select(User).where(User.email == "construction-cashbook-member@example.com"))
+        db.add(Membership(user_id=member.id, organization_id=org_id, role="member"))
+        db.add(UserRoleEntitlement(
+            user_id=member.id, role_key="construction_provider", organization_id=org_id,
+            status="active", payment_status="verified", fee_amount_minor=1000,
+            fee_currency="PKR", age_verified=True, activated_at=utc_now(),
+        ))
+        unentitled = db.scalar(select(User).where(User.email == "construction-cashbook-unentitled@example.com"))
+        db.add(Membership(user_id=unentitled.id, organization_id=org_id, role="member"))
+        db.commit()
+    endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}/cashbook"
+    member_headers = {"Authorization": f"Bearer {member_token}"}
+    denied = client.post(endpoint, headers={**member_headers, "Idempotency-Key": "cashbook-member-01"},
+        json={
+            "direction": "income", "cash_account_id": accounts["cash"],
+            "category_account_id": accounts["revenue"], "category": "Advance", "amount_minor": 1000,
+        })
+    assert denied.status_code == 403
+    listed = client.get(endpoint, headers=member_headers)
+    assert listed.status_code == 200
+    assert listed.json() == []
+    denied_without_role = client.get(
+        endpoint, headers={"Authorization": f"Bearer {unentitled_token}"}
+    )
+    assert denied_without_role.status_code == 403
+
+
+def test_construction_cashbook_rejects_closed_projects_and_closed_accounting_periods(client):
+    token, org_id, project_id, accounts, owner_email = _create_cashbook_fixture(
+        client, "construction-cashbook-period@example.com"
+    )
+    endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}/cashbook"
+    headers = {"Authorization": f"Bearer {token}", "Idempotency-Key": "cashbook-period-guard-01"}
+    payload = {
+        "direction": "income", "cash_account_id": accounts["cash"],
+        "category_account_id": accounts["revenue"], "category": "Advance", "amount_minor": 1000,
+    }
+    with _TEST_SESSION_FACTORY() as db:
+        project = db.get(models.ConstructionProject, project_id)
+        project.status = "completed"
+        db.commit()
+    closed_project = client.post(endpoint, headers=headers, json=payload)
+    assert closed_project.status_code == 409
+
+    with _TEST_SESSION_FACTORY() as db:
+        project = db.get(models.ConstructionProject, project_id)
+        project.status = "approved"
+        owner = db.scalar(select(User).where(User.email == owner_email))
+        today = utc_now().date()
+        db.add(models.AccountingPeriod(
+            organization_id=org_id, name="Closed cashbook period",
+            starts_on=today, ends_on=today, status="closed", created_by_user_id=owner.id,
+        ))
+        db.commit()
+    closed_period = client.post(endpoint, headers=headers, json=payload)
+    assert closed_period.status_code == 409
+    with _TEST_SESSION_FACTORY() as db:
+        assert db.scalar(select(models.JournalEntry.id).where(
+            models.JournalEntry.organization_id == org_id
+        )) is None
