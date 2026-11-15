@@ -1169,7 +1169,7 @@ class ConstructionBoqItem(Base):
 
 
 class ConstructionQuote(Base):
-    """Immutable BOQ-based quote snapshot with a separately mutable lifecycle."""
+    """BOQ-based quote snapshot with a separately mutable lifecycle."""
     __tablename__ = "construction_quotes"
     __table_args__ = (
         UniqueConstraint("id", "organization_id", name="uq_construction_quotes_id_org"),

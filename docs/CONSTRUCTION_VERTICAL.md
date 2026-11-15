@@ -15,7 +15,8 @@ The source management API uses global tables without organization ownership. Its
 | \`clients\` | \`construction_clients\` | Tenant-owned display name and city only; phone, full address and free-text notes excluded initially. |
 | \`projects\` | \`construction_projects\` | Tenant-owned project, same-tenant client composite key, work/contract type, dates, status, progress, location label and PKR minor-unit contract amount. |
 | Quote \`line_items\` / BOQ | \`construction_boq_items\` | Normalized project lines, Decimal quantity and integer PKR minor-unit rate/total. |
-| \`quotes\` | \`construction_quotes\` + \`construction_quote_lines\` | BOQ-only quote snapshots, integer PKR minor units, overhead/profit/discount/tax estimate fields and bounded draft/sent/accepted/rejected/expired lifecycle. |\n| \`pricing_items\` | Not implemented | Tenant rate-book governance and pricing-item moderation remain separate work. |
+| \`quotes\` | \`construction_quotes\` + \`construction_quote_lines\` | BOQ-only quote snapshots, integer PKR minor units, overhead/profit/discount/tax estimate fields and bounded draft/sent/accepted/rejected/expired lifecycle. |
+| \`pricing_items\` | Not implemented | Tenant rate-book governance and pricing-item moderation remain separate work. |
 | \`transactions\`, \`labour_entries\`, \`material_entries\` | Not implemented | Cashbook, workforce/labour and material registers remain separate work. |
 
 All endpoints require organization membership and an active, verified, fee-cleared, age-cleared \`construction_provider\` entitlement. Project updates require the creator or organization owner/admin; only owner/admin may approve. Status transitions are bounded and closed projects are terminal.
@@ -28,7 +29,7 @@ Missing entitlement and unverified email are denied; cross-tenant references and
 
 ## Explicitly not implemented
 
-No Hatchable rows or files were exported, copied, reconciled or imported. No source-to-target identity mapping exists. Quotes, rate-book governance, cashbook/journal posting, labour, materials, contractor hiring, attachments, notifications, external payments, tax/FX and production migration remain out of scope. The live Hatchable application was not modified.
+No Hatchable rows or files were exported, copied, reconciled or imported. No source-to-target identity mapping exists. Tenant rate-book governance, cashbook/journal posting, labour, materials, contractor hiring, attachments, notifications, external payments, tax/FX and production migration remain out of scope. The live Hatchable application was not modified.
 
 This is a first portable construction slice, not a complete construction vertical or production-readiness claim.
 

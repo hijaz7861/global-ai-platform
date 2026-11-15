@@ -1,6 +1,6 @@
 """Construction entitlement, tenant isolation, lifecycle, and BOQ regression tests."""
 
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -364,7 +364,7 @@ def test_construction_quote_send_accept_and_expiry_lifecycle(client):
     assert client.post(f"{endpoint}/{second_id}/send", headers=headers).status_code == 200
     with _TEST_SESSION_FACTORY() as db:
         quote_row = db.get(ConstructionQuote, second_id)
-        quote_row.valid_until = date.today() - timedelta(days=1)
+        quote_row.valid_until = datetime.now(timezone.utc).date() - timedelta(days=1)
         db.commit()
     expired = client.post(f"{endpoint}/{second_id}/decision", headers=headers, json={"decision": "reject"})
     assert expired.status_code == 409

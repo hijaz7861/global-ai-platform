@@ -269,6 +269,8 @@ def create_construction_quote(
         raise HTTPException(status_code=403, detail="Project creator or organization owner/admin required")
     if project.status in {"completed", "cancelled"}:
         raise HTTPException(status_code=409, detail="Closed projects cannot be quoted")
+    if project.status not in {"lead", "quoted"}:
+        raise HTTPException(status_code=409, detail="Quotes can only be created before project approval")
     boq_items = db.scalars(select(ConstructionBoqItem).where(
         ConstructionBoqItem.project_id == project.id,
         ConstructionBoqItem.organization_id == membership.organization_id,
@@ -278,6 +280,11 @@ def create_construction_quote(
     if len(boq_items) > 1000:
         raise HTTPException(status_code=409, detail="A quote is limited to 1000 BOQ lines")
 
+    for item in boq_items:
+        expected_line_total = int((Decimal(item.quantity) * Decimal(item.unit_rate_minor)).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP))
+        if expected_line_total != int(item.line_total_minor) or expected_line_total > _MAX_MINOR:
+            raise HTTPException(status_code=409, detail="BOQ contains an inconsistent or unsupported line total")
     subtotal = sum(int(item.line_total_minor) for item in boq_items)
     if subtotal <= 0 or subtotal > _MAX_MINOR:
         raise HTTPException(status_code=409, detail="BOQ subtotal must be positive and within the supported amount range")
@@ -406,7 +413,10 @@ def decide_construction_quote(
     entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("construction_provider", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> ConstructionQuoteDetailResponse:
+    project = _get_project(db, membership.organization_id, project_id)
     quote = _get_quote(db, membership.organization_id, project_id, quote_id)
+    if project.status != "quoted":
+        raise HTTPException(status_code=409, detail="Project must remain in quoted status to record a quote decision")
     if membership.role not in {"owner", "admin"}:
         raise HTTPException(status_code=403, detail="Organization owner/admin must record the customer decision")
     if quote.status != "sent":
