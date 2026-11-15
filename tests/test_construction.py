@@ -564,6 +564,11 @@ def test_construction_cashbook_rejects_cross_tenant_wrong_type_currency_and_inva
     zero_amount = client.post(endpoint, headers={**auth, "Idempotency-Key": "cashbook-zero-amount"},
         json={**base, "amount_minor": 0})
     assert zero_amount.status_code == 422
+    fractional_amount = client.post(
+        endpoint, headers={**auth, "Idempotency-Key": "cashbook-fractional"},
+        json={**base, "amount_minor": 1000.5},
+    )
+    assert fractional_amount.status_code == 422
     with _TEST_SESSION_FACTORY() as db:
         assert db.scalar(select(models.JournalEntry.id).where(
             models.JournalEntry.organization_id == org_id

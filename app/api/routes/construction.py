@@ -477,7 +477,16 @@ def create_construction_cashbook_entry(
     db: Annotated[Session, Depends(get_db)],
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)],
 ) -> ConstructionCashbookResponse:
-    project = _get_project(db, membership.organization_id, project_id)
+    project = db.scalar(
+        select(ConstructionProject)
+        .where(
+            ConstructionProject.id == project_id,
+            ConstructionProject.organization_id == membership.organization_id,
+        )
+        .with_for_update()
+    )
+    if project is None:
+        raise HTTPException(status_code=404, detail="Construction project not found")
     if not _can_manage_project(membership, project):
         raise HTTPException(status_code=403, detail="Project creator or organization owner/admin required")
 
@@ -525,6 +534,7 @@ def create_construction_cashbook_entry(
             Account.id.in_(account_ids),
             Account.is_active.is_(True),
         )
+        .with_for_update()
     ).all()
     account_by_id = {account.id: account for account in accounts}
     if set(account_by_id) != account_ids:

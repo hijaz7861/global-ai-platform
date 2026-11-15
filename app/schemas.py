@@ -1154,7 +1154,7 @@ class ConstructionCashbookCreate(BaseModel):
     cash_account_id: str = Field(min_length=1, max_length=36)
     category_account_id: str = Field(min_length=1, max_length=36)
     category: str = Field(min_length=1, max_length=80)
-    amount_minor: int = Field(gt=0, le=9_000_000_000_000_000)
+    amount_minor: int = Field(gt=0, le=9_000_000_000_000_000, strict=True)
     description: str | None = Field(default=None, max_length=500)
 
     @field_validator("category", "description")
