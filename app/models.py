@@ -1166,3 +1166,83 @@ class ConstructionBoqItem(Base):
     unit_rate_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     line_total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class ConstructionQuote(Base):
+    """BOQ-based quote snapshot with a separately mutable lifecycle."""
+    __tablename__ = "construction_quotes"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_construction_quotes_id_org"),
+        UniqueConstraint("organization_id", "quote_no", name="uq_construction_quotes_org_quote_no"),
+        ForeignKeyConstraint(["project_id", "organization_id"],
+            ["construction_projects.id", "construction_projects.organization_id"],
+            ondelete="RESTRICT", name="fk_construction_quotes_project_org"),
+        CheckConstraint("status IN ('draft','sent','accepted','rejected','expired')",
+                        name="ck_construction_quotes_status"),
+        CheckConstraint("currency = 'PKR'", name="ck_construction_quotes_currency_pkr"),
+        CheckConstraint("validity_days BETWEEN 1 AND 365", name="ck_construction_quotes_validity"),
+        CheckConstraint("overhead_pct BETWEEN 0 AND 100", name="ck_construction_quotes_overhead_pct"),
+        CheckConstraint("profit_pct BETWEEN 0 AND 100", name="ck_construction_quotes_profit_pct"),
+        CheckConstraint("discount_pct BETWEEN 0 AND 100", name="ck_construction_quotes_discount_pct"),
+        CheckConstraint("tax_pct BETWEEN 0 AND 100", name="ck_construction_quotes_tax_pct"),
+        CheckConstraint("boq_subtotal_minor >= 0 AND overhead_amount_minor >= 0 AND profit_amount_minor >= 0",
+                        name="ck_construction_quotes_base_amounts_nonnegative"),
+        CheckConstraint("discount_amount_minor >= 0 AND tax_amount_minor >= 0 AND total_minor >= 0",
+                        name="ck_construction_quotes_adjustments_nonnegative"),
+        Index("ix_construction_quotes_org_project_created", "organization_id", "project_id", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    project_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    decision_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    quote_no: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    boq_subtotal_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    overhead_pct: Mapped[Decimal] = mapped_column(Numeric(7, 2), default=Decimal("0"), nullable=False)
+    overhead_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    profit_pct: Mapped[Decimal] = mapped_column(Numeric(7, 2), default=Decimal("0"), nullable=False)
+    profit_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    discount_pct: Mapped[Decimal] = mapped_column(Numeric(7, 2), default=Decimal("0"), nullable=False)
+    discount_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    tax_pct: Mapped[Decimal] = mapped_column(Numeric(7, 2), default=Decimal("0"), nullable=False)
+    tax_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    validity_days: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    valid_until: Mapped[date] = mapped_column(Date, nullable=False)
+    terms: Mapped[str | None] = mapped_column(String(3000), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class ConstructionQuoteLine(Base):
+    """Snapshot line copied from a tenant-owned BOQ; no live BOQ dependency."""
+    __tablename__ = "construction_quote_lines"
+    __table_args__ = (
+        ForeignKeyConstraint(["quote_id", "organization_id"],
+            ["construction_quotes.id", "construction_quotes.organization_id"],
+            ondelete="RESTRICT", name="fk_construction_quote_lines_quote_org"),
+        UniqueConstraint("quote_id", "line_number", name="uq_construction_quote_lines_quote_line"),
+        CheckConstraint("line_number BETWEEN 1 AND 10000", name="ck_construction_quote_lines_line_number"),
+        CheckConstraint("source_boq_line_number IS NULL OR source_boq_line_number BETWEEN 1 AND 10000",
+                        name="ck_construction_quote_lines_source_line"),
+        CheckConstraint("quantity > 0", name="ck_construction_quote_lines_quantity_positive"),
+        CheckConstraint("unit_rate_minor >= 0 AND line_total_minor >= 0",
+                        name="ck_construction_quote_lines_amounts_nonnegative"),
+        Index("ix_construction_quote_lines_org_quote", "organization_id", "quote_id", "line_number"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    quote_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_boq_line_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    item_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    unit: Mapped[str] = mapped_column(String(30), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    unit_rate_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    line_total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
