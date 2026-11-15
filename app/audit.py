@@ -8,6 +8,11 @@ from app.models import AuditEvent
 _ALLOWED_DETAIL_KEYS = {
     "status", "quantity", "price_minor", "total_minor", "currency", "role",
     "membership_count", "buyer_order_count",
+    "fee_amount_minor_before", "fee_amount_minor_after",
+    "fee_currency_before", "fee_currency_after",
+    "min_age_before", "min_age_after",
+    "is_active_before", "is_active_after",
+    "fee_configured_before", "fee_configured_after",
 }
 
 

@@ -231,15 +231,20 @@ def update_role_definition(
         "min_age": role.min_age,
         "is_active": role.is_active,
     }
-    changed_values = {
-        key: {"before": previous_values[key], "after": updated_values[key]}
-        for key in previous_values
-        if previous_values[key] != updated_values[key]
-    }
+    changed_values: dict[str, str | int | bool] = {}
+    for key in previous_values:
+        if previous_values[key] == updated_values[key]:
+            continue
+        changed_values[f"{key}_before"] = previous_values[key]
+        if updated_values[key] is not None:
+            changed_values[f"{key}_after"] = updated_values[key]
+        if key == "fee_amount_minor":
+            changed_values["fee_configured_before"] = previous_values[key] is not None
+            changed_values["fee_configured_after"] = updated_values[key] is not None
     record_audit_event(
         db, actor_user_id=user.id, organization_id=None,
         action="role_definition.updated", entity_type="role_definition",
-        entity_id=role.role_key, details={"changes": changed_values},
+        entity_id=role.role_key, details=changed_values,
     )
     db.commit()
     db.refresh(role)

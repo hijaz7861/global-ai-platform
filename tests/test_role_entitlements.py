@@ -455,10 +455,10 @@ def test_role_fee_configuration_audit_records_before_and_after_values(client):
             .order_by(AuditEvent.created_at.desc())
         )
         assert event is not None
-        assert event.details["changes"]["fee_amount_minor"] == {
-            "before": 20_000,
-            "after": 25_000,
-        }
+        assert event.details["fee_amount_minor_before"] == 20_000
+        assert event.details["fee_amount_minor_after"] == 25_000
+        assert event.details["fee_configured_before"] is True
+        assert event.details["fee_configured_after"] is True
 
     cleared = client.patch(
         "/api/v1/platform/role-definitions/teacher",
@@ -476,13 +476,13 @@ def test_role_fee_configuration_audit_records_before_and_after_values(client):
             )
             .order_by(AuditEvent.created_at.desc())
         ).all()
-        assert any(
-            event.details["changes"].get("fee_amount_minor") == {
-                "before": 25_000,
-                "after": None,
-            }
-            for event in events
+        cleared_event = next(
+            event for event in events
+            if event.details.get("fee_configured_before") is True
+            and event.details.get("fee_configured_after") is False
         )
+        assert cleared_event.details["fee_amount_minor_before"] == 25_000
+        assert "fee_amount_minor_after" not in cleared_event.details
 
 
 def test_reinstatement_enforces_professional_age_floor_after_database_tampering(client):
