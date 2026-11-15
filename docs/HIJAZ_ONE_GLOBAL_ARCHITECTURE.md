@@ -118,17 +118,30 @@ Lifecycle: `not_requested -> pending_payment -> pending_review -> active`; excep
 
 Every protected API must check authenticated identity, tenant, entitlement status, permission, resource ownership and applicable quota. Never trust client-supplied role, price, approval, or payment status.
 
-**Implementation snapshot (2026-11-14, verified from GitHub):**
+**Implementation snapshot (2026-11-16, verified from GitHub and Hatchable):**
 
-- **Default branch:** `master` remains at merge commit `21480c93f105052ad35f343b84a6f7858de5631d`; PR #21 is closed/merged. Current default-branch Alembic head is `0034_postgres_approval_nonces`. GitHub reports the master branch as not protected; branch protection is a release-governance gap and was not changed.
-- **PR #22:** this architecture/roadmap PR remains Draft, open and unmerged at `8ac2004f9ae9cdfcf3c3d16c0d531c5b9d020509`; no reviews or review threads are recorded. This document is on the PR branch, not yet on master.
-- **PR #20:** read-only MCP bridge remains Draft/unmerged at `f63abf1dcd5d5282aa76cfe86fb69471dd21aaf2`. Exact-head Actions run #611 passed all five jobs. Vercel reports the preview deployment for that exact commit as READY. The PR description reports an authenticated GET health check as HTTP 200, but Streamable HTTP POST `initialize`, `tools/list`, and `tools/call` remain unverified; no authenticated POST-capable execution path was available in this run. No protocol-success claim is made.
-- **PR #23:** multi-role entitlement foundation remains Draft/unmerged at `13de2075119b4863d54e7c561bbb316ee210c9c2`, migration `0035_role_entitlements`. Exact-head Actions run #755 passed 5/5 jobs: 258 passed/17 skipped on each Python 3.11/3.12/3.13 job and 17 PostgreSQL integration tests. No submitted reviews or review threads are recorded.
-- **PR #24:** supplier catalog/seller entitlement guards remain Draft/unmerged at `7bfd25636403b017d470ab8eee9b221e7f00f077`, stacked on #23. Exact-head Actions run #759 passed 5/5 jobs: 260 passed/17 skipped on each Python matrix job and 17 PostgreSQL integration tests. The PR description has been updated with those verified results. No reviews or review threads are recorded.
-- **PR #25:** transport provider/vehicle listing slice remains Draft/unmerged at `a44c1731179b87c588df6e71f1858b8aad58ca05`, migration `0036_transport_marketplace`, stacked on #24. Exact-head Actions run #761 passed 5/5 jobs: 263 passed/17 skipped on each Python matrix job and 17 PostgreSQL integration tests. No reviews or review threads are recorded.
-- **PR #26:** first portable construction slice remains Draft/unmerged, stacked on #25. Current head is `35202c34bb91ac2dc16c273ce920f8bb0b6b691d`, migration `0037_construction_operations`. It adds tenant-scoped clients/projects/BOQ, active `construction_provider` gates, composite same-tenant foreign keys, Decimal PKR minor-unit BOQ calculations, bounded project lifecycle, transactional audit, SQLite negative tests and PostgreSQL composite-FK coverage. Project detail caps returned BOQ rows at 500 but calculates the total across all rows; a 501-row regression test verifies this. Exact-head Actions Run #764 passed 5/5 jobs: 270 passed/18 skipped on each Python 3.11/3.12/3.13 job and 18 PostgreSQL tests. SQLite/PostgreSQL migrations and `alembic check`, Ruff, compilation, dependency audit and Bandit passed. Initial Run #762 failed only because the unverified-email test helper attempted login while login-level email verification was enabled; the test-only toggle was corrected without weakening the production role gate. Run #763 passed the preceding head, and current Run #764 passed the BOQ aggregation fix. No reviews or review threads are recorded.
-- **Migration chain:** master `0034`; PR #23/#24 `0035`; PR #25 `0036`; PR #26 `0037`. PR #24/#25/#26 are stacked dependencies and must not be merged out of order. PR #22 is an independent documentation PR.
-- **Live Hatchable Version 40:** read-only inventory confirmed 46 tables, 75 files, 25 API functions and 14 SQL migrations. Its admin-only backup function exports only 17 of 46 tables; no import endpoint was present in the inspected inventory. No Hatchable rows/files were exported or copied, and the live application was not modified.
+### Canonical repository and open pull requests
+
+- **Default branch:** `master` remains at merge commit `21480c93f105052ad35f343b84a6f7858de5631d`; PR #21 (AI Agent Operating Layer) is merged. The default-branch Alembic head is `0034_postgres_approval_nonces`. This architecture document is still on PR #22's Draft branch, not on master.
+- **PR #22:** this architecture/roadmap PR remains Draft, open and unmerged. It has no submitted review or inline review thread. This document update is documentation-only and uses `[skip ci]`; no CI result is claimed for it.
+- **PR #20:** read-only MCP bridge remains Draft/unmerged at `f63abf1dcd5d5282aa76cfe86fb69471dd21aaf2`. Exact-head Actions run #611 passed all five jobs. Its PR description reports an authenticated GET health check as HTTP 200, but Streamable HTTP POST `initialize`, `tools/list`, and `tools/call` have not been verified. No authorized POST-capable protocol execution was available in this run; keep this PR blocked.
+- **PR #23:** multi-role entitlement foundation remains Draft/unmerged. Current head is `7e2cbda99aef14932edfbbafd5a187f173d3f33e`, migration `0035_role_entitlements`. The prior exact-head Run #769 failed in all three Python matrix jobs because the new fee-audit test expected nested `changes` details that the central audit allowlist correctly discarded. PostgreSQL integration (17 passed) and dependency/Bandit audit passed. The follow-up commit changed the audit payload to explicitly allowlisted scalar before/after fields and retained the professional-role age floor on reinstatement. Exact-head Run #770 is in progress; this new head is not yet CI-verified.
+- **PR #24:** supplier catalog/seller entitlement gates remain Draft/unmerged at `7bfd25636403b017d470ab8eee9b221e7f00f077`. Exact-head Actions run #759 passed all five jobs: 260 passed/17 skipped in each Python matrix job and 17 PostgreSQL integration tests.
+- **PR #25:** transport provider/vehicle listing slice remains Draft/unmerged at `a44c1731179b87c588df6e71f1858b8aad58ca05`, migration `0036_transport_marketplace`. Exact-head run #761 passed all five jobs: 263 passed/17 skipped in each Python matrix job and 17 PostgreSQL integration tests.
+- **PR #26:** construction clients/projects/BOQ slice remains Draft/unmerged at `35202c34bb91ac2dc16c273ce920f8bb0b6b691d`, migration `0037_construction_operations`. Exact-head run #764 passed all five jobs: 270 passed/18 skipped in each Python matrix job and 18 PostgreSQL integration tests. The 501-row BOQ regression confirms aggregate totals include rows beyond the 500-row response cap.
+- **PR #27:** construction quote slice remains Draft/unmerged at `cb659a2a9c63b40704e2f6e963736c98d19a24f3`, migration `0038_construction_quotes`. Exact-head run #766 passed all five jobs: 274 passed/18 skipped in each Python matrix job and 18 PostgreSQL integration tests.
+- **PR #28:** project cashbook linked to double-entry ledger remains Draft/unmerged at `8e7968731453e1f2f020af2018111bca9f9cb4b2`, migration `0039_construction_cashbook`. Exact-head run #768 passed all five jobs: 279 passed/19 skipped in each Python matrix job and 19 PostgreSQL integration tests. PostgreSQL applied migration 0039 and `alembic check` reported no new upgrade operations. The PR description now records these exact-head results.
+- **Reviews:** GitHub review and review-thread APIs returned zero submitted reviews and zero inline threads for PRs #20, #22 and #23–#28. CI success is not human approval.
+- **Migration chain:** master `0034`; PR #23 `0035`; PR #24 adds no migration; PR #25 `0036`; PR #26 `0037`; PR #27 `0038`; PR #28 `0039`. The inspected revision/down-revision declarations form a linear 0034→0035→0036→0037→0038→0039 chain on their respective stacked branches.
+- **Dependency drift:** current PR #23 head `7e2cbda99aef14932edfbbafd5a187f173d3f33e` is three commits ahead of the base snapshot recorded by PR #24 (`13de2075119b4863d54e7c561bbb316ee210c9c2`). PRs #24–#28 have not been refreshed against those three role-entitlement commits. Reconcile the branch chain in order #24→#25→#26→#27→#28, inspect conflicts/diffs, and verify each new exact-head CI before any owner review or merge. No dependent branch was changed in this run.
+
+### Live Hatchable Version 40 — read-only evidence
+
+- Hatchable reports the existing `hijaz-construction` project active at Version 40. Its latest deployment record is Version 40, status `live`, deployed `2026-11-13T07:25:10Z`, with 74 deployed file entries and 25 functions.
+- Direct schema/file/function inventory confirms 46 database tables, 75 project files (including the generated virtual `AGENTS.md`), 25 active API functions and 14 SQL migrations (`0001`–`0014`).
+- Direct source inspection of `api/backup.js` confirms an admin-only GET endpoint that exports 17 named tables out of 46. It exports `platform_media` metadata and storage keys, not the underlying object bytes. The 25-function registry contains no import endpoint.
+- No live rows, identity documents, property deeds, message content, credentials or media bytes were exported. No Hatchable file, schema, setting, function, deployment or data was modified. The current backup endpoint is not a complete migration artifact and must not be used as one.
+- The target domain `hijaz1.com` remains unconfirmed as owned. No domain purchase, paid hosting or provider activation was attempted.
 
 ## 8. Globalization gaps
 
@@ -212,20 +225,36 @@ HIJAZ ONE is not complete until:
 
 ## 12. Current blockers
 
-- No owned `hijaz1.com` domain confirmed.
-- No hosting budget or paid plan authorized.
-- No payment provider credentials/webhook setup supplied.
-- No production SMTP/SMS/WhatsApp credentials supplied.
-- Read-only Hatchable Version 40 inventory is recorded in `docs/HATCHABLE_V40_INVENTORY.md`: 46 tables, 75 files, 25 API functions and 14 SQL migrations. The current admin-only backup endpoint exports only 17 of 46 tables and no import endpoint is present in the inventory. Full source-to-target mapping, storage-file manifest, staging export/import and reconciliation remain incomplete.
-- PR #20 MCP bridge remains draft pending authorized POST protocol tests.
-- PR #20 remains Draft pending authenticated Streamable HTTP POST verification of `initialize`, `tools/list`, and `tools/call`; preview deployment is READY and exact-head CI #611 passed, but no authorized POST-capable client was available.
-- PR #23 remains Draft/unmerged with no approvals; exact-head CI #755 passes all five jobs. PR #24 supplier guards and PR #25 transport guards are also Draft/unmerged with exact-head CI #759 and #761 passing all five jobs. PR #26 adds a first construction project/BOQ slice on top of #25; its first run #762 found a test-helper login-policy mistake, corrected in head `0b89730`; exact-head run #763 is in progress. None of these PRs has a submitted review or review thread.
-- The open PR chain must be reviewed and integrated in dependency order #23 → #24 → #25 → #26. PR #22 architecture docs remain a separate Draft PR and are not in master.
-- Role authorization is now exercised in supplier, transport and initial construction endpoints, but quote/cashbook/labour/materials, property, workforce and education endpoints still need their own role, tenant, ownership and moderation controls. Student-minor guardian consent is not implemented.
-- Default branch `master` is currently not protected in GitHub settings. Do not change repository policy without owner authorization; enable required reviews/checks as a release-governance action before production release.
-- Existing HIJAZ ONE AI calls, OTP and external messaging were previously blocked by missing provider credentials; re-test after migration rather than assuming they work.
+- PR #20 MCP bridge remains Draft pending authorized Streamable HTTP POST verification of `initialize`, `tools/list` and `tools/call`. Exact-head CI #611 passed, but GET health success does not prove POST protocol interoperability.
+- PR #23's latest head `7e2cbda` has not yet passed exact-head CI. Run #769 failed because the central audit allowlist discarded nested fee-change details; the follow-up now emits allowlisted scalar before/after fields. Run #770 is in progress and must be inspected before treating this fix as verified.
+- PR #24–#28 are stacked on the older PR #23 base snapshot `13de207`; the current PR #23 head is three commits ahead. Refresh and reconcile the dependency chain in order, then verify exact-head CI on each updated branch. Do not merge dependent PRs independently or out of order.
+- No submitted reviews or inline review threads exist for open PRs #20, #22 and #23–#28. Owner review is still required.
+- The current construction slice covers clients/projects/BOQ, quotes and a project cashbook, but labour/material registers, rate-book governance, attachments and complete supplier settlement remain incomplete.
+- Property, workforce/contractor hiring and education verticals still need portable implementation and role/tenant/ownership/moderation tests. Student-minor guardian consent is not implemented.
+- Hatchable Version 40's admin-only backup exports 17/46 tables and no import endpoint exists. Object bytes are not included. Complete source-to-target mapping, redacted staging export, idempotent import, checksums and financial/consent/audit reconciliation have not been performed.
+- The live Hatchable app remains an active Version 40 system. Do not alter, migrate or replace it until an owner-approved staging export/import and reconciliation rehearsal passes.
+- PR #20's authenticated POST verification, external provider credentials, payment/webhook setup, production email/SMS/WhatsApp setup and independent portable-host rehearsal are unavailable or not authorized.
+- No ownership of `hijaz1.com` is confirmed; no purchase or paid service is authorized.
+- GitHub branch-protection status could not be verified through the connected API in this run (the protection endpoint returned 403). Treat branch protection/required-review policy as unverified until an authorized repository settings check is available.
+
+
 
 ## 13. Immediate engineering backlog
+
+1. Verify exact-head Run #770 for PR #23. If it fails, inspect all failed job logs, correct the specific regression and retain the Draft state; do not claim the fee-audit fix is complete before CI passes.
+2. Reconcile PR #24–#28 against the latest PR #23 head `7e2cbda` in dependency order. Inspect every resulting diff and migration head, then obtain owner review and exact-head CI for each refreshed branch.
+3. Complete role-entitlement hardening: verify global/organization uniqueness, lifecycle concurrency, fee-policy audit, manual payment review, professional age gates, expiry/suspension/revocation and apply `require_active_role` to each role-protected endpoint without weakening legacy tenant checks.
+4. Finish construction operations beyond the current clients/projects/BOQ/quotes/cashbook slices: labour and material registers, rate-book governance, attachments, contractor hiring, supplier settlement and customer delivery. Keep postings balanced, idempotent, tenant-scoped and auditable.
+5. Port property, workforce and education from the verified Version 40 inventory. Add explicit guardian-consent workflow for student minors, separate professional age review, property-title disclaimers, moderation, ownership and tenant-negative tests.
+6. Design a complete export manifest for all 46 Hatchable tables and every referenced object. Obtain owner approval for a redacted staging scope, then build idempotent import, FK ordering, conflict reporting, checksums and count/financial/consent/audit reconciliation. Do not copy live data before the rehearsal is approved and tested.
+7. Complete the portable API/worker/scheduler runtime, PostgreSQL empty-install and upgrade path, S3-compatible object adapter, provider-neutral notification/payment/maps/AI interfaces, health/readiness, structured logs, secret management, backup/restore and independent-host rehearsal.
+8. Complete global commerce: ISO 4217 currency metadata/exponents, decimal-safe multi-currency ledger, FX audit, tax hooks, signed/idempotent payment webhooks, refunds, disputes, settlement and reconciliation. Do not enable real providers without owner-supplied credentials and explicit setup.
+9. Complete AI operating controls still missing from the merged operating layer: trusted human approval issuer/release API, durable checkpoints/resumption, bounded multi-agent orchestration, memory retention/deletion, automatic skill selection, token/cost reservations, provider circuit breaker/failover, DLP, evaluation and observability.
+10. Complete release gates: security review, role/tenant/ownership negative tests, PostgreSQL migration tests, dependency audit, load checks where available, backup restore, portable-host rehearsal and operational runbooks. Rename the repository to `hijaz-one` only after all Definition of Done gates pass and the owner confirms the domain/deployment plan.
+
+
+
+
 
 1. Keep PR #20 blocked until an authorized POST-capable client completes Streamable HTTP `initialize`, `tools/list`, and one read-only `tools/call`; Vercel preview READY and CI #611 do not prove protocol interoperability.
 2. Owner-review the dependent Draft PR chain #23 → #24 → #25 → #26. PR #23 role foundation, PR #24 supplier gates, PR #25 transport gates and PR #26 construction project/BOQ slice all have exact-head CI passing. No PR is approved or merged.
