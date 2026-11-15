@@ -75,11 +75,11 @@ def upgrade() -> None:
     if dialect == "postgresql":
         op.execute(
             """
-            CREATE FUNCTION reject_construction_cashbook_mutation() RETURNS trigger AS $
+            CREATE FUNCTION reject_construction_cashbook_mutation() RETURNS trigger AS $function$
             BEGIN
                 RAISE EXCEPTION 'construction_cashbook_entries are append-only';
             END;
-            $ LANGUAGE plpgsql
+            $function$ LANGUAGE plpgsql
             """
         )
         op.execute(

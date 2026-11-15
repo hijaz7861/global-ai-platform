@@ -1374,6 +1374,19 @@ def test_postgres_construction_composite_tenant_keys_and_decimal_boq():
             with pytest.raises(DBAPIError):
                 db.flush()
             db.rollback()
+
+        with engine.begin() as connection:
+            with pytest.raises(DBAPIError, match="construction_cashbook_entries are append-only"):
+                connection.execute(
+                    text("UPDATE construction_cashbook_entries SET category = 'tampered' WHERE id = :id"),
+                    {"id": cashbook_id},
+                )
+        with engine.begin() as connection:
+            with pytest.raises(DBAPIError, match="construction_cashbook_entries are append-only"):
+                connection.execute(
+                    text("DELETE FROM construction_cashbook_entries WHERE id = :id"),
+                    {"id": cashbook_id},
+                )
     finally:
         engine.dispose()
 
@@ -1443,6 +1456,7 @@ def test_postgres_construction_cashbook_enforces_project_and_journal_tenant_keys
             )
             db.add(valid)
             db.commit()
+            cashbook_id = valid.id
             project_b_id, journal_id, user_id, org_b_id = project_b.id, journal.id, user.id, org_b.id
 
         with factory() as db:

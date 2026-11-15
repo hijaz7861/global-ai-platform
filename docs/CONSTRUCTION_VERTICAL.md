@@ -17,7 +17,8 @@ The source management API uses global tables without organization ownership. Its
 | Quote \`line_items\` / BOQ | \`construction_boq_items\` | Normalized project lines, Decimal quantity and integer PKR minor-unit rate/total. |
 | \`quotes\` | \`construction_quotes\` + \`construction_quote_lines\` | BOQ-only quote snapshots, integer PKR minor units, overhead/profit/discount/tax estimate fields and bounded draft/sent/accepted/rejected/expired lifecycle. |
 | \`pricing_items\` | Not implemented | Tenant rate-book governance and pricing-item moderation remain separate work. |
-| \`transactions\`, \`labour_entries\`, \`material_entries\` | Not implemented | Cashbook, workforce/labour and material registers remain separate work. |
+| \`transactions\` | \`construction_cashbook_entries\` + \`journal_entries\` | Project cashbook events are linked to balanced, append-only double-entry journal postings; no source rows are copied. |
+| \`labour_entries\`, \`material_entries\` | Not implemented | Labour and material registers remain separate work. |
 
 All endpoints require organization membership and an active, verified, fee-cleared, age-cleared \`construction_provider\` entitlement. Project updates require the creator or organization owner/admin; only owner/admin may approve. Status transitions are bounded and closed projects are terminal.
 
