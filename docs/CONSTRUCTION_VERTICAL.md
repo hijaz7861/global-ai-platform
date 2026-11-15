@@ -66,6 +66,6 @@ The portable cashbook adds `construction_cashbook_entries` as a project-scoped i
 - Journal entry, cashbook row and audit events commit in one transaction. Duplicate keys replay the original result only for the identical request fingerprint; key reuse with different content returns conflict.
 - Composite foreign keys enforce that the project and journal entry belong to the same organization. The original cashbook event is retained; corrections use the existing journal reversal API rather than editing/deleting the cashbook record.
 
-Regression coverage includes income/expense balancing, idempotent replay and payload mismatch, foreign-tenant and wrong-type/currency accounts, same-account and non-positive amount rejection, non-creator member write denial with tenant read, closed-project/closed-period denial, and a PostgreSQL composite-FK negative test.
+Regression coverage includes income/expense balancing, idempotent replay and payload mismatch, foreign-tenant and wrong-type/currency accounts, same-account and non-positive amount rejection, non-creator member write denial with tenant read, closed-project/closed-period denial, and SQLite/PostgreSQL migration checks for composite tenant foreign keys and database-enforced append-only cashbook rows.
 
 This is a project cashbook posting slice, not bank integration, payment collection, tax, FX, supplier settlement or a full accounting close workflow. No Hatchable rows/files were exported or imported, and the live Version 40 application was not changed.

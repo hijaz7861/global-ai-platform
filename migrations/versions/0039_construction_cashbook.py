@@ -71,9 +71,61 @@ def upgrade() -> None:
         "construction_cashbook_entries",
         ["organization_id", "project_id", "created_at"],
     )
+    dialect = op.get_bind().dialect.name
+    if dialect == "postgresql":
+        op.execute(
+            """
+            CREATE FUNCTION reject_construction_cashbook_mutation() RETURNS trigger AS $
+            BEGIN
+                RAISE EXCEPTION 'construction_cashbook_entries are append-only';
+            END;
+            $ LANGUAGE plpgsql
+            """
+        )
+        op.execute(
+            """
+            CREATE TRIGGER trg_construction_cashbook_no_update
+            BEFORE UPDATE ON construction_cashbook_entries
+            FOR EACH ROW EXECUTE FUNCTION reject_construction_cashbook_mutation()
+            """
+        )
+        op.execute(
+            """
+            CREATE TRIGGER trg_construction_cashbook_no_delete
+            BEFORE DELETE ON construction_cashbook_entries
+            FOR EACH ROW EXECUTE FUNCTION reject_construction_cashbook_mutation()
+            """
+        )
+    elif dialect == "sqlite":
+        op.execute(
+            """
+            CREATE TRIGGER trg_construction_cashbook_no_update
+            BEFORE UPDATE ON construction_cashbook_entries
+            BEGIN
+                SELECT RAISE(ABORT, 'construction_cashbook_entries are append-only');
+            END
+            """
+        )
+        op.execute(
+            """
+            CREATE TRIGGER trg_construction_cashbook_no_delete
+            BEFORE DELETE ON construction_cashbook_entries
+            BEGIN
+                SELECT RAISE(ABORT, 'construction_cashbook_entries are append-only');
+            END
+            """
+        )
 
 
 def downgrade() -> None:
+    dialect = op.get_bind().dialect.name
+    if dialect == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS trg_construction_cashbook_no_update ON construction_cashbook_entries")
+        op.execute("DROP TRIGGER IF EXISTS trg_construction_cashbook_no_delete ON construction_cashbook_entries")
+        op.execute("DROP FUNCTION IF EXISTS reject_construction_cashbook_mutation()")
+    elif dialect == "sqlite":
+        op.execute("DROP TRIGGER IF EXISTS trg_construction_cashbook_no_update")
+        op.execute("DROP TRIGGER IF EXISTS trg_construction_cashbook_no_delete")
     op.drop_index("ix_construction_cashbook_org_project_created", table_name="construction_cashbook_entries")
     op.drop_table("construction_cashbook_entries")
     op.drop_index("uq_journal_entries_id_org", table_name="journal_entries")
