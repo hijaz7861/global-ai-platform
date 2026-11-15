@@ -1,5 +1,6 @@
 """Construction entitlement, tenant isolation, lifecycle, and BOQ regression tests."""
 
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -13,7 +14,8 @@ from app.api.routes import identity as identity_routes
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import AuditEvent, ConstructionBoqItem, Membership, Organization, RoleDefinition, User, UserRoleEntitlement, utc_now
+from app.models import (AuditEvent, ConstructionBoqItem, ConstructionQuote, ConstructionQuoteLine,
+                        Membership, Organization, RoleDefinition, User, UserRoleEntitlement, utc_now)
 
 _EMAIL_TOKENS: dict[str, str] = {}
 _TEST_SESSION_FACTORY = None
@@ -266,3 +268,152 @@ def test_construction_project_boq_total_includes_lines_beyond_detail_limit(clien
     assert detail.status_code == 200, detail.text
     assert len(detail.json()["boq_items"]) == 500
     assert detail.json()["boq_total_minor"] == 50100
+
+
+
+def test_construction_quote_uses_decimal_minor_units_and_immutable_boq_snapshot(client):
+    token = register(client, "construction-quote-owner@example.com")
+    org_id = organization(client, token, "Construction Quote Org")
+    admin = register(client, "platform-admin@example.com")
+    activate_role(client, token, org_id, {"Authorization": f"Bearer {admin}"})
+    client_row = create_client_record(client, token, org_id)
+    project = create_project(client, token, org_id, client_row.json()["id"])
+    project_id = project.json()["id"]
+    headers = {"Authorization": f"Bearer {token}"}
+    boq_endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}/boq-items"
+    first = client.post(boq_endpoint, headers=headers, json={
+        "line_number": 1, "category": "Concrete", "item_name": "Cement", "unit": "bag",
+        "quantity": "1.500", "unit_rate_minor": 1001,
+    })
+    second = client.post(boq_endpoint, headers=headers, json={
+        "line_number": 2, "category": "Steel", "item_name": "Rebar", "unit": "kg",
+        "quantity": "2.000", "unit_rate_minor": 500,
+    })
+    assert first.status_code == second.status_code == 201
+
+    endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}/quotes"
+    created = client.post(endpoint, headers=headers, json={
+        "overhead_pct": "10.00", "profit_pct": "10.00", "discount_pct": "5.00",
+        "tax_pct": "17.00", "validity_days": 15, "terms": "Estimate only; subject to signed contract.",
+    })
+    assert created.status_code == 201, created.text
+    body = created.json()
+    quote = body["quote"]
+    assert quote["status"] == "draft"
+    assert quote["currency"] == "PKR"
+    assert quote["boq_subtotal_minor"] == 2502
+    assert quote["overhead_amount_minor"] == 250
+    assert quote["profit_amount_minor"] == 275
+    assert quote["discount_amount_minor"] == 151
+    assert quote["tax_amount_minor"] == 489
+    assert quote["total_minor"] == 3365
+    assert len(body["lines"]) == 2
+    assert body["lines"][0]["line_total_minor"] == 1502
+
+    with _TEST_SESSION_FACTORY() as db:
+        boq_line = db.scalar(select(ConstructionBoqItem).where(
+            ConstructionBoqItem.project_id == project_id, ConstructionBoqItem.line_number == 1))
+        boq_line.unit_rate_minor = 9999
+        boq_line.line_total_minor = 14999
+        db.commit()
+    detail = client.get(f"{endpoint}/{quote['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["lines"][0]["unit_rate_minor"] == 1001
+    assert detail.json()["lines"][0]["line_total_minor"] == 1502
+    with _TEST_SESSION_FACTORY() as db:
+        snapshot = db.scalars(select(ConstructionQuoteLine).where(
+            ConstructionQuoteLine.quote_id == quote["id"])).all()
+        assert len(snapshot) == 2
+        event_row = db.scalar(select(AuditEvent).where(
+            AuditEvent.entity_type == "construction_quote", AuditEvent.entity_id == quote["id"]))
+        assert event_row is not None and event_row.action == "construction_quote.created"
+
+
+def test_construction_quote_send_accept_and_expiry_lifecycle(client):
+    token = register(client, "construction-quote-lifecycle@example.com")
+    org_id = organization(client, token, "Construction Quote Lifecycle Org")
+    admin = register(client, "platform-admin@example.com")
+    activate_role(client, token, org_id, {"Authorization": f"Bearer {admin}"})
+    client_row = create_client_record(client, token, org_id)
+    project = create_project(client, token, org_id, client_row.json()["id"])
+    project_id = project.json()["id"]
+    headers = {"Authorization": f"Bearer {token}"}
+    boq_endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}/boq-items"
+    assert client.post(boq_endpoint, headers=headers, json={
+        "line_number": 1, "item_name": "Sand", "unit": "cft", "quantity": "2.000", "unit_rate_minor": 100,
+    }).status_code == 201
+    endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}/quotes"
+    first = client.post(endpoint, headers=headers, json={})
+    assert first.status_code == 201, first.text
+    quote_id = first.json()["quote"]["id"]
+    sent = client.post(f"{endpoint}/{quote_id}/send", headers=headers)
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["quote"]["status"] == "sent"
+    with _TEST_SESSION_FACTORY() as db:
+        project_row = db.get(models.ConstructionProject, project_id)
+        assert project_row.status == "quoted"
+    accepted = client.post(f"{endpoint}/{quote_id}/decision", headers=headers, json={"decision": "accept"})
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["quote"]["status"] == "accepted"
+    repeated = client.post(f"{endpoint}/{quote_id}/decision", headers=headers, json={"decision": "reject"})
+    assert repeated.status_code == 409
+
+    second = client.post(endpoint, headers=headers, json={})
+    assert second.status_code == 201, second.text
+    second_id = second.json()["quote"]["id"]
+    assert client.post(f"{endpoint}/{second_id}/send", headers=headers).status_code == 200
+    with _TEST_SESSION_FACTORY() as db:
+        quote_row = db.get(ConstructionQuote, second_id)
+        quote_row.valid_until = date.today() - timedelta(days=1)
+        db.commit()
+    expired = client.post(f"{endpoint}/{second_id}/decision", headers=headers, json={"decision": "reject"})
+    assert expired.status_code == 409
+    with _TEST_SESSION_FACTORY() as db:
+        assert db.get(ConstructionQuote, second_id).status == "expired"
+
+
+def test_construction_quote_requires_boq_and_rejects_invalid_percentages(client):
+    token = register(client, "construction-quote-validation@example.com")
+    org_id = organization(client, token, "Construction Quote Validation Org")
+    admin = register(client, "platform-admin@example.com")
+    activate_role(client, token, org_id, {"Authorization": f"Bearer {admin}"})
+    client_row = create_client_record(client, token, org_id)
+    project = create_project(client, token, org_id, client_row.json()["id"])
+    endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project.json()['id']}/quotes"
+    headers = {"Authorization": f"Bearer {token}"}
+    missing_boq = client.post(endpoint, headers=headers, json={})
+    assert missing_boq.status_code == 409
+    invalid_pct = client.post(endpoint, headers=headers, json={"tax_pct": "100.01"})
+    assert invalid_pct.status_code == 422
+
+
+def test_construction_quote_decision_is_owner_admin_only(client):
+    owner_token = register(client, "construction-quote-owner-only@example.com")
+    org_id = organization(client, owner_token, "Construction Quote Decision Org")
+    admin = register(client, "platform-admin@example.com")
+    activate_role(client, owner_token, org_id, {"Authorization": f"Bearer {admin}"})
+    client_row = create_client_record(client, owner_token, org_id)
+    project = create_project(client, owner_token, org_id, client_row.json()["id"])
+    project_id = project.json()["id"]
+    headers = {"Authorization": f"Bearer {owner_token}"}
+    boq_endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}/boq-items"
+    assert client.post(boq_endpoint, headers=headers, json={
+        "line_number": 1, "item_name": "Blocks", "unit": "piece", "quantity": "10.000", "unit_rate_minor": 25,
+    }).status_code == 201
+    endpoint = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}/quotes"
+    created = client.post(endpoint, headers=headers, json={})
+    quote_id = created.json()["quote"]["id"]
+    assert client.post(f"{endpoint}/{quote_id}/send", headers=headers).status_code == 200
+
+    member_token = register(client, "construction-quote-member@example.com")
+    with _TEST_SESSION_FACTORY() as db:
+        member = db.scalar(select(User).where(User.email == "construction-quote-member@example.com"))
+        db.add(Membership(user_id=member.id, organization_id=org_id, role="member"))
+        db.add(UserRoleEntitlement(user_id=member.id, role_key="construction_provider", organization_id=org_id,
+            status="active", payment_status="verified", fee_amount_minor=1000, fee_currency="PKR",
+            age_verified=True, activated_at=utc_now()))
+        db.commit()
+    denied = client.post(f"{endpoint}/{quote_id}/decision",
+        headers={"Authorization": f"Bearer {member_token}"}, json={"decision": "accept"})
+    assert denied.status_code == 403
+    assert client.get(f"{endpoint}/{quote_id}", headers={"Authorization": f"Bearer {member_token}"}).status_code == 200

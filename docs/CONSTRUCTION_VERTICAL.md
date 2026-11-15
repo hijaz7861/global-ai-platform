@@ -15,7 +15,7 @@ The source management API uses global tables without organization ownership. Its
 | \`clients\` | \`construction_clients\` | Tenant-owned display name and city only; phone, full address and free-text notes excluded initially. |
 | \`projects\` | \`construction_projects\` | Tenant-owned project, same-tenant client composite key, work/contract type, dates, status, progress, location label and PKR minor-unit contract amount. |
 | Quote \`line_items\` / BOQ | \`construction_boq_items\` | Normalized project lines, Decimal quantity and integer PKR minor-unit rate/total. |
-| \`quotes\`, \`pricing_items\` | Not implemented | Quote lifecycle, rate-book moderation, tax policy and customer delivery remain separate work. |
+| \`quotes\` | \`construction_quotes\` + \`construction_quote_lines\` | BOQ-only quote snapshots, integer PKR minor units, overhead/profit/discount/tax estimate fields and bounded draft/sent/accepted/rejected/expired lifecycle. |\n| \`pricing_items\` | Not implemented | Tenant rate-book governance and pricing-item moderation remain separate work. |
 | \`transactions\`, \`labour_entries\`, \`material_entries\` | Not implemented | Cashbook, workforce/labour and material registers remain separate work. |
 
 All endpoints require organization membership and an active, verified, fee-cleared, age-cleared \`construction_provider\` entitlement. Project updates require the creator or organization owner/admin; only owner/admin may approve. Status transitions are bounded and closed projects are terminal.
@@ -31,3 +31,20 @@ Missing entitlement and unverified email are denied; cross-tenant references and
 No Hatchable rows or files were exported, copied, reconciled or imported. No source-to-target identity mapping exists. Quotes, rate-book governance, cashbook/journal posting, labour, materials, contractor hiring, attachments, notifications, external payments, tax/FX and production migration remain out of scope. The live Hatchable application was not modified.
 
 This is a first portable construction slice, not a complete construction vertical or production-readiness claim.
+
+
+## Draft PR #27 — BOQ-based construction quote lifecycle
+
+Read-only inspection of the live Hatchable Version 40 database confirmed the source `quotes` columns: `quote_no`, optional `client_id`, customer/project labels, calculation mode, area and per-square-foot rates, lump sum, BOQ subtotal, overhead/profit/discount/tax percentages and amounts, total, JSONB line items, status, validity days/date, notes and terms. The source `pricing_items` table stores category, item name, unit, numeric unit rate and active flag. The live `api/management.js` quote handler is owner/admin-only, uses global tables and JavaScript `Number`; those semantics are not copied.
+
+The portable slice is deliberately narrower and tenant-scoped: quotes are generated from a project’s existing BOQ only. Each quote stores a snapshot of line descriptions, quantities, unit rates and line totals, so later BOQ edits do not silently rewrite an issued quote. Money remains integer PKR minor units; quantities and percentage inputs use `Decimal` with half-up rounding. The first calculation mode is BOQ; per-square-foot, lump-sum and mixed modes remain unimplemented until a governed tenant rate book exists.
+
+Implemented in the focused Draft PR:
+
+- `construction_quotes` and `construction_quote_lines` under migration `0038_construction_quotes`.
+- Tenant-scoped create/list/detail routes, with active `construction_provider` entitlement and legacy organization membership checks.
+- Bounded quote lifecycle: `draft → sent → accepted/rejected`, with expiry checks and owner/admin-only manual customer-decision recording.
+- Transactional audit events; no email/SMS/WhatsApp delivery, external signature, payment capture or tax-compliance claim.
+- Regression tests cover Decimal totals and rounding, BOQ snapshot stability, send/accept/expiry, missing BOQ, invalid percentages and member decision denial.
+
+No Hatchable rows, private contact fields, identity documents, property deeds or media were exported or copied. The live Version 40 project remains unchanged. PR #27 is implemented but its exact-head CI and review are pending until GitHub confirms them.

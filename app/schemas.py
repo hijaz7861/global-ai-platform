@@ -1077,3 +1077,72 @@ class ConstructionProjectDetailResponse(BaseModel):
     project: ConstructionProjectResponse
     boq_items: list[ConstructionBoqItemResponse]
     boq_total_minor: int
+
+
+class ConstructionQuoteCreate(BaseModel):
+    overhead_pct: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=5, decimal_places=2)
+    profit_pct: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=5, decimal_places=2)
+    discount_pct: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=5, decimal_places=2)
+    tax_pct: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=5, decimal_places=2)
+    validity_days: int = Field(default=15, ge=1, le=365)
+    terms: str | None = Field(default=None, max_length=3000)
+
+    @field_validator("terms")
+    @classmethod
+    def normalize_quote_terms(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value is not None else None
+        return normalized or None
+
+
+class ConstructionQuoteDecision(BaseModel):
+    decision: Literal["accept", "reject"]
+
+
+class ConstructionQuoteResponse(BaseModel):
+    id: str
+    organization_id: str
+    project_id: str
+    created_by_user_id: str
+    decision_by_user_id: str | None
+    quote_no: str
+    status: str
+    currency: str
+    boq_subtotal_minor: int
+    overhead_pct: Decimal
+    overhead_amount_minor: int
+    profit_pct: Decimal
+    profit_amount_minor: int
+    discount_pct: Decimal
+    discount_amount_minor: int
+    tax_pct: Decimal
+    tax_amount_minor: int
+    total_minor: int
+    validity_days: int
+    valid_until: date
+    terms: str | None
+    sent_at: datetime | None
+    decided_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConstructionQuoteLineResponse(BaseModel):
+    id: str
+    organization_id: str
+    quote_id: str
+    line_number: int
+    source_boq_line_number: int | None
+    category: str | None
+    item_name: str
+    unit: str
+    quantity: Decimal
+    unit_rate_minor: int
+    line_total_minor: int
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConstructionQuoteDetailResponse(BaseModel):
+    quote: ConstructionQuoteResponse
+    lines: list[ConstructionQuoteLineResponse]
