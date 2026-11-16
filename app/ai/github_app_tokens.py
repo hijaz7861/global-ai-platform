@@ -6,8 +6,6 @@ from datetime import datetime, timezone
 import re
 import threading
 import time
-from urllib.parse import quote
-
 import httpx
 import jwt
 
@@ -72,7 +70,7 @@ class GitHubAppTokenProvider:
         claims = {"iat": now - 60, "exp": now + 540, "iss": self._app_id}
         try:
             return jwt.encode(claims, self._private_key_pem, algorithm="RS256")
-        except (ValueError, TypeError):
+        except (jwt.PyJWTError, ValueError, TypeError):
             raise GitHubAppAuthError("github_app_private_key_invalid") from None
 
     def get_token(self, repository: str) -> str:
@@ -115,7 +113,10 @@ class GitHubAppTokenProvider:
             if not isinstance(token, str) or len(token) < 20 or not isinstance(expires_at, str):
                 raise GitHubAppAuthError("github_app_token_invalid_response")
             try:
-                expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00")).timestamp()
+                expiry_time = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                if expiry_time.tzinfo is None:
+                    raise ValueError("timezone_required")
+                expiry = expiry_time.timestamp()
             except ValueError:
                 raise GitHubAppAuthError("github_app_token_invalid_expiry") from None
             if expiry <= now + 60:
