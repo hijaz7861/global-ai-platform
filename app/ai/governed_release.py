@@ -50,8 +50,10 @@ def evaluate_governed_change(
         actual_digest, evidence.claimed_sha256.lower()
     ):
         return GateResult(GateDecision.DENY, ("sha256_mismatch",), actual_digest)
-    if signed_attestation is None:
-        return GateResult(GateDecision.DENY, ("sandbox_attestation_missing",), actual_digest)
+    if not isinstance(signed_attestation, SignedAttestation):
+        return GateResult(GateDecision.DENY, ("sandbox_attestation_missing_or_invalid",), actual_digest)
+    if signed_approval is not None and not isinstance(signed_approval, SignedHumanApproval):
+        return GateResult(GateDecision.DENY, ("human_approval_invalid_envelope",), actual_digest)
 
     valid, reason = verify_attestation(
         signed_attestation,
