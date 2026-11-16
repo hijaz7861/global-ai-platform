@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.agents.schemas import AgentDecision, AgentTaskInput
 from app.ai.model_router import ModelRouteError, create_model_router
-from app.ai.memory.service import MemoryConflict, search_memories
+from app.ai.memory.service import MemoryConflict, create_memory, search_memories
 from app.ai.skills.service import SkillConflict, list_skill_versions
 from app.ai.providers import ProviderError
 from app.ai.runtime.tasks import PermanentTaskError, TaskExecutionContext
