@@ -1,5 +1,3 @@
-from hashlib import sha256
-
 import pytest
 
 from app.ai.autonomy_gate import GateDecision
