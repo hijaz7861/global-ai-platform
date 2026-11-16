@@ -50,7 +50,7 @@ def test_proposal_is_materialized_and_removed_after_sandbox_run(tmp_path):
     assert result.exit_code == 0
     assert len(runner.calls) == 1
     candidate = Path(runner.calls[0]["artifact_directory"])
-    assert (candidate / "app/example.py").read_text() == "VALUE = 1\n"
+    assert runner.candidate_snapshot["app/example.py"] == b"VALUE = 1\n"
     assert runner.calls[0]["trusted_test_directory"] == trusted_tests
     assert not candidate.exists()
 
