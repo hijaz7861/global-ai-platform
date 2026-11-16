@@ -210,6 +210,7 @@ def test_durable_worker_executes_agent_run_task_end_to_end(agent_context, monkey
 
 def test_agent_uses_only_visible_memory_and_owner_approved_matching_skills(agent_context, monkeypatch):
     context, user, organization = agent_context
+    context.task.input_payload["goal"] = "PostgreSQL worker leases durable repository review"
     create_memory(
         context.db,
         actor_user_id=user.id,
