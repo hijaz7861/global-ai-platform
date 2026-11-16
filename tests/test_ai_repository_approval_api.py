@@ -19,6 +19,9 @@ class FakeResult:
     def __init__(self, rowcount):
         self.rowcount = rowcount
 
+    def scalar_one_or_none(self):
+        return "consumed-nonce" if self.rowcount == 1 else None
+
 
 class FakePostgresSession:
     def __init__(self, rowcount=1):
