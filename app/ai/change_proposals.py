@@ -159,3 +159,75 @@ def validate_proposal(
         risk_level="high" if sensitive_found else ("low" if docs_only else "medium"),
         total_bytes=total_bytes,
     )
+
+
+def materialize_proposal(
+    proposal: ValidatedProposal,
+    destination: str,
+) -> tuple[str, ...]:
+    """Safely unpack a digest-verified proposal into a pre-created empty workspace.
+
+    The workspace must be private to the caller. This function never applies the
+    files to a repository checkout and never executes candidate code.
+    """
+    from pathlib import Path
+
+    if not isinstance(proposal, ValidatedProposal) or not isinstance(proposal.artifact, bytes):
+        raise ProposalValidationError("invalid_proposal_artifact")
+    actual_digest = sha256(proposal.artifact).hexdigest()
+    if not re.fullmatch(r"[0-9a-f]{64}", proposal.sha256) or actual_digest != proposal.sha256:
+        raise ProposalValidationError("proposal_digest_mismatch")
+
+    try:
+        payload = json.loads(proposal.artifact.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ProposalValidationError("invalid_proposal_encoding") from exc
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"schema_version", "files"}
+        or type(payload["schema_version"]) is not int
+        or payload["schema_version"] != 1
+        or not isinstance(payload["files"], list)
+    ):
+        raise ProposalValidationError("invalid_proposal_schema")
+
+    files: list[ProposedFile] = []
+    for row in payload["files"]:
+        if not isinstance(row, dict) or set(row) != {"path", "mode", "content"}:
+            raise ProposalValidationError("invalid_proposal_file")
+        files.append(ProposedFile(path=row["path"], mode=row["mode"], content=row["content"]))
+
+    verified = validate_proposal(files, allow_sensitive_paths=True)
+    if verified.artifact != proposal.artifact or verified.sha256 != proposal.sha256:
+        raise ProposalValidationError("noncanonical_proposal_artifact")
+
+    root = Path(destination)
+    if root.is_symlink() or not root.exists() or not root.is_dir():
+        raise ProposalValidationError("workspace_must_be_existing_real_directory")
+    if any(root.iterdir()):
+        raise ProposalValidationError("workspace_must_be_empty")
+    root = root.resolve(strict=True)
+
+    written: list[str] = []
+    for item in files:
+        parts = item.path.split("/")
+        parent = root
+        for segment in parts[:-1]:
+            parent = parent / segment
+            if parent.is_symlink():
+                raise ProposalValidationError("workspace_symlink_detected")
+            parent.mkdir(exist_ok=True)
+            if parent.is_symlink() or not parent.is_dir():
+                raise ProposalValidationError("workspace_path_conflict")
+            if not parent.resolve(strict=True).is_relative_to(root):
+                raise ProposalValidationError("workspace_path_escape")
+        target = parent / parts[-1]
+        if target.exists() or target.is_symlink():
+            raise ProposalValidationError("workspace_file_conflict")
+        try:
+            with target.open("xb") as stream:
+                stream.write(item.content.encode("utf-8"))
+        except OSError as exc:
+            raise ProposalValidationError("workspace_write_failed") from exc
+        written.append(item.path)
+    return tuple(written)
