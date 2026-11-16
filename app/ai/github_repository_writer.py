@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import httpx
 
-from app.ai.change_proposals import ValidatedProposal, materialize_proposal
+from app.ai.change_proposals import ProposalValidationError, ValidatedProposal, materialize_proposal
 
 
 _REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
@@ -129,7 +129,10 @@ class GitHubRepositoryWriter:
         owner, repo = repository.split("/", 1)
         api_root = f"/repos/{owner}/{repo}"
         with tempfile.TemporaryDirectory(prefix="gai-github-proposal-") as workspace:
-            paths = materialize_proposal(proposal, workspace)
+            try:
+                paths = materialize_proposal(proposal, workspace)
+            except ProposalValidationError:
+                raise RepositoryWriteError("invalid_proposal_artifact") from None
             files = []
             root = Path(workspace)
             for path in paths:
