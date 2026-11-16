@@ -54,3 +54,17 @@ output or files supplied by the candidate. The aggregate result passes only when
 all three commands exit successfully without timeout or output-limit violations.
 A passing suite is still not a signed attestation or human approval; those remain
 separate release-gate requirements.
+
+
+## Signed sandbox evidence
+
+`sign_validation_suite_result` converts only a fully passing validation-suite
+result into the existing HMAC-SHA-256 `SandboxAttestation` format. The attestation
+binds the exact proposal SHA-256, records all three successful checks, and uses
+fresh run/sandbox identifiers, an issue time, and a random one-time nonce.
+
+The signing key must be injected by a trusted controller from a secret manager.
+Never expose it to model prompts, candidate code, or untrusted task payloads.
+The verifier must use durable atomic nonce consumption (PostgreSQL for shared
+workers) and must still pass the evidence through the release gate. This is not
+human approval, identity proof, or authorization to write to GitHub.
