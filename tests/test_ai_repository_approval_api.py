@@ -32,7 +32,8 @@ class FakePostgresSession:
         self.audit_events = []
 
     def add(self, item):
-        self.audit_events.append(item)
+        if item not in self.audit_events:
+            self.audit_events.append(item)
 
     def get_bind(self):
         return SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
