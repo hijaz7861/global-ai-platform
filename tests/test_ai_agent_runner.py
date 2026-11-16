@@ -270,14 +270,13 @@ def test_agent_uses_only_visible_memory_and_owner_approved_matching_skills(agent
         data_classes=["public"],
         risk_level="low",
     )
-    for item in (draft, public_only):
-        approve_skill_version(
-            context.db,
-            organization_id=organization.id,
-            skill_id=item.skill_id,
-            version=item.version,
-            actor_user_id=user.id,
-        )
+    approve_skill_version(
+        context.db,
+        organization_id=organization.id,
+        skill_id=public_only.skill_id,
+        version=public_only.version,
+        actor_user_id=user.id,
+    )
 
     router_instance = FakeRouter([
         _model_response({"action": "final", "answer": "Context was loaded safely."}),
