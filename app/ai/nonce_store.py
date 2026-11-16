@@ -66,3 +66,35 @@ class SQLiteNonceStore:
             except Exception:
                 connection.execute("ROLLBACK")
                 raise
+
+
+class PostgresNonceStore:
+    """Atomic, cross-worker single-use nonce storage backed by PostgreSQL."""
+
+    def __init__(self, db) -> None:
+        from app.models import ConsumedApprovalNonce
+
+        if db.get_bind().dialect.name != "postgresql":
+            raise RuntimeError("repository approval requires PostgreSQL nonce storage")
+        self._db = db
+        self._model = ConsumedApprovalNonce
+
+    def consume_nonce(self, nonce: str) -> bool:
+        """Insert once using the primary-key constraint; caller owns the transaction."""
+        from sqlalchemy import delete
+        from sqlalchemy.dialects.postgresql import insert
+
+        if not isinstance(nonce, str) or not nonce or len(nonce) > 128:
+            return False
+        now = int(time.time())
+        self._db.execute(
+            delete(self._model).where(self._model.consumed_at < now - 86_400)
+        )
+        statement = (
+            insert(self._model)
+            .values(nonce=nonce, consumed_at=now)
+            .on_conflict_do_nothing(index_elements=[self._model.nonce])
+            .returning(self._model.nonce)
+        )
+        result = self._db.execute(statement)
+        return result.scalar_one_or_none() is not None
