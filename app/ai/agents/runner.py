@@ -146,10 +146,12 @@ def _load_approved_context(context: TaskExecutionContext, *, goal: str, data_cla
     ]
 
     try:
+        # Deliberately request the member-visible catalog so drafts and disabled
+        # versions never enter agent context, even when the task creator is an owner.
         versions = list_skill_versions(
             context.db,
             organization_id=context.task.organization_id,
-            role=_current_authorized_membership(context).role,
+            role="member",
         )
     except SkillConflict:
         raise AgentRunError("skill_integrity_failed") from None
