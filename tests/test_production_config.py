@@ -147,9 +147,9 @@ def test_github_repository_writes_reject_rsa_keys_below_2048_bits():
         ("ai_sandbox_attestation_hmac_key", "short", "sandbox attestation key"),
         ("ai_human_approval_hmac_key", "short", "human approval key"),
         ("github_repository_allowlist", "", "owner/repository allowlist"),
-        ("github_repository_allowlist", "acme/*", "owner/repository allowlist"),
-        ("github_repository_allowlist", "../repo", "owner/repository allowlist"),
-        ("github_repository_allowlist", "owner/..", "owner/repository allowlist"),
+        ("github_repository_allowlist", "acme/*", "exact owner/repository names"),
+        ("github_repository_allowlist", "../repo", "unsafe path segment"),
+        ("github_repository_allowlist", "owner/..", "unsafe path segment"),
         ("github_repository_allowlist", "owner/repo,", "empty or excessive"),
         ("github_repository_allowlist", "owner/repo,OWNER/REPO", "duplicates"),
         (
