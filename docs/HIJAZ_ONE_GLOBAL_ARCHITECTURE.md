@@ -347,3 +347,27 @@ No live Hatchable file, schema, data, setting, secret, deployment or task was ch
 this inspection. No data export was run. A full source-to-target mapping, redacted staging
 export, idempotent import, object-byte transfer and financial/consent/audit reconciliation
 remain release gates.
+
+
+## 16. Open-branch freshness check — 2026-11-16
+
+GitHub compare API confirms the following branches are behind the current master head
+`76e811d81cb42eefc68f4bafc6ed931701a91749`:
+
+| PR | Branch | Ahead | Behind | GitHub merge state |
+|---|---|---:|---:|---|
+| #20 | feat/render-mcp-bridge | 9 | 15 | mergeable=true, but stale base and POST verification pending |
+| #22 | integration/hijaz-one-platform-v2 | 12 | 14 | Draft; docs-only updates, stale base |
+| #23 | feat/hijaz-one-role-entitlements | 22 | 14 | mergeable=false, mergeable_state=dirty |
+| #43 | feat/governed-github-runtime-config | 7 | 0 | Draft; exact-head CI #823 passed |
+
+PR #24's base snapshot `13de207` is three commits behind current PR #23 head `7e2cbda`.
+PRs #25–#28 are chained to the immediately preceding branch heads, but the root role branch
+must be reconciled before the stack is considered merge-ready.
+
+The review and inline-thread APIs returned zero submitted reviews and zero threads for all
+13 currently open PRs (#43, #28, #22, #23, #27, #26, #24, #25, #20, #10, #4, #3 and #2).
+
+Do not interpret a GitHub `mergeable=true` value on a stale dependent branch as approval or
+release readiness. Preserve every PR as Draft until branch freshness, exact-head CI, owner
+review and the applicable Definition of Done gates are satisfied.
