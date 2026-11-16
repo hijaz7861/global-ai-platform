@@ -1172,3 +1172,22 @@ def test_concurrent_approval_nonce_consumption_is_single_use():
         assert store.consume_nonce(nonce) is False
     finally:
         engine.dispose()
+
+
+def test_postgres_approval_nonce_is_consumed_once_across_sessions():
+    from sqlalchemy.orm import Session
+
+    from app.ai.nonce_store import PostgresNonceStore
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    nonce = f"approval-nonce-{uuid4().hex}"
+    try:
+        with Session(engine) as first_session:
+            assert PostgresNonceStore(first_session).consume_nonce(nonce) is True
+            first_session.commit()
+
+        with Session(engine) as replay_session:
+            assert PostgresNonceStore(replay_session).consume_nonce(nonce) is False
+            replay_session.rollback()
+    finally:
+        engine.dispose()
