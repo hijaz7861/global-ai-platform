@@ -7,7 +7,7 @@ from app.models import AuditEvent
 
 _ALLOWED_DETAIL_KEYS = {
     "status", "quantity", "price_minor", "total_minor", "currency", "role",
-    "membership_count", "buyer_order_count",
+    "membership_count", "buyer_order_count", "estimated_tokens", "token_estimation",
 }
 
 

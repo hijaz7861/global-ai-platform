@@ -45,12 +45,14 @@ def _current_authorized_membership(context: TaskExecutionContext) -> Membership:
 
 
 def _reserve_model_call(
-    db: Session, *, organization_id: str, actor_user_id: str,
+    db: Session, *, organization_id: str, actor_user_id: str, estimated_tokens: int,
 ) -> str:
     if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
         raise AgentRunError("postgres_required")
     if settings.ai_daily_request_limit < 1:
         raise AgentRunError("ai_quota_not_configured")
+    if not 1 <= estimated_tokens <= 100_000:
+        raise AgentRunError("invalid_token_reservation")
     organization = db.scalar(
         select(Organization)
         .where(Organization.id == organization_id)
@@ -67,6 +69,19 @@ def _reserve_model_call(
     if used >= settings.ai_daily_request_limit:
         db.rollback()
         raise AgentRunError("ai_quota_exceeded")
+    if settings.ai_daily_token_limit > 0:
+        recent_requests = db.scalars(select(AuditEvent).where(
+            AuditEvent.organization_id == organization_id,
+            AuditEvent.action == "ai.request.started",
+            AuditEvent.created_at >= cutoff,
+        )).all()
+        reserved_tokens = sum(
+            int((event.details or {}).get("estimated_tokens", 0))
+            for event in recent_requests
+        )
+        if reserved_tokens + estimated_tokens > settings.ai_daily_token_limit:
+            db.rollback()
+            raise AgentRunError("ai_token_quota_exceeded")
     request_id = str(uuid4())
     record_audit_event(
         db,
@@ -75,7 +90,11 @@ def _reserve_model_call(
         action="ai.request.started",
         entity_type="ai_request",
         entity_id=request_id,
-        details={"status": "started"},
+        details={
+            "status": "started",
+            "estimated_tokens": estimated_tokens,
+            "token_estimation": "utf8_bytes_plus_max_output",
+        },
     )
     db.commit()
     return request_id
@@ -265,14 +284,16 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
         _current_authorized_membership(context)
         context.heartbeat()
         prompt = _build_prompt(payload.goal, tools, history, memories, skills)
+        estimated_tokens = len(prompt.encode("utf-8")) + payload.max_output_tokens
         try:
             request_id = _reserve_model_call(
                 context.db,
                 organization_id=task.organization_id,
                 actor_user_id=task.created_by_user_id,
+                estimated_tokens=estimated_tokens,
             )
         except AgentRunError as exc:
-            if exc.error_code == "ai_quota_exceeded":
+            if exc.error_code in {"ai_quota_exceeded", "ai_token_quota_exceeded"}:
                 return {
                     "status": "quota_exhausted",
                     "answer": "Stopped before another model call because the organization's rolling 24-hour AI request limit was reached.",
@@ -321,12 +342,13 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
                     context.db,
                     organization_id=task.organization_id,
                     actor_user_id=task.created_by_user_id,
+                    estimated_tokens=estimated_tokens,
                 )
             except AgentRunError as quota_error:
-                if quota_error.error_code == "ai_quota_exceeded":
+                if quota_error.error_code in {"ai_quota_exceeded", "ai_token_quota_exceeded"}:
                     return {
                         "status": "quota_exhausted",
-                        "answer": "The primary provider failed transiently, and the organization quota does not permit a fallback request.",
+                        "answer": "The primary provider failed transiently, and the organization request/token budget does not permit a fallback request.",
                         "steps": trace,
                         "usage": {
                             "model_calls": total_model_calls,

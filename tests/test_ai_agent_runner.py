@@ -17,7 +17,7 @@ from app.ai.memory.service import create_memory
 from app.ai.skills.service import approve_skill_version, create_skill_version
 from app.ai.runtime.worker import run_worker_once
 from app.db import Base
-from app.models import Membership, Organization, User
+from app.models import AuditEvent, Membership, Organization, User
 
 
 @pytest.fixture
@@ -339,3 +339,45 @@ def test_agent_does_not_fail_over_on_non_retryable_provider_error(agent_context,
 
     assert exc.value.error_code == "model_provider_failed"
     assert [call["route"] for call in router_instance.calls] == ["primary"]
+
+
+
+def test_daily_token_budget_is_reserved_under_organization_lock(agent_context, monkeypatch):
+    context, user, organization = agent_context
+    monkeypatch.setattr(runner.settings, "database_url", "postgresql+psycopg://test")
+    monkeypatch.setattr(runner.settings, "ai_daily_request_limit", 10)
+    monkeypatch.setattr(runner.settings, "ai_daily_token_limit", 100)
+
+    with pytest.raises(AgentRunError) as exc:
+        runner._reserve_model_call(
+            context.db,
+            organization_id=organization.id,
+            actor_user_id=user.id,
+            estimated_tokens=101,
+        )
+    assert exc.value.error_code == "ai_token_quota_exceeded"
+    assert context.db.query(AuditEvent).filter_by(
+        organization_id=organization.id,
+        action="ai.request.started",
+    ).count() == 0
+
+
+def test_daily_token_budget_records_conservative_reservation(agent_context, monkeypatch):
+    context, user, organization = agent_context
+    monkeypatch.setattr(runner.settings, "database_url", "postgresql+psycopg://test")
+    monkeypatch.setattr(runner.settings, "ai_daily_request_limit", 10)
+    monkeypatch.setattr(runner.settings, "ai_daily_token_limit", 100)
+
+    request_id = runner._reserve_model_call(
+        context.db,
+        organization_id=organization.id,
+        actor_user_id=user.id,
+        estimated_tokens=80,
+    )
+    event = context.db.query(AuditEvent).filter_by(
+        organization_id=organization.id,
+        action="ai.request.started",
+        entity_id=request_id,
+    ).one()
+    assert event.details["estimated_tokens"] == 80
+    assert event.details["token_estimation"] == "utf8_bytes_plus_max_output"

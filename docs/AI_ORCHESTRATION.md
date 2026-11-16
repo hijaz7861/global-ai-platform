@@ -17,7 +17,7 @@
 - The constrained Docker runner requires a digest-pinned image and rootless Docker, disables networking, uses a read-only root filesystem and mounts, drops capabilities, uses a non-root UID, and bounds resources/time/output. It has not been verified on a real rootless Docker host.
 
 ## Configure explicitly
-Use environment variables documented in `.env.example`. Set `AI_LIVE_CALLS_ENABLED=true` only when external calls and charges are intentionally accepted. Configure a positive `AI_DAILY_REQUEST_LIMIT`, keep `AI_MAX_OUTPUT_TOKENS` low, and use a secret manager for deployed API keys.
+Use environment variables documented in `.env.example`. Set `AI_LIVE_CALLS_ENABLED=true` only when external calls and charges are intentionally accepted. Configure a positive `AI_DAILY_REQUEST_LIMIT`, optionally set `AI_DAILY_TOKEN_LIMIT` for a conservative rolling 24-hour agent token-reservation cap, keep `AI_MAX_OUTPUT_TOKENS` low, and use a secret manager for deployed API keys. The token estimate reserves UTF-8 prompt bytes plus the requested maximum output tokens; it is deliberately conservative and is not a provider-billing meter. Failed attempts remain reserved for the rolling window, preventing retries from bypassing the budget.
 
 ## Remaining Universal AI Connector Hub work
 The inbound MCP endpoint, runtime security gateway, encrypted secret-manager integration, automatic provider failover, tenant cost budgets, expanded capability-scoped tool permissions, OAuth/webhook lifecycle and staged release automation remain incomplete. Explicit capability-aware text routing and an internal static read-only tool gateway are implemented. No public MCP endpoint or production deployment is enabled.
