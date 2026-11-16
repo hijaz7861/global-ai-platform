@@ -1,5 +1,7 @@
 """Environment-backed application settings."""
-from pydantic import Field
+import re
+
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,6 +51,13 @@ class Settings(BaseSettings):
     ai_max_response_bytes: int = Field(default=1048576, ge=1024, le=10485760)
     ai_daily_request_limit: int = Field(default=0, ge=0, le=10000)
     ai_daily_token_limit: int = Field(default=0, ge=0, le=10000000)
+    ai_repository_writes_enabled: bool = False
+    github_app_id: str | None = None
+    github_app_installation_id: str | None = None
+    github_app_private_key_pem: SecretStr | None = None
+    github_repository_allowlist: str = ""
+    ai_sandbox_attestation_hmac_key: SecretStr | None = None
+    ai_human_approval_hmac_key: SecretStr | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -58,13 +67,53 @@ class Settings(BaseSettings):
 
 
 def validate_runtime_settings(config: "Settings") -> None:
-    """Fail closed on unsafe production configuration without exposing secret values."""
-    if config.environment.strip().lower() != "production":
+    """Fail closed on unsafe production and repository-write configuration."""
+    environment = config.environment.strip().lower()
+    is_postgres = config.database_url.lower().startswith(("postgresql://", "postgresql+"))
+
+    if environment == "production":
+        if not config.secret_key or len(config.secret_key) < 32:
+            raise RuntimeError("Production requires a SECRET_KEY of at least 32 characters")
+        if not is_postgres:
+            raise RuntimeError("Production requires PostgreSQL; SQLite is for local development only")
+
+    if not config.ai_repository_writes_enabled:
         return
-    if not config.secret_key or len(config.secret_key) < 32:
-        raise RuntimeError("Production requires a SECRET_KEY of at least 32 characters")
-    if not config.database_url.lower().startswith(("postgresql://", "postgresql+")):
-        raise RuntimeError("Production requires PostgreSQL; SQLite is for local development only")
+    if environment not in {"staging", "production"}:
+        raise RuntimeError("GitHub repository writes require staging or production environment")
+    if not is_postgres:
+        raise RuntimeError("GitHub repository writes require PostgreSQL nonce storage")
+
+    if not config.github_app_id or not config.github_app_id.isdigit():
+        raise RuntimeError("GitHub repository writes require a numeric GITHUB_APP_ID")
+    if not config.github_app_installation_id or not config.github_app_installation_id.isdigit():
+        raise RuntimeError("GitHub repository writes require a numeric GITHUB_APP_INSTALLATION_ID")
+
+    private_key = (
+        config.github_app_private_key_pem.get_secret_value()
+        if config.github_app_private_key_pem else ""
+    )
+    attestation_key = (
+        config.ai_sandbox_attestation_hmac_key.get_secret_value()
+        if config.ai_sandbox_attestation_hmac_key else ""
+    )
+    approval_key = (
+        config.ai_human_approval_hmac_key.get_secret_value()
+        if config.ai_human_approval_hmac_key else ""
+    )
+    if "-----BEGIN" not in private_key or "PRIVATE KEY-----" not in private_key:
+        raise RuntimeError("GitHub repository writes require GITHUB_APP_PRIVATE_KEY_PEM")
+    if len(attestation_key) < 32:
+        raise RuntimeError("GitHub repository writes require a 32-character sandbox attestation key")
+    if len(approval_key) < 32:
+        raise RuntimeError("GitHub repository writes require a 32-character human approval key")
+
+    repositories = [item.strip() for item in config.github_repository_allowlist.split(",") if item.strip()]
+    if not repositories or any(
+        not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}", item)
+        for item in repositories
+    ):
+        raise RuntimeError("GitHub repository writes require an explicit owner/repository allowlist")
 
 
 settings = Settings()
