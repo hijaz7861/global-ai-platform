@@ -19,8 +19,8 @@
 ## Configure explicitly
 Use environment variables documented in `.env.example`. Set `AI_LIVE_CALLS_ENABLED=true` only when external calls and charges are intentionally accepted. Configure a positive `AI_DAILY_REQUEST_LIMIT`, keep `AI_MAX_OUTPUT_TOKENS` low, and use a secret manager for deployed API keys.
 
-## Planned Universal AI Connector Hub
-The inbound MCP endpoint, runtime security gateway, encrypted secret-manager integration, capability-aware routing, tenant cost budgets, scoped tool permissions, OAuth/webhook lifecycle and staged release automation remain incomplete. No public MCP endpoint or production deployment is enabled.
+## Remaining Universal AI Connector Hub work
+The inbound MCP endpoint, runtime security gateway, encrypted secret-manager integration, automatic provider failover, tenant cost budgets, expanded capability-scoped tool permissions, OAuth/webhook lifecycle and staged release automation remain incomplete. Explicit capability-aware text routing and an internal static read-only tool gateway are implemented. No public MCP endpoint or production deployment is enabled.
 
 ## Current limitations
 - Provider selection is explicit; no automatic retry/failover is enabled. The client-declared data class is a policy hint, not automatic DLP or trusted content classification.
@@ -45,7 +45,7 @@ The feature branch `feat/ai-agent-operating-layer-design` adds a first task-runt
 - Worker claims use database-conditional state transitions and expiring leases. An expired lease can be reclaimed; a task whose attempts are exhausted becomes failed. Step records store input/output digests rather than duplicate raw payloads.
 - Task lifecycle events deliberately omit prompts, provider output, credentials, and raw exception text.
 
-This is a durable queue/runtime primitive, not yet a continuously supervised worker service, model planner, multi-agent coordinator, memory system, skill registry, or tool gateway. The task event table is not yet wired to the platform-wide audit export/retention pipeline. Production multi-worker operation requires PostgreSQL; SQLite is for local/unit development.
+The current runtime includes a durable tenant-scoped queue, a standalone polling worker, a bounded single-agent model/tool loop, a separate provenance-aware memory service, a versioned owner-approved skill registry, and an internal static read-only tool gateway. It is not yet a continuously supervised hosted worker service or multi-agent coordinator. The task event table is not yet wired to the platform-wide audit export/retention pipeline. Production multi-worker operation requires PostgreSQL; SQLite is for local/unit development.
 
 The implementation must pass the full Python matrix, migration consistency check, and PostgreSQL integration suite before it is considered CI-verified.
 
