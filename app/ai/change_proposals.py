@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
+import json
 import re
 from collections.abc import Iterable
 
