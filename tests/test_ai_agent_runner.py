@@ -242,7 +242,7 @@ def test_agent_uses_only_visible_memory_and_owner_approved_matching_skills(agent
         version=approved.version,
         actor_user_id=user.id,
     )
-    draft = create_skill_version(
+    create_skill_version(
         context.db,
         organization_id=organization.id,
         actor_user_id=user.id,
