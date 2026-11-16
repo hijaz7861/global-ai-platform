@@ -29,6 +29,10 @@ class FakePostgresSession:
         self.statements = []
         self.commits = 0
         self.rollbacks = 0
+        self.audit_events = []
+
+    def add(self, item):
+        self.audit_events.append(item)
 
     def get_bind(self):
         return SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
@@ -172,8 +176,12 @@ def test_approval_endpoint_signs_for_authenticated_actor_and_commits_before_toke
     assert captured["signed_approval"].payload.action == "repository.pull_request.create"
     assert captured["signed_approval"].payload.action_sha256 == proposal.sha256
     assert captured["allowed_actor_ids"] == {user.id}
-    assert db.commits == 1
+    assert db.commits == 2
     assert db.rollbacks == 0
+    assert len(db.audit_events) == 1
+    assert db.audit_events[0].action == "ai.repository.draft_pr.authorized"
+    assert db.audit_events[0].details["status"] == "draft_pr_created"
+    assert db.audit_events[0].details["pull_request_number"] == 77
 
 
 def test_approval_endpoint_rejects_without_mfa_before_provider_creation(monkeypatch):
