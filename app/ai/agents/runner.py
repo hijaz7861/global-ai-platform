@@ -257,6 +257,7 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
     trace: list[dict] = []
     total_input_tokens = 0
     total_output_tokens = 0
+    total_model_calls = 0
     selected_provider = ""
     selected_model = ""
 
@@ -277,13 +278,14 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
                     "answer": "Stopped before another model call because the organization's rolling 24-hour AI request limit was reached.",
                     "steps": trace,
                     "usage": {
-                        "model_calls": turn - 1,
+                        "model_calls": total_model_calls,
                         "input_tokens": total_input_tokens,
                         "output_tokens": total_output_tokens,
                     },
                 }
             raise
 
+        total_model_calls += 1
         try:
             result = await model_router.complete(
                 route=payload.model_route,
@@ -292,14 +294,73 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
                 prompt=prompt,
                 max_output_tokens=payload.max_output_tokens,
             )
-        except ProviderError:
+        except ProviderError as primary_error:
             _fail_model_call(
                 context.db,
                 request_id=request_id,
                 organization_id=task.organization_id,
                 actor_user_id=task.created_by_user_id,
             )
-            raise AgentRunError("model_provider_failed") from None
+            if not (
+                settings.ai_auto_failover_enabled
+                and payload.model_route == "primary"
+                and primary_error.retryable
+            ):
+                raise AgentRunError("model_provider_failed") from None
+            try:
+                model_router.select(
+                    route="fallback",
+                    task_type=payload.task_type,
+                    data_class=payload.data_class,
+                    max_output_tokens=payload.max_output_tokens,
+                )
+            except ModelRouteError:
+                raise AgentRunError("model_fallback_unavailable") from None
+            try:
+                fallback_request_id = _reserve_model_call(
+                    context.db,
+                    organization_id=task.organization_id,
+                    actor_user_id=task.created_by_user_id,
+                )
+            except AgentRunError as quota_error:
+                if quota_error.error_code == "ai_quota_exceeded":
+                    return {
+                        "status": "quota_exhausted",
+                        "answer": "The primary provider failed transiently, and the organization quota does not permit a fallback request.",
+                        "steps": trace,
+                        "usage": {
+                            "model_calls": total_model_calls,
+                            "input_tokens": total_input_tokens,
+                            "output_tokens": total_output_tokens,
+                        },
+                    }
+                raise
+            total_model_calls += 1
+            try:
+                result = await model_router.complete(
+                    route="fallback",
+                    task_type=payload.task_type,
+                    data_class=payload.data_class,
+                    prompt=prompt,
+                    max_output_tokens=payload.max_output_tokens,
+                )
+            except ProviderError:
+                _fail_model_call(
+                    context.db,
+                    request_id=fallback_request_id,
+                    organization_id=task.organization_id,
+                    actor_user_id=task.created_by_user_id,
+                )
+                raise AgentRunError("model_fallback_failed") from None
+            except Exception:
+                _fail_model_call(
+                    context.db,
+                    request_id=fallback_request_id,
+                    organization_id=task.organization_id,
+                    actor_user_id=task.created_by_user_id,
+                )
+                raise AgentRunError("model_fallback_failed") from None
+            request_id = fallback_request_id
         except Exception:
             _fail_model_call(
                 context.db,
@@ -336,7 +397,7 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
                 "provider": selected_provider,
                 "model": selected_model,
                 "usage": {
-                    "model_calls": turn,
+                    "model_calls": total_model_calls,
                     "input_tokens": total_input_tokens,
                     "output_tokens": total_output_tokens,
                 },
@@ -377,7 +438,7 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
         "provider": selected_provider,
         "model": selected_model,
         "usage": {
-            "model_calls": payload.max_steps,
+            "model_calls": total_model_calls,
             "input_tokens": total_input_tokens,
             "output_tokens": total_output_tokens,
         },
