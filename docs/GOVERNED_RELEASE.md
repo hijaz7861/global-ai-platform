@@ -38,3 +38,23 @@
   must be revalidated to obtain fresh evidence.
 - This module is a deterministic policy helper, not an HTTP approval service,
   GitHub writer, release executor, or deployment controller.
+
+
+## GitHub draft PR creation
+
+`app/ai/governed_repository.py` is the approved entry point for repository writes.
+It treats every PR creation as high-impact and requires an attestation for the
+exact proposal artifact plus a signed approval whose action is
+`repository.pull_request.create`. Missing or invalid approval causes no GitHub
+API call and does not consume either nonce.
+
+The underlying `GitHubRepositoryWriter` is a low-level trusted-service adapter.
+It requires an explicit repository allowlist and an injected GitHub App
+installation token, creates a new `ai/proposal-<id>` branch from the repository's
+current default branch, writes one atomic Git tree/commit, and opens a draft PR.
+It never updates the default branch, merges, deploys, or runs Actions. Use an
+installation token scoped only to the approved repositories with Contents: write
+and Pull requests: write. Never pass that token to the model or candidate code.
+
+A successful draft PR is a review artifact, not a production release. Merge and
+deployment remain separate, separately authorized actions.
