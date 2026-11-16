@@ -39,3 +39,18 @@ proposal. The orchestration wrapper does not create an attestation, verify human
 approval, create a branch, or write to a repository. A successful process exit is
 only sandbox execution evidence; the caller must still authenticate/sign evidence
 and pass it through the deterministic release gate.
+
+
+## Independent validation suite
+
+`run_proposal_validation_suite` runs three trusted command arrays independently:
+unit/acceptance tests, a security scan, and regression checks. Each command runs
+in a fresh sandbox container against the same read-only candidate workspace and
+the same separately mounted trusted-test bundle. The workspace is removed after
+the suite finishes.
+
+The commands and test bundle are operator-controlled configuration, not model
+output or files supplied by the candidate. The aggregate result passes only when
+all three commands exit successfully without timeout or output-limit violations.
+A passing suite is still not a signed attestation or human approval; those remain
+separate release-gate requirements.
