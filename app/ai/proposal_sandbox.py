@@ -7,9 +7,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import secrets
 import tempfile
+import time
+from uuid import uuid4
 
 from app.ai.change_proposals import ValidatedProposal, materialize_proposal
+from app.ai.evidence_attestation import SandboxAttestation, SignedAttestation, sign_attestation
 from app.ai.sandbox_runner import DockerSandboxRunner, SandboxResult
 
 
@@ -32,7 +36,6 @@ def run_proposal_in_sandbox(
             trusted_test_directory=trusted_test_directory,
             command=command,
         )
-
 
 
 @dataclass(frozen=True)
@@ -88,3 +91,29 @@ def run_proposal_validation_suite(
             security_scan=results[1],
             regression=results[2],
         )
+
+
+def sign_validation_suite_result(
+    result: ProposalValidationSuiteResult,
+    *,
+    attestation_key: bytes,
+) -> SignedAttestation:
+    """Sign successful validation evidence inside a trusted sandbox controller.
+
+    Keep the HMAC key in a secret manager and never expose it to candidate code,
+    model prompts, or untrusted task payloads. This helper does not authenticate a
+    human approver or consume the attestation nonce; verification does that later.
+    """
+    if not isinstance(result, ProposalValidationSuiteResult) or not result.passed:
+        raise ValueError("Only a fully passing validation suite can be attested")
+    payload = SandboxAttestation(
+        artifact_sha256=result.artifact_sha256,
+        run_id=str(uuid4()),
+        sandbox_id=str(uuid4()),
+        tests_passed=True,
+        security_scan_passed=True,
+        regression_suite_passed=True,
+        issued_at=int(time.time()),
+        nonce=secrets.token_urlsafe(24),
+    )
+    return sign_attestation(payload, attestation_key)

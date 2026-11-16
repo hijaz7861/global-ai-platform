@@ -3,7 +3,12 @@ from pathlib import Path
 import pytest
 
 from app.ai.change_proposals import ProposalValidationError, ProposedFile, validate_proposal
-from app.ai.proposal_sandbox import run_proposal_in_sandbox, run_proposal_validation_suite
+from app.ai.proposal_sandbox import (
+    run_proposal_in_sandbox,
+    run_proposal_validation_suite,
+    sign_validation_suite_result,
+)
+from app.ai.evidence_attestation import verify_attestation
 from app.ai.sandbox_runner import SandboxResult
 
 
@@ -161,3 +166,98 @@ def test_validation_suite_rejects_missing_trusted_command_before_running(tmp_pat
         )
 
     assert runner.calls == []
+
+
+
+def test_successful_validation_suite_can_be_signed_and_replay_checked(tmp_path):
+    proposal = validate_proposal([ProposedFile("docs/a.md", "safe")])
+    success = SandboxResult(0, "ok", "", False, False, 0.1)
+    runner = FakeSandboxRunner(results=[success, success, success])
+    trusted_tests = tmp_path / "trusted-tests"
+    trusted_tests.mkdir()
+    result = run_proposal_validation_suite(
+        proposal,
+        runner=runner,
+        trusted_test_directory=trusted_tests,
+        test_command=["pytest", "/trusted-tests/unit"],
+        security_command=["scanner", "/workspace"],
+        regression_command=["pytest", "/trusted-tests/regression"],
+    )
+    key = b"test-only-attestation-key-32-bytes!!"
+    signed = sign_validation_suite_result(result, attestation_key=key)
+    consumed = set()
+
+    def consume_nonce(nonce):
+        if nonce in consumed:
+            return False
+        consumed.add(nonce)
+        return True
+
+    valid, reason = verify_attestation(
+        signed,
+        key=key,
+        expected_artifact_sha256=proposal.sha256,
+        consume_nonce=consume_nonce,
+        now=signed.payload.issued_at,
+    )
+    replayed, replay_reason = verify_attestation(
+        signed,
+        key=key,
+        expected_artifact_sha256=proposal.sha256,
+        consume_nonce=consume_nonce,
+        now=signed.payload.issued_at,
+    )
+
+    assert (valid, reason) == (True, "attestation_verified")
+    assert (replayed, replay_reason) == (False, "nonce_replayed")
+
+
+def test_failed_validation_suite_cannot_be_signed(tmp_path):
+    proposal = validate_proposal([ProposedFile("docs/a.md", "safe")])
+    success = SandboxResult(0, "ok", "", False, False, 0.1)
+    failure = SandboxResult(1, "", "failed", False, False, 0.1)
+    runner = FakeSandboxRunner(results=[success, failure, success])
+    trusted_tests = tmp_path / "trusted-tests"
+    trusted_tests.mkdir()
+    result = run_proposal_validation_suite(
+        proposal,
+        runner=runner,
+        trusted_test_directory=trusted_tests,
+        test_command=["pytest"],
+        security_command=["scanner"],
+        regression_command=["pytest", "regression"],
+    )
+
+    with pytest.raises(ValueError, match="fully passing"):
+        sign_validation_suite_result(
+            result,
+            attestation_key=b"test-only-attestation-key-32-bytes!!",
+        )
+
+
+def test_attestation_is_bound_to_exact_proposal_digest(tmp_path):
+    proposal = validate_proposal([ProposedFile("docs/a.md", "safe")])
+    success = SandboxResult(0, "ok", "", False, False, 0.1)
+    runner = FakeSandboxRunner(results=[success, success, success])
+    trusted_tests = tmp_path / "trusted-tests"
+    trusted_tests.mkdir()
+    result = run_proposal_validation_suite(
+        proposal,
+        runner=runner,
+        trusted_test_directory=trusted_tests,
+        test_command=["pytest"],
+        security_command=["scanner"],
+        regression_command=["pytest", "regression"],
+    )
+    key = b"test-only-attestation-key-32-bytes!!"
+    signed = sign_validation_suite_result(result, attestation_key=key)
+
+    valid, reason = verify_attestation(
+        signed,
+        key=key,
+        expected_artifact_sha256="0" * 64,
+        consume_nonce=lambda nonce: True,
+        now=signed.payload.issued_at,
+    )
+
+    assert (valid, reason) == (False, "artifact_digest_mismatch")
