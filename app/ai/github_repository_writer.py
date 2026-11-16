@@ -51,11 +51,15 @@ class GitHubRepositoryWriter:
     ) -> None:
         if not isinstance(token, str) or len(token) < 20:
             raise ValueError("A GitHub installation token is required")
+        if any(not isinstance(item, str) for item in allowed_repositories):
+            raise ValueError("Repository allowlist entries must be strings")
         normalized = frozenset(item.strip() for item in allowed_repositories)
         if not normalized or any(not _REPOSITORY.fullmatch(item) for item in normalized):
             raise ValueError("An explicit owner/repository allowlist is required")
         self._allowed = normalized
         self._owns_client = client is None
+        if client is not None and str(client.base_url).rstrip("/") != "https://api.github.com":
+            raise ValueError("GitHub client must use the official api.github.com origin")
         self._client = client or httpx.Client(
             base_url="https://api.github.com",
             headers={
@@ -67,6 +71,14 @@ class GitHubRepositoryWriter:
             timeout=httpx.Timeout(20.0),
             follow_redirects=False,
         )
+        self._client.headers.update({
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "global-ai-platform-governed-writer",
+        })
+        self._client.follow_redirects = False
+        self._client.timeout = httpx.Timeout(20.0)
 
     def close(self) -> None:
         if self._owns_client:
