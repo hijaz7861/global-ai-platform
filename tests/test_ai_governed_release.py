@@ -208,3 +208,32 @@ def test_low_risk_change_can_enter_sandbox_only_after_attestation():
     assert result.decision is GateDecision.SANDBOX_ONLY
     assert attestation_nonces == {attestation.payload.nonce}
     assert approval_nonces == set()
+
+
+
+def test_replayed_attestation_is_denied_after_successful_staged_release():
+    artifact = b"candidate patch"
+    attestation = _attestation(artifact)
+    approval = _approval(artifact)
+    attestation_nonces, consume_attestation = _nonce_consumer()
+    approval_nonces, consume_approval = _nonce_consumer()
+
+    kwargs = {
+        "evidence": _evidence(artifact),
+        "signed_attestation": attestation,
+        "attestation_key": ATTESTATION_KEY,
+        "consume_attestation_nonce": consume_attestation,
+        "signed_approval": approval,
+        "approval_key": APPROVAL_KEY,
+        "allowed_actor_ids": {"owner-1"},
+        "consume_approval_nonce": consume_approval,
+        "now": NOW,
+    }
+    first = evaluate_governed_change(**kwargs)
+    replay = evaluate_governed_change(**kwargs)
+
+    assert first.decision is GateDecision.ELIGIBLE_FOR_STAGED_RELEASE
+    assert replay.decision is GateDecision.DENY
+    assert replay.reasons == ("sandbox_attestation_nonce_replayed",)
+    assert attestation_nonces == {attestation.payload.nonce}
+    assert approval_nonces == {approval.payload.nonce}
