@@ -25,3 +25,19 @@ to the exact allowlisted repository.
 This endpoint creates a draft pull request only. It does not merge, deploy,
 modify the default branch, or trigger a production release. Runtime configuration
 must remain disabled by default and must be provisioned through a secret manager.
+
+
+## Audit trail
+
+Once both signed proofs have passed validation, the API stages an organization-
+scoped audit event containing the authenticated actor, repository, canonical
+proposal digest, sandbox run ID, approval ID, and an
+`authorized_pending_github_write` status. The event is committed in the same
+database transaction as the consumed nonces, immediately before requesting the
+GitHub installation token.
+
+After GitHub confirms draft PR creation, the event is updated with the PR number,
+URL, branch, commit SHA, and `draft_pr_created` status. If the GitHub write fails
+after authorization, the durable event is marked `github_write_failed`; it
+does not claim that a PR was created. If the final audit update itself fails,
+the initial durable authorization event remains available for reconciliation.
