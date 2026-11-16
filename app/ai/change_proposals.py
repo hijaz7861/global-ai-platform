@@ -198,7 +198,13 @@ def materialize_proposal(
         files.append(ProposedFile(path=row["path"], mode=row["mode"], content=row["content"]))
 
     verified = validate_proposal(files, allow_sensitive_paths=True)
-    if verified.artifact != proposal.artifact or verified.sha256 != proposal.sha256:
+    if (
+        verified.artifact != proposal.artifact
+        or verified.sha256 != proposal.sha256
+        or verified.paths != proposal.paths
+        or verified.total_bytes != proposal.total_bytes
+        or verified.risk_level != proposal.risk_level
+    ):
         raise ProposalValidationError("noncanonical_proposal_artifact")
 
     root = Path(destination)
