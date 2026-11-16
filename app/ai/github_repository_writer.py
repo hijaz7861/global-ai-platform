@@ -86,11 +86,16 @@ class GitHubRepositoryWriter:
 
     def _request(self, method: str, path: str, *, payload: dict | None = None) -> dict:
         try:
-            response = self._client.request(method, path, json=payload)
+            if payload is None:
+                response = self._client.request(method, path)
+            else:
+                response = self._client.request(method, path, json=payload)
         except httpx.HTTPError:
             raise RepositoryWriteError("github_transport_error") from None
-        if response.status_code >= 400:
+        if not 200 <= response.status_code < 300:
             raise RepositoryWriteError(f"github_api_http_{response.status_code}")
+        if response.status_code == 204:
+            return {}
         try:
             data = response.json()
         except ValueError:
@@ -118,7 +123,7 @@ class GitHubRepositoryWriter:
             raise RepositoryWriteError("invalid_repository")
         if not isinstance(title, str) or not 5 <= len(title.strip()) <= 120:
             raise RepositoryWriteError("invalid_pull_request_title")
-        if not isinstance(summary, str) or len(summary) > 8_000:
+        if not isinstance(summary, str) or not summary.strip() or len(summary) > 8_000:
             raise RepositoryWriteError("invalid_pull_request_summary")
 
         owner, repo = repository.split("/", 1)
