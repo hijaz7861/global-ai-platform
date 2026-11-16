@@ -70,5 +70,7 @@ be injected by a secret manager; none belong in repository files, model context,
 or task payloads. The provider uses the official api.github.com origin and
 sanitizes authentication errors.
 
-The token provider is a library component. It is not enabled by default and does
-not create a GitHub App, install it, or supply its credentials.
+The token provider is a library component. The governed repository wrapper requests
+a token only after attestation and human-approval verification succeeds. It is not
+enabled by default and does not create a GitHub App, install it, or supply its
+credentials.
