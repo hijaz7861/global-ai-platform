@@ -1,5 +1,4 @@
 import hashlib
-import json
 
 import pytest
 
@@ -8,7 +7,6 @@ from app.ai.change_proposals import (
     ProposedFile,
     validate_proposal,
 )
-
 
 def test_proposal_is_canonical_and_order_independent():
     first = validate_proposal([
