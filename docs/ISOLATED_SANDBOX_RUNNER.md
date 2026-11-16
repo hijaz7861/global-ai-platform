@@ -26,3 +26,16 @@
 ## Verification status
 
 Unit tests cover validation and refusal when the daemon is not rootless. CI does not prove the host has rootless Docker, a correctly built image, or adequate kernel isolation. No sandbox job has been run against a real worker host by this code change.
+
+## Proposal orchestration
+
+`app/ai/proposal_sandbox.py` connects a digest-verified `ValidatedProposal` to
+`DockerSandboxRunner`. It materializes candidate files into a fresh temporary
+workspace, invokes the runner with a separately supplied trusted-test directory,
+and removes the candidate workspace on both success and failure.
+
+The trusted test directory must come from a protected source independent of the
+proposal. The orchestration wrapper does not create an attestation, verify human
+approval, create a branch, or write to a repository. A successful process exit is
+only sandbox execution evidence; the caller must still authenticate/sign evidence
+and pass it through the deterministic release gate.
