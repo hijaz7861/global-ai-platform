@@ -12,6 +12,7 @@ class AgentTaskInput(BaseModel):
     data_class: Literal["public", "internal"] = "internal"
     max_steps: int = Field(default=3, ge=1, le=5)
     max_output_tokens: int = Field(default=256, ge=32, le=512)
+    remember_result: bool = False
 
     @field_validator("goal")
     @classmethod

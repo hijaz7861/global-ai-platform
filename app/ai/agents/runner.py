@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.agents.schemas import AgentDecision, AgentTaskInput
 from app.ai.model_router import ModelRouteError, create_model_router
-from app.ai.memory.service import MemoryConflict, search_memories
+from app.ai.memory.service import MemoryConflict, create_memory, search_memories
 from app.ai.skills.service import SkillConflict, list_skill_versions
 from app.ai.providers import ProviderError
 from app.ai.runtime.tasks import PermanentTaskError, TaskExecutionContext
@@ -412,9 +412,26 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
 
         if decision.action == "final":
             trace.append({"turn": turn, "action": "final"})
+            memory_saved = False
+            if payload.remember_result:
+                create_memory(
+                    context.db,
+                    actor_user_id=task.created_by_user_id,
+                    scope="user",
+                    organization_id=None,
+                    memory_type="session_summary",
+                    content=decision.answer[:5_000],
+                    source_type="task",
+                    source_ref=task.id,
+                    confidence_percent=50,
+                    sensitivity="sensitive",
+                    expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+                )
+                memory_saved = True
             return {
                 "status": "completed",
                 "answer": decision.answer[:5_000],
+                "memory_saved": memory_saved,
                 "steps": trace,
                 "provider": selected_provider,
                 "model": selected_model,
