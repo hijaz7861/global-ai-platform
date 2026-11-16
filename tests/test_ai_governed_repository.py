@@ -6,6 +6,7 @@ from app.ai.evidence_attestation import SandboxAttestation, sign_attestation
 from app.ai.governed_repository import (
     RepositoryWriteDenied,
     create_approved_draft_pull_request,
+    create_approved_draft_pull_request_with_app,
 )
 from app.ai.github_repository_writer import DraftPullRequest, RepositoryWriteError
 from app.ai.human_approval import HumanApproval, sign_human_approval
@@ -20,6 +21,9 @@ ACTION = "repository.pull_request.create"
 class FakeWriter:
     def __init__(self):
         self.calls = []
+
+    def close(self):
+        pass
 
     def create_draft_pull_request(self, proposal, **kwargs):
         self.calls.append((proposal, kwargs))
@@ -207,3 +211,92 @@ def test_invalid_proposal_is_rejected_before_nonce_consumption():
     assert writer.calls == []
     assert attestation_nonces == set()
     assert approval_nonces == set()
+
+
+
+class FakeTokenProvider:
+    allowed_repositories = frozenset({"acme/platform"})
+
+    def __init__(self):
+        self.calls = []
+
+    def get_token(self, repository):
+        self.calls.append(repository)
+        return "ghs_fake_installation_token_for_tests"
+
+
+def test_github_app_token_is_requested_only_after_signed_approval(monkeypatch):
+    import app.ai.governed_repository as governed_module
+
+    proposal = validate_proposal([ProposedFile("docs/a.md", "safe")])
+    provider = FakeTokenProvider()
+    created_writers = []
+
+    def writer_factory(**kwargs):
+        created_writers.append(kwargs)
+        return FakeWriter()
+
+    monkeypatch.setattr(governed_module, "GitHubRepositoryWriter", writer_factory)
+    attestation_nonces, consume_attestation = _nonce_consumer()
+    approval_nonces, consume_approval = _nonce_consumer()
+
+    with pytest.raises(RepositoryWriteDenied):
+        create_approved_draft_pull_request_with_app(
+            proposal,
+            token_provider=provider,
+            repository="acme/platform",
+            title="Propose reviewed change",
+            summary="Candidate changes for maintainer review.",
+            signed_attestation=_attestation(proposal),
+            attestation_key=ATTESTATION_KEY,
+            consume_attestation_nonce=consume_attestation,
+            signed_approval=None,
+            approval_key=APPROVAL_KEY,
+            allowed_actor_ids={"owner-1"},
+            consume_approval_nonce=consume_approval,
+            now=NOW,
+        )
+
+    assert provider.calls == []
+    assert created_writers == []
+    assert attestation_nonces == set()
+    assert approval_nonces == set()
+
+
+def test_github_app_token_is_scoped_and_used_after_approval(monkeypatch):
+    import app.ai.governed_repository as governed_module
+
+    proposal = validate_proposal([ProposedFile("docs/a.md", "safe")])
+    provider = FakeTokenProvider()
+    created_writers = []
+
+    def writer_factory(**kwargs):
+        created_writers.append(kwargs)
+        return FakeWriter()
+
+    monkeypatch.setattr(governed_module, "GitHubRepositoryWriter", writer_factory)
+    attestation_nonces, consume_attestation = _nonce_consumer()
+    approval_nonces, consume_approval = _nonce_consumer()
+
+    result = create_approved_draft_pull_request_with_app(
+        proposal,
+        token_provider=provider,
+        repository="acme/platform",
+        title="Propose reviewed change",
+        summary="Candidate changes for maintainer review.",
+        signed_attestation=_attestation(proposal),
+        attestation_key=ATTESTATION_KEY,
+        consume_attestation_nonce=consume_attestation,
+        signed_approval=_approval(proposal),
+        approval_key=APPROVAL_KEY,
+        allowed_actor_ids={"owner-1"},
+        consume_approval_nonce=consume_approval,
+        now=NOW,
+    )
+
+    assert result.number == 12
+    assert provider.calls == ["acme/platform"]
+    assert created_writers[0]["token"] == "ghs_fake_installation_token_for_tests"
+    assert created_writers[0]["allowed_repositories"] == provider.allowed_repositories
+    assert attestation_nonces == {"attestation-nonce-0001"}
+    assert approval_nonces == {"human-approval-nonce-01"}
