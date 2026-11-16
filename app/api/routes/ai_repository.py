@@ -23,7 +23,7 @@ from app.ai.nonce_store import PostgresNonceStore
 from app.api.deps import get_current_user, require_membership
 from app.core.config import settings, _parse_github_repository_allowlist
 from app.db import get_db
-from app.models import Membership, User
+from app.models import AuditEvent, Membership, User
 
 router = APIRouter(tags=["ai-governed-repository"])
 _ACTION = "repository.pull_request.create"
@@ -161,6 +161,23 @@ def create_human_approved_draft_pr(
         attestation_key = settings.ai_sandbox_attestation_hmac_key.get_secret_value().encode("utf-8")
 
         nonce_store = PostgresNonceStore(db)
+        audit_event = AuditEvent(
+            actor_user_id=user.id,
+            organization_id=organization_id,
+            action="ai.repository.draft_pr.authorized",
+            entity_type="repository_proposal",
+            entity_id=proposal.sha256,
+            details={
+                "repository": payload.repository,
+                "proposal_sha256": proposal.sha256,
+                "sandbox_run_id": attestation_payload.run_id,
+                "approval_id": approval.approval_id,
+                "status": "authorized_pending_github_write",
+            },
+        )
+        # This record is committed together with the one-time proof nonces
+        # immediately before the first GitHub side effect.
+        db.add(audit_event)
         provider = GitHubAppTokenProvider(
             app_id=settings.github_app_id,
             installation_id=settings.github_app_installation_id,
@@ -185,6 +202,16 @@ def create_human_approved_draft_pr(
             )
         finally:
             provider.close()
+        audit_event.details = {
+            **audit_event.details,
+            "status": "draft_pr_created",
+            "pull_request_number": result.number,
+            "pull_request_url": result.url,
+            "branch": result.branch,
+            "commit_sha": result.commit_sha,
+        }
+        db.add(audit_event)
+        db.commit()
         return ApprovedRepositoryPRResponse(
             repository=result.repository,
             number=result.number,
@@ -207,6 +234,16 @@ def create_human_approved_draft_pr(
         raise HTTPException(status_code=403, detail="Sandbox evidence or human approval was rejected") from None
     except (GitHubAppAuthError, RepositoryWriteError):
         db.rollback()
+        if "audit_event" in locals():
+            try:
+                audit_event.details = {
+                    **audit_event.details,
+                    "status": "github_write_failed",
+                }
+                db.add(audit_event)
+                db.commit()
+            except Exception:
+                db.rollback()
         raise HTTPException(status_code=502, detail="Governed GitHub draft PR operation failed") from None
     except (AttributeError, RuntimeError, ValueError):
         db.rollback()
