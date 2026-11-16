@@ -12,6 +12,8 @@ from app import models  # noqa: F401
 from app.ai.agents import runner
 from app.ai.agents.runner import AgentRunError, run_agent_task
 from app.ai.runtime.tasks import create_task
+from app.ai.memory.service import create_memory
+from app.ai.skills.service import approve_skill_version, create_skill_version
 from app.ai.runtime.worker import run_worker_once
 from app.db import Base
 from app.models import Membership, Organization, User
@@ -203,3 +205,90 @@ def test_durable_worker_executes_agent_run_task_end_to_end(agent_context, monkey
     assert context.task.result_payload["status"] == "completed"
     assert context.task.result_payload["answer"] == "The durable agent completed its task."
     assert context.task.max_attempts == 1
+
+
+
+def test_agent_uses_only_visible_memory_and_owner_approved_matching_skills(agent_context, monkeypatch):
+    context, user, organization = agent_context
+    context.task.input_payload["goal"] = "PostgreSQL worker leases durable repository review"
+    create_memory(
+        context.db,
+        actor_user_id=user.id,
+        scope="user",
+        organization_id=None,
+        memory_type="decision",
+        content="The repository uses PostgreSQL worker leases for durable execution.",
+        source_type="manual",
+        confidence_percent=80,
+    )
+    approved = create_skill_version(
+        context.db,
+        organization_id=organization.id,
+        actor_user_id=user.id,
+        skill_id="repository-review",
+        version="1.0.0",
+        title="Repository review",
+        description="Review repository changes and tests",
+        content="Inspect the changed files and verify regression tests.",
+        source_type="user_authored",
+        license_id="user-owned",
+        data_classes=["internal"],
+        risk_level="low",
+    )
+    approve_skill_version(
+        context.db,
+        organization_id=organization.id,
+        skill_id=approved.skill_id,
+        version=approved.version,
+        actor_user_id=user.id,
+    )
+    create_skill_version(
+        context.db,
+        organization_id=organization.id,
+        actor_user_id=user.id,
+        skill_id="unapproved-review",
+        version="1.0.0",
+        title="Unapproved review",
+        description="Must not enter the agent prompt",
+        content="This draft must never be used by the agent.",
+        source_type="user_authored",
+        license_id="user-owned",
+        data_classes=["internal"],
+        risk_level="low",
+    )
+    public_only = create_skill_version(
+        context.db,
+        organization_id=organization.id,
+        actor_user_id=user.id,
+        skill_id="public-only",
+        version="1.0.0",
+        title="Public-only guidance",
+        description="Not applicable to internal tasks",
+        content="This public-only skill must not enter an internal prompt.",
+        source_type="user_authored",
+        license_id="user-owned",
+        data_classes=["public"],
+        risk_level="low",
+    )
+    approve_skill_version(
+        context.db,
+        organization_id=organization.id,
+        skill_id=public_only.skill_id,
+        version=public_only.version,
+        actor_user_id=user.id,
+    )
+
+    router_instance = FakeRouter([
+        _model_response({"action": "final", "answer": "Context was loaded safely."}),
+    ])
+    _patch_runner(monkeypatch, router_instance)
+    result = asyncio.run(run_agent_task(context))
+
+    prompt = router_instance.calls[0]["prompt"]
+    assert result["status"] == "completed"
+    assert "PostgreSQL worker leases" in prompt
+    assert "Inspect the changed files" in prompt
+    assert "unapproved-review" not in prompt
+    assert "public-only" not in prompt
+    assert '"verification_status":"unverified"' in prompt
+    assert "untrusted context" in prompt
