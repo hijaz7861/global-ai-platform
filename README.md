@@ -1,6 +1,6 @@
 # Global AI-Powered Business Ecosystem
 
-A private, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, a double-entry ledger foundation, audit events, and a guarded multi-provider AI adapter with a constrained, tenant-scoped agent operating layer. It is not yet a complete business ecosystem.
+A public, modular project for building a global business platform incrementally. The current draft contains a FastAPI API, identity and organization membership endpoints, a tenant-scoped catalog, a basic order workflow with stock reservation and cancellation, a double-entry ledger foundation, audit events, and a guarded multi-provider AI adapter with a constrained, tenant-scoped agent operating layer. It is not yet a complete business ecosystem.
 
 ## Current foundation
 
@@ -162,7 +162,7 @@ Refresh-token behavior: login returns a short-lived access token plus a random r
 
 See [Master Blueprint](docs/MASTER_BLUEPRINT.md), [Product Requirements](docs/requirements.md), [Identity and Tenancy](docs/IDENTITY_TENANCY.md), [Catalog](docs/CATALOG.md), [Orders](docs/ORDERS.md), [Supplier Procurement](docs/PROCUREMENT.md), [Accounting](docs/ACCOUNTING.md), [Bank Reconciliation](docs/RECONCILIATION.md), [AI Orchestration](docs/AI_ORCHESTRATION.md), [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), and [Roadmap](docs/ROADMAP.md).
 
-Remaining work includes broader role administration, production-validated signing-key rotation, broader PostgreSQL concurrency coverage, financial reconciliation and cash-flow statements, payment/refund/tax/seller-settlement workflows, multi-provider AI routing/fallback and monetary budgets, agent tool permissions and approval flows, OAuth/webhook connectors, logistics, rentals, real estate, workforce and education. An independent security review, production-like staging, monitoring, backup/restore drills, and operational configuration are also required. Do not expose this foundation publicly as a production service.
+Remaining work includes broader role administration, production-validated signing-key rotation, broader PostgreSQL concurrency coverage, financial reconciliation and cash-flow statements, payment/refund/tax/seller-settlement workflows, automatic provider failover and monetary/token budgets, expanded capability-scoped agent tools and approval flows, OAuth/webhook connectors, logistics, rentals, real estate, workforce and education. An independent security review, production-like staging, monitoring, backup/restore drills, and operational configuration are also required. Do not expose this foundation publicly as a production service.
 
 ## Project ownership
 
