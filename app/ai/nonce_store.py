@@ -94,6 +94,7 @@ class PostgresNonceStore:
             insert(self._model)
             .values(nonce=nonce, consumed_at=now)
             .on_conflict_do_nothing(index_elements=[self._model.nonce])
+            .returning(self._model.nonce)
         )
         result = self._db.execute(statement)
-        return result.rowcount == 1
+        return result.scalar_one_or_none() is not None
