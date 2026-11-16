@@ -7,10 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
-import json
-from pathlib import PurePosixPath
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 
 _MAX_FILES = 20
