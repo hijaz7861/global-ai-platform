@@ -49,7 +49,7 @@ def test_provider_mints_repo_scoped_token_and_caches_until_near_expiry():
         claims = jwt.decode(app_jwt, public_key, algorithms=["RS256"])
         assert claims["iss"] == "12345"
         body = request.read()
-                payload = json.loads(body)
+        payload = json.loads(body)
         assert payload["repositories"] == ["platform"]
         assert payload["permissions"] == {"contents": "write", "pull_requests": "write"}
         token_counter["value"] += 1
