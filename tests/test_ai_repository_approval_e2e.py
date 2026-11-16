@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 import time
 
 from pydantic import SecretStr
@@ -154,8 +153,8 @@ def test_full_approval_gate_reaches_mocked_draft_writer_only_after_valid_proofs(
 
     assert result.number == 88
     assert result.review_mode == "draft_only"
-    assert nonce_calls == [attestation.nonce, nonce_calls[1]]
     assert len(nonce_calls) == 2
+    assert nonce_calls[0] == attestation.nonce
     assert nonce_calls[0] != nonce_calls[1]
     assert db.commits == 1
     assert provider_state["token_requests"] == [repository]
