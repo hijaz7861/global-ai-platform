@@ -8,6 +8,7 @@ from app.ai.autonomy_gate import ChangeEvidence, GateDecision, RiskLevel
 from app.ai.change_proposals import ProposalValidationError, ValidatedProposal, materialize_proposal
 from app.ai.evidence_attestation import SignedAttestation
 from app.ai.governed_release import evaluate_governed_change
+from app.ai.github_app_tokens import GitHubAppTokenProvider
 from app.ai.github_repository_writer import (
     DraftPullRequest,
     GitHubRepositoryWriter,
@@ -96,7 +97,7 @@ def create_approved_draft_pull_request(
 def create_approved_draft_pull_request_with_app(
     proposal: ValidatedProposal,
     *,
-    token_provider,
+    token_provider: GitHubAppTokenProvider,
     repository: str,
     title: str,
     summary: str,
