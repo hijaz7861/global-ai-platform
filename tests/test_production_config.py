@@ -61,10 +61,11 @@ def test_application_startup_fails_closed_for_production_sqlite(monkeypatch) -> 
             pass
 
 
-
 def _enabled_github_write_settings(**overrides):
     values = {
-        "environment": "production",
+        # Use staging so this helper isolates the repository-write guard rather
+        # than failing earlier at the independent production database guard.
+        "environment": "staging",
         "database_url": "postgresql+psycopg://user:pass@localhost/db",
         "secret_key": "application-secret-key-at-least-32-chars",
         "ai_repository_writes_enabled": True,
