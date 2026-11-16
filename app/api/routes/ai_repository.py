@@ -211,7 +211,12 @@ def create_human_approved_draft_pr(
             "commit_sha": result.commit_sha,
         }
         db.add(audit_event)
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            # The authorization event was already committed with the nonces.
+            # Do not turn a completed external PR creation into a retryable 500.
+            db.rollback()
         return ApprovedRepositoryPRResponse(
             repository=result.repository,
             number=result.number,
