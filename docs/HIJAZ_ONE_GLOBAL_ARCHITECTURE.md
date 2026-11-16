@@ -251,3 +251,75 @@ HIJAZ ONE is not complete until:
 8. Complete global commerce: ISO 4217 currency metadata/exponents, decimal-safe multi-currency ledger, FX audit, tax hooks, signed/idempotent payment webhooks, refunds, disputes, settlement and reconciliation. Do not enable real providers without owner-supplied credentials and explicit setup.
 9. Complete AI operating controls still missing from the merged operating layer: trusted human approval issuer/release API, durable checkpoints/resumption, bounded multi-agent orchestration, memory retention/deletion, automatic skill selection, token/cost reservations, provider circuit breaker/failover, DLP, evaluation and observability.
 10. Complete release gates: security review, role/tenant/ownership negative tests, PostgreSQL migration tests, dependency audit, load checks where available, backup restore, portable-host rehearsal and operational runbooks. Rename the repository to `hijaz-one` only after all Definition of Done gates pass and the owner confirms the domain/deployment plan.
+
+
+## 14. Verified engineering snapshot — 2026-11-16
+
+This addendum supersedes older implementation snapshots above where they conflict. It is
+based on the current GitHub default branch, pull-request metadata, migration source files,
+workflow runs and job logs.
+
+### Default branch and merged AI foundation
+
+- Repository default branch remains `master`; current master head is
+  `76e811d81cb42eefc68f4bafc6ed931701a91749`.
+- PR #21 remains merged at `21480c93f105052ad35f343b84a6f7858de5631d`.
+- PR #42 (scoped GitHub App installation token provider) is merged to master at the current
+  head `76e811d81cb42eefc68f4bafc6ed931701a91749`.
+- Master Alembic head is `0034_postgres_approval_nonces`.
+
+### Governed GitHub write configuration — PR #43
+
+- PR #43 is Draft, OPEN and unmerged. Current head:
+  `bdf701d40d3621d068b8004eb11df589d708c4b0`.
+- Exact-head GitHub Actions Run #823 completed SUCCESS on that SHA: 5/5 jobs passed.
+  Python 3.11, 3.12 and 3.13 each reported 331 passed / 15 skipped; PostgreSQL integration
+  reported 15 passed. Ruff, compilation, migration checks, dependency audit and Bandit job
+  completed successfully.
+- The feature remains disabled by default. Enabled configuration requires staging/production,
+  PostgreSQL nonce storage, numeric bounded App/installation IDs, a parseable unencrypted
+  RSA private key of at least 2048 bits, separate 32-byte HMAC keys and an explicit bounded
+  owner/repository allowlist.
+- No GitHub App was created or installed, no real credentials were provisioned, and no
+  repository-write endpoint was enabled. A trusted approval issuer/runtime factory remains
+  separate implementation work.
+- Run #818 failed because a test fixture hit the production SQLite guard before the
+  GitHub-write PostgreSQL guard. Run #821 exposed three expected-error-message mismatches
+  after allowlist hardening. The fixture and assertions were corrected; current exact-head
+  Run #823 is green. Run #822 was cancelled by the subsequent corrected commit.
+- The local execution container could not resolve github.com for a clone; GitHub Actions
+  Run #823 is the executable verification evidence for the current head.
+
+### Verified open PRs, reviews and migration chain
+
+- PR #20: Draft/unmerged; exact-head CI #611 passed, but authenticated Streamable HTTP POST
+  initialize, tools/list and tools/call verification remains outstanding.
+- PR #22: this architecture/roadmap PR remains Draft, OPEN and unmerged.
+- PR #23: Draft/unmerged at `7e2cbda99aef14932edfbbafd5a187f173d3f33e`; exact-head Run #770
+  passed. GitHub currently reports mergeable=false. Its base is the merged PR #21 commit,
+  while the current master has advanced.
+- PRs #24–#28 remain Draft/unmerged and are stacked in dependency order. Their recorded
+  migration chain is:
+  `0035_role_entitlements` → `0036_transport_marketplace` →
+  `0037_construction_operations` → `0038_construction_quotes` →
+  `0039_construction_cashbook`.
+  Source files confirm each down_revision points to the preceding migration; PR #24 adds no
+  migration. PR #24's recorded base snapshot predates the current PR #23 head, so the chain
+  must be reconciled #24 → #25 → #26 → #27 → #28 before review/merge.
+- GitHub review APIs returned zero submitted reviews and zero inline review threads for
+  PRs #20, #22, #23–#28 and #43. No owner approval is recorded.
+- GitHub's current branch endpoint reports master as `protected=false`, with protection
+  disabled and no required status checks. This is a confirmed repository governance gap,
+  not an unknown API state. Do not change repository settings without owner authorization.
+
+### Release and safety state
+
+- PR #43's configuration and documentation are implemented in its Draft branch; they are
+  not merged into master.
+- No dependent construction branch was rebased or rewritten in this run.
+- Hatchable Version 40 remains live and untouched. Its previously verified backup inventory
+  still covers only 17 of 46 tables and does not include object bytes or an import endpoint.
+- No export/import, data reconciliation, backup restore, portable-host rehearsal, production
+  deployment, provider activation, secret change, domain purchase or paid service is claimed.
+- The repository rename remains blocked until every Definition of Done gate is demonstrably
+  satisfied and the owner confirms the domain/hosting plan.
