@@ -54,7 +54,8 @@ def test_full_approval_gate_reaches_mocked_draft_writer_only_after_valid_proofs(
             self.audit_events = []
 
         def add(self, item):
-            self.audit_events.append(item)
+            if item not in self.audit_events:
+                self.audit_events.append(item)
 
         def commit(self):
             self.commits += 1
