@@ -1,4 +1,5 @@
 from dataclasses import replace
+import json
 
 import httpx
 import pytest
@@ -80,7 +81,7 @@ def test_writer_creates_only_a_new_draft_pr_on_allowlisted_repository():
 
     ref_request = next(req for req in calls if req.url.path.endswith("/git/refs"))
     assert ref_request.read()
-    assert __import__("json").loads(ref_request.content)["ref"].startswith("refs/heads/ai/proposal-")
+    assert json.loads(ref_request.content)["ref"].startswith("refs/heads/ai/proposal-")
     pr_request = next(req for req in calls if req.url.path.endswith("/pulls"))
     pr_payload = __import__("json").loads(pr_request.content)
     assert pr_payload["draft"] is True
