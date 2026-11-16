@@ -58,3 +58,19 @@ and Pull requests: write. Never pass that token to the model or candidate code.
 
 A successful draft PR is a review artifact, not a production release. Merge and
 deployment remain separate, separately authorized actions.
+
+
+## GitHub App installation tokens
+
+`GitHubAppTokenProvider` mints short-lived installation tokens using an App JWT,
+requests only Contents: write and Pull requests: write, and narrows each token to
+the single allowlisted repository being updated. Tokens are cached only until
+60 seconds before expiry. The App ID, installation ID, and PEM private key must
+be injected by a secret manager; none belong in repository files, model context,
+or task payloads. The provider uses the official api.github.com origin and
+sanitizes authentication errors.
+
+The token provider is a library component. The governed repository wrapper requests
+a token only after attestation and human-approval verification succeeds. It is not
+enabled by default and does not create a GitHub App, install it, or supply its
+credentials.
