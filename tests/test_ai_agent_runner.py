@@ -381,3 +381,58 @@ def test_daily_token_budget_records_conservative_reservation(agent_context, monk
     ).one()
     assert event.details["estimated_tokens"] == 80
     assert event.details["token_estimation"] == "utf8_bytes_plus_max_output"
+
+
+
+def test_agent_persists_result_only_when_user_opts_in(agent_context, monkeypatch):
+    context, user, organization = agent_context
+    context.task.input_payload["remember_result"] = True
+    router_instance = FakeRouter([
+        _model_response({
+            "action": "final",
+            "answer": "PostgreSQL leases recover queued agent tasks after worker interruption.",
+        }),
+    ])
+    _patch_runner(monkeypatch, router_instance)
+
+    result = asyncio.run(run_agent_task(context))
+
+    assert result["memory_saved"] is True
+    from app.ai.memory.service import search_memories
+    matches = search_memories(
+        context.db,
+        actor_user_id=user.id,
+        organization_id=organization.id,
+        role="owner",
+        query="PostgreSQL leases recover queued tasks",
+        limit=5,
+    )
+    saved = next(item.record for item in matches if item.record.source_ref == context.task.id)
+    assert saved.scope == "user"
+    assert saved.organization_id is None
+    assert saved.source_type == "task"
+    assert saved.memory_type == "session_summary"
+    assert saved.verification_status == "unverified"
+    assert saved.sensitivity == "sensitive"
+    assert saved.expires_at is not None
+
+
+def test_agent_does_not_persist_result_by_default(agent_context, monkeypatch):
+    context, user, organization = agent_context
+    router_instance = FakeRouter([
+        _model_response({"action": "final", "answer": "This answer remains transient."}),
+    ])
+    _patch_runner(monkeypatch, router_instance)
+
+    result = asyncio.run(run_agent_task(context))
+
+    assert result["memory_saved"] is False
+    from app.ai.memory.service import search_memories
+    assert search_memories(
+        context.db,
+        actor_user_id=user.id,
+        organization_id=organization.id,
+        role="owner",
+        query="transient answer",
+        limit=5,
+    ) == []
