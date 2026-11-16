@@ -106,11 +106,21 @@ def validate_proposal(
     seen: set[str] = set()
     total_bytes = 0
     docs_only = True
+    sensitive_found = False
 
     for item in items:
         if not isinstance(item, ProposedFile):
             raise ProposalValidationError("invalid_file_record")
         path = _validate_path(item.path, allow_sensitive_paths=allow_sensitive_paths)
+        lowered_parts = [part.casefold() for part in path.split("/")]
+        filename = lowered_parts[-1]
+        if (
+            any(part in _SENSITIVE_SEGMENTS for part in lowered_parts)
+            or filename in _SENSITIVE_NAMES
+            or filename.endswith((".pem", ".key", ".p12", ".pfx"))
+            or filename.startswith((".env", "id_rsa"))
+        ):
+            sensitive_found = True
         key = path.casefold()
         if key in seen:
             raise ProposalValidationError("duplicate_path")
@@ -145,6 +155,6 @@ def validate_proposal(
         artifact=artifact,
         sha256=sha256(artifact).hexdigest(),
         paths=tuple(row["path"] for row in normalized),
-        risk_level="low" if docs_only else "medium",
+        risk_level="high" if sensitive_found else ("low" if docs_only else "medium"),
         total_bytes=total_bytes,
     )
