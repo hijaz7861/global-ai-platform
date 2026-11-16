@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Collection
-from datetime import datetime, timezone
+from datetime import datetime
 import re
 import threading
 import time
