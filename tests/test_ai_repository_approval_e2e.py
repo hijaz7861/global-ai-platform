@@ -51,6 +51,10 @@ def test_full_approval_gate_reaches_mocked_draft_writer_only_after_valid_proofs(
         def __init__(self):
             self.commits = 0
             self.rollbacks = 0
+            self.audit_events = []
+
+        def add(self, item):
+            self.audit_events.append(item)
 
         def commit(self):
             self.commits += 1
@@ -156,7 +160,10 @@ def test_full_approval_gate_reaches_mocked_draft_writer_only_after_valid_proofs(
     assert len(nonce_calls) == 2
     assert nonce_calls[0] == attestation.nonce
     assert nonce_calls[0] != nonce_calls[1]
-    assert db.commits == 1
+    assert db.commits == 2
+    assert len(db.audit_events) == 1
+    assert db.audit_events[0].details["status"] == "draft_pr_created"
+    assert db.audit_events[0].details["pull_request_number"] == 88
     assert provider_state["token_requests"] == [repository]
     assert provider_state["closed"] is True
     assert writer_state["created"] is True
