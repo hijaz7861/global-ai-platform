@@ -106,6 +106,9 @@ def test_approval_endpoint_signs_for_authenticated_actor_and_commits_before_toke
         def __init__(self, **kwargs):
             self.closed = False
 
+        def get_token(self, repository):
+            return "ghs_fake_installation_token_for_unit_tests"
+
         def close(self):
             self.closed = True
 
