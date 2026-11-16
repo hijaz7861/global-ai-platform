@@ -1,8 +1,15 @@
 """Environment-backed application settings."""
 import re
 
+from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
+_MAX_GITHUB_REPOSITORIES = 50
 
 
 class Settings(BaseSettings):
@@ -66,6 +73,51 @@ class Settings(BaseSettings):
     )
 
 
+def _validate_github_app_private_key(value: str) -> None:
+    """Require a parseable, unencrypted RSA key suitable for GitHub App RS256."""
+    try:
+        private_key = serialization.load_pem_private_key(
+            value.encode("utf-8"),
+            password=None,
+        )
+    except (TypeError, ValueError, UnsupportedAlgorithm):
+        raise RuntimeError(
+            "GITHUB_APP_PRIVATE_KEY_PEM must be a valid unencrypted PEM RSA private key"
+        ) from None
+    if not isinstance(private_key, rsa.RSAPrivateKey) or private_key.key_size < 2048:
+        raise RuntimeError(
+            "GITHUB_APP_PRIVATE_KEY_PEM must contain an RSA private key of at least 2048 bits"
+        )
+
+
+def _parse_github_repository_allowlist(value: str) -> tuple[str, ...]:
+    """Parse a bounded, unambiguous owner/repository allowlist."""
+    if not isinstance(value, str) or not value:
+        raise RuntimeError("GitHub repository writes require an explicit owner/repository allowlist")
+
+    raw_entries = value.split(",")
+    if (
+        len(raw_entries) > _MAX_GITHUB_REPOSITORIES
+        or any(not item.strip() for item in raw_entries)
+    ):
+        raise RuntimeError("GitHub repository allowlist contains empty or excessive entries")
+
+    repositories = tuple(item.strip() for item in raw_entries)
+    if len({item.casefold() for item in repositories}) != len(repositories):
+        raise RuntimeError("GitHub repository allowlist must not contain duplicates")
+
+    for item in repositories:
+        if not _REPOSITORY.fullmatch(item):
+            raise RuntimeError("GitHub repository allowlist must use exact owner/repository names")
+        owner, repository = item.split("/", 1)
+        if owner in {".", ".."} or repository in {".", ".."}:
+            raise RuntimeError("GitHub repository allowlist contains an unsafe path segment")
+        if owner.startswith(".") or owner.endswith(".") or repository.startswith(".") or repository.endswith("."):
+            raise RuntimeError("GitHub repository allowlist contains an unsafe path segment")
+
+    return repositories
+
+
 def validate_runtime_settings(config: "Settings") -> None:
     """Fail closed on unsafe production and repository-write configuration."""
     environment = config.environment.strip().lower()
@@ -84,9 +136,17 @@ def validate_runtime_settings(config: "Settings") -> None:
     if not is_postgres:
         raise RuntimeError("GitHub repository writes require PostgreSQL nonce storage")
 
-    if not config.github_app_id or not config.github_app_id.isdigit():
+    if (
+        not config.github_app_id
+        or not config.github_app_id.isdigit()
+        or len(config.github_app_id) > 32
+    ):
         raise RuntimeError("GitHub repository writes require a numeric GITHUB_APP_ID")
-    if not config.github_app_installation_id or not config.github_app_installation_id.isdigit():
+    if (
+        not config.github_app_installation_id
+        or not config.github_app_installation_id.isdigit()
+        or len(config.github_app_installation_id) > 32
+    ):
         raise RuntimeError("GitHub repository writes require a numeric GITHUB_APP_INSTALLATION_ID")
 
     private_key = (
@@ -101,19 +161,14 @@ def validate_runtime_settings(config: "Settings") -> None:
         config.ai_human_approval_hmac_key.get_secret_value()
         if config.ai_human_approval_hmac_key else ""
     )
-    if "-----BEGIN" not in private_key or "PRIVATE KEY-----" not in private_key:
-        raise RuntimeError("GitHub repository writes require GITHUB_APP_PRIVATE_KEY_PEM")
-    if len(attestation_key) < 32:
-        raise RuntimeError("GitHub repository writes require a 32-character sandbox attestation key")
-    if len(approval_key) < 32:
-        raise RuntimeError("GitHub repository writes require a 32-character human approval key")
+    _validate_github_app_private_key(private_key)
 
-    repositories = [item.strip() for item in config.github_repository_allowlist.split(",") if item.strip()]
-    if not repositories or any(
-        not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}", item)
-        for item in repositories
-    ):
-        raise RuntimeError("GitHub repository writes require an explicit owner/repository allowlist")
+    if len(attestation_key.encode("utf-8")) < 32:
+        raise RuntimeError("GitHub repository writes require a 32-byte sandbox attestation key")
+    if len(approval_key.encode("utf-8")) < 32:
+        raise RuntimeError("GitHub repository writes require a 32-byte human approval key")
+
+    _parse_github_repository_allowlist(config.github_repository_allowlist)
 
 
 settings = Settings()
