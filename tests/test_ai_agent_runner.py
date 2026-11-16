@@ -12,6 +12,7 @@ from app import models  # noqa: F401
 from app.ai.agents import runner
 from app.ai.agents.runner import AgentRunError, run_agent_task
 from app.ai.runtime.tasks import create_task
+from app.ai.providers import ProviderError
 from app.ai.memory.service import create_memory
 from app.ai.skills.service import approve_skill_version, create_skill_version
 from app.ai.runtime.worker import run_worker_once
@@ -79,7 +80,10 @@ class FakeRouter:
 
     async def complete(self, **kwargs):
         self.calls.append(kwargs)
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def _model_response(content: dict) -> dict:
@@ -292,3 +296,46 @@ def test_agent_uses_only_visible_memory_and_owner_approved_matching_skills(agent
     assert "public-only" not in prompt
     assert '"verification_status":"unverified"' in prompt
     assert "untrusted context" in prompt
+
+
+
+def test_agent_automatically_fails_over_only_after_retryable_primary_error(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    monkeypatch.setattr(runner.settings, "ai_auto_failover_enabled", True)
+    router_instance = FakeRouter([
+        ProviderError("temporary upstream failure", retryable=True),
+        _model_response({"action": "final", "answer": "Fallback provider completed the task."}),
+    ])
+    _patch_runner(monkeypatch, router_instance)
+    reservations = []
+    failures = []
+    monkeypatch.setattr(
+        runner, "_reserve_model_call",
+        lambda *args, **kwargs: reservations.append(len(reservations) + 1) or f"request-{len(reservations)}",
+    )
+    monkeypatch.setattr(
+        runner, "_fail_model_call",
+        lambda db, *, request_id, **kwargs: failures.append(request_id),
+    )
+
+    result = asyncio.run(run_agent_task(context))
+
+    assert result["status"] == "completed"
+    assert result["answer"] == "Fallback provider completed the task."
+    assert [call["route"] for call in router_instance.calls] == ["primary", "fallback"]
+    assert len(reservations) == 2
+    assert failures == ["request-1"]
+    assert result["usage"]["model_calls"] == 2
+
+
+def test_agent_does_not_fail_over_on_non_retryable_provider_error(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    monkeypatch.setattr(runner.settings, "ai_auto_failover_enabled", True)
+    router_instance = FakeRouter([ProviderError("invalid credentials", retryable=False)])
+    _patch_runner(monkeypatch, router_instance)
+
+    with pytest.raises(AgentRunError) as exc:
+        asyncio.run(run_agent_task(context))
+
+    assert exc.value.error_code == "model_provider_failed"
+    assert [call["route"] for call in router_instance.calls] == ["primary"]
