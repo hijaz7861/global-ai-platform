@@ -62,6 +62,10 @@ class GitHubAppTokenProvider:
         self._cache: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
 
+    @property
+    def allowed_repositories(self) -> frozenset[str]:
+        return self._allowed
+
     def close(self) -> None:
         if self._owns_client:
             self._client.close()
