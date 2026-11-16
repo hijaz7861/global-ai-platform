@@ -7,7 +7,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_membership
+from app.api.deps import require_active_role, require_membership
 from app.audit import record_audit_event
 from app.db import get_db
 from app.models import (
@@ -17,6 +17,7 @@ from app.models import (
     SupplierProfile,
     SupplierQuote,
     SupplierQuoteRevision,
+    UserRoleEntitlement,
     utc_now,
 )
 from app.schemas import (
@@ -134,6 +135,7 @@ def submit_supplier_quote(
     request_id: str,
     payload: SupplierQuoteCreate,
     membership: Annotated[Membership, Depends(require_membership)],
+    supplier_entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("supplier", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> SupplierQuoteResponse:
     _require_owner_or_admin(membership)
@@ -245,6 +247,7 @@ def revise_supplier_quote(
     quote_id: str,
     payload: SupplierQuoteCreate,
     membership: Annotated[Membership, Depends(require_membership)],
+    supplier_entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("supplier", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> SupplierQuoteResponse:
     _require_owner_or_admin(membership)
@@ -323,6 +326,7 @@ def withdraw_supplier_quote(
     request_id: str,
     quote_id: str,
     membership: Annotated[Membership, Depends(require_membership)],
+    supplier_entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("supplier", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> SupplierQuoteResponse:
     _require_owner_or_admin(membership)
@@ -584,6 +588,7 @@ def list_purchase_orders(
 def fulfill_purchase_order(
     purchase_order_id: str,
     membership: Annotated[Membership, Depends(require_membership)],
+    supplier_entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("supplier", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> PurchaseOrderResponse:
     _require_owner_or_admin(membership)
