@@ -323,3 +323,27 @@ workflow runs and job logs.
   deployment, provider activation, secret change, domain purchase or paid service is claimed.
 - The repository rename remains blocked until every Definition of Done gate is demonstrably
   satisfied and the owner confirms the domain/hosting plan.
+
+
+## 15. Live Hatchable inventory refresh — 2026-11-16
+
+Read-only Hatchable connector inspection confirms the existing HIJAZ ONE project remains
+active at Version 40: https://hijaz-construction.hatchable.site.
+
+- Database schema: 46 tables.
+- Deployed API functions: 25.
+- Project files: 74 non-virtual files plus the generated virtual AGENTS.md manifest.
+- SQL migrations: 14, numbered 0001–0014.
+- Configured project environment variables returned by the project metadata API: none.
+- Outstanding Hatchable agent tasks: 0.
+- Latest deployment record: Version 40, status live, deployed 2026-11-13 07:25:10 UTC.
+
+The current api/backup.js source is an admin-only GET endpoint. It selects 17 named tables
+and includes only platform_media metadata/storage keys, not object bytes. The deployed
+function inventory contains no import endpoint. This is not a complete migration backup and
+must not be used as the sole source for migration.
+
+No live Hatchable file, schema, data, setting, secret, deployment or task was changed during
+this inspection. No data export was run. A full source-to-target mapping, redacted staging
+export, idempotent import, object-byte transfer and financial/consent/audit reconciliation
+remain release gates.
