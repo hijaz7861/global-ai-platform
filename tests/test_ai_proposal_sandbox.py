@@ -19,9 +19,16 @@ class FakeSandboxRunner:
         )
         self.error = error
         self.calls = []
+        self.candidate_snapshot = {}
 
     def run(self, **kwargs):
         self.calls.append(kwargs)
+        candidate = Path(kwargs["artifact_directory"])
+        self.candidate_snapshot = {
+            str(path.relative_to(candidate)): path.read_bytes()
+            for path in candidate.rglob("*")
+            if path.is_file()
+        }
         if self.error:
             raise self.error
         return self.result
