@@ -5,6 +5,7 @@ invokes the runner. It does not sign evidence, consume approval nonces, or relea
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 import tempfile
 
