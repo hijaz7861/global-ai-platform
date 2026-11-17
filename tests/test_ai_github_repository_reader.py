@@ -10,14 +10,14 @@ from app.ai.github_repository_reader import GitHubRepositoryReader, RepositoryRe
 
 def _blob(content: bytes):
     sha = hashlib.sha1(
-        b"blob " + str(len(content)).encode() + b"\\x00" + content,
+        b"blob " + str(len(content)).encode() + b"\x00" + content,
         usedforsecurity=False,
     ).hexdigest()
     return sha, {
         "sha": sha,
         "size": len(content),
         "encoding": "base64",
-        "content": base64.b64encode(content).decode() + "\\n",
+        "content": base64.b64encode(content).decode() + "\n",
     }
 
 
@@ -35,8 +35,8 @@ def _reader(handler, *, allowed=("acme/platform",)):
 
 
 def test_reader_loads_bounded_safe_context_and_verifies_git_blob_hashes():
-    readme = b"# Platform\\nA small service.\\n"
-    source = b"def endpoint():\\n    return 'ok'\\n"
+    readme = b"# Platform\nA small service.\n"
+    source = b"def endpoint():\n    return 'ok'\n"
     readme_sha, readme_blob = _blob(readme)
     source_sha, source_blob = _blob(source)
     commit_sha = "1" * 40
