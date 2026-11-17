@@ -170,7 +170,7 @@ async def _complete_model_call(
             provider_name=profile.provider_name,
             model_name=profile.model_name,
             route=profile.route,
-            probe_lease_seconds=settings.ai_provider_circuit_breaker_probe_lease_seconds,
+            probe_lease_seconds=max(settings.ai_provider_circuit_breaker_probe_lease_seconds, settings.ai_timeout_seconds + 5),
         ):
             if not (settings.ai_auto_failover_enabled and route == "primary"):
                 raise AgentRunError("model_provider_circuit_open")
@@ -189,7 +189,7 @@ async def _complete_model_call(
                 provider_name=profile.provider_name,
                 model_name=profile.model_name,
                 route=profile.route,
-                probe_lease_seconds=settings.ai_provider_circuit_breaker_probe_lease_seconds,
+                probe_lease_seconds=max(settings.ai_provider_circuit_breaker_probe_lease_seconds, settings.ai_timeout_seconds + 5),
             ):
                 raise AgentRunError("model_fallback_circuit_open")
             fallback_preselected = True
@@ -259,7 +259,7 @@ async def _complete_model_call(
             provider_name=fallback_profile.provider_name,
             model_name=fallback_profile.model_name,
             route=fallback_profile.route,
-            probe_lease_seconds=settings.ai_provider_circuit_breaker_probe_lease_seconds,
+            probe_lease_seconds=max(settings.ai_provider_circuit_breaker_probe_lease_seconds, settings.ai_timeout_seconds + 5),
         ):
             raise AgentRunError("model_fallback_circuit_open")
 
