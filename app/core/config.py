@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     github_repository_allowlist: str = ""
     ai_sandbox_attestation_hmac_key: SecretStr | None = None
     ai_human_approval_hmac_key: SecretStr | None = None
+    ai_proposal_generation_enabled: bool = False
     ai_sandbox_enabled: bool = False
     ai_sandbox_image: str | None = None
     ai_sandbox_trusted_test_directory: str | None = None
