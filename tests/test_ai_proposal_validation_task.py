@@ -44,6 +44,8 @@ class FakeContext:
             organization_id="org-0001",
             created_by_user_id="user-0001",
             input_payload={
+                "repository": "acme/platform",
+                "base_sha": "1" * 40,
                 "files": [
                     {"path": "docs/worker-validation.md", "content": "Validated proposal\n"}
                 ]
@@ -76,6 +78,8 @@ def _signed(digest=EXPECTED_DIGEST):
         regression_suite_passed=True,
         issued_at=1_800_000_000,
         nonce="nonce-abcdefghijklmnop",
+        repository="acme/platform",
+        base_sha="1" * 40,
     )
     return SignedAttestation(payload=payload, signature_hex="b" * 64)
 
@@ -114,6 +118,8 @@ def test_worker_validation_returns_signed_attestation_only_after_all_checks_pass
     assert result["repository"] == "acme/platform"
     assert result["base_sha"] == "1" * 40
     assert result["attestation"]["payload"]["artifact_sha256"] == EXPECTED_DIGEST
+    assert result["attestation"]["payload"]["repository"] == "acme/platform"
+    assert result["attestation"]["payload"]["base_sha"] == "1" * 40
     assert result["attestation"]["payload"]["run_id"] == "run-00000001"
     assert result["attestation"]["signature_hex"] == "b" * 64
     assert set(result["checks"]) == {"unit", "security", "regression"}
