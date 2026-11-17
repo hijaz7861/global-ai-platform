@@ -159,7 +159,7 @@ def test_attestation_binds_repository_and_base_commit():
 
 
 def test_attestation_rejects_missing_repository_binding_when_expected():
-    signed = _signed()
+    signed = make_signed()
     valid, reason = verify_attestation(
         signed,
         key=KEY,
