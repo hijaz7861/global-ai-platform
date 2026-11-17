@@ -81,7 +81,12 @@ def _configure(monkeypatch, suite):
             "regression": ["pytest", "regression"],
         }, b"x" * 32),
     )
-    monkeypatch.setattr(handler, "run_proposal_validation_suite", lambda *a, **kw: suite)
+    def run_suite(*args, **kwargs):
+        for _ in range(3):
+            kwargs["on_check_start"]()
+        return suite
+
+    monkeypatch.setattr(handler, "run_proposal_validation_suite", run_suite)
     monkeypatch.setattr(handler, "sign_validation_suite_result", lambda *a, **kw: _signed())
     audit = []
     monkeypatch.setattr(handler, "record_audit_event", lambda *a, **kw: audit.append(kw))
