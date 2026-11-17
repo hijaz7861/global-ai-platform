@@ -200,3 +200,4 @@ def test_ai_chat_blocks_secret_patterns_before_quota_or_provider_call(client, mo
     assert "credential-like" in response.json()["detail"]
     assert secret not in response.text
     assert "completed" not in calls
+    assert "selected" not in calls
