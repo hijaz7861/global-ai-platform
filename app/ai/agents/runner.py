@@ -149,6 +149,7 @@ async def _complete_model_call(
     payload: AgentTaskInput,
     prompt: str,
     estimated_tokens: int,
+    call_counter: list[int],
 ) -> tuple[dict, str, int]:
     """Call the selected provider with optional shared circuit-breaker protection."""
     route = payload.model_route
@@ -206,6 +207,7 @@ async def _complete_model_call(
         raise
 
     try:
+        call_counter[0] += 1
         result = await model_router.complete(
             route=route,
             task_type=payload.task_type,
@@ -320,7 +322,7 @@ async def _complete_model_call(
                 provider_name=fallback_profile.provider_name,
                 model_name=fallback_profile.model_name,
             )
-        return result, fallback_request_id, 2
+        return result, fallback_request_id, call_counter[0]
     except Exception:
         _fail_model_call(
             context.db,
@@ -338,7 +340,7 @@ async def _complete_model_call(
         record_provider_success(
             context.db, provider_name=profile.provider_name, model_name=profile.model_name
         )
-    return result, request_id, 1
+    return result, request_id, call_counter[0]
 
 def _load_approved_context(context: TaskExecutionContext, *, goal: str, data_class: str) -> tuple[list[dict], list[dict]]:
     """Load bounded, tenant-visible memory and owner-approved skill guidance."""
@@ -490,6 +492,7 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
         context.heartbeat()
         prompt = _build_prompt(payload.goal, tools, history, memories, skills)
         estimated_tokens = len(prompt.encode("utf-8")) + payload.max_output_tokens
+        call_counter = [0]
         try:
             result, request_id, model_call_count = await _complete_model_call(
                 context,
@@ -497,8 +500,10 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
                 payload=payload,
                 prompt=prompt,
                 estimated_tokens=estimated_tokens,
+                call_counter=call_counter,
             )
         except AgentRunError as exc:
+            total_model_calls += call_counter[0]
             if exc.error_code in {"ai_quota_exceeded", "ai_token_quota_exceeded"}:
                 return {
                     "status": "quota_exhausted",
