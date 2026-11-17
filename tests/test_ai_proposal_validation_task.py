@@ -216,3 +216,52 @@ def test_worker_rejects_suite_result_for_different_proposal_digest(monkeypatch):
         handler.run_proposal_validation_task(context)
 
     assert context.db.commits == 0
+
+def test_worker_validation_can_chain_from_completed_generation_task(monkeypatch):
+    generated_files = [{
+        "path": "docs/worker-validation.md",
+        "content": "Validated proposal\\n",
+        "mode": "100644",
+    }]
+    source_proposal = validate_proposal([
+        ProposedFile(
+            path="docs/worker-validation.md",
+            content="Validated proposal\\n",
+        )
+    ])
+    source_task = SimpleNamespace(
+        id="task-generation-0001",
+        task_type="proposal.generate",
+        status="succeeded",
+        result_payload={
+            "status": "proposal_ready",
+            "repository": "acme/platform",
+            "base_sha": "1" * 40,
+            "artifact_sha256": source_proposal.sha256,
+            "files": generated_files,
+        },
+    )
+    context = FakeContext(source_task=source_task)
+    context.task.input_payload = {"source_task_id": source_task.id}
+    _configure(monkeypatch, _suite(passed=True))
+
+    result = handler.run_proposal_validation_task(context)
+
+    assert result["status"] == "passed"
+    assert result["repository"] == "acme/platform"
+    assert result["base_sha"] == "1" * 40
+    assert result["artifact_sha256"] == source_proposal.sha256
+    assert result["attestation"]["payload"]["repository"] == "acme/platform"
+    assert result["attestation"]["payload"]["base_sha"] == "1" * 40
+
+
+def test_worker_validation_rejects_unavailable_generation_task(monkeypatch):
+    context = FakeContext()
+    context.task.input_payload = {"source_task_id": "missing-generation-task"}
+    context.db.source_task = None
+    _configure(monkeypatch, _suite(passed=True))
+
+    with pytest.raises(PermanentTaskError, match="source_proposal_not_available"):
+        handler.run_proposal_validation_task(context)
+
+    assert context.db.commits == 0
