@@ -188,3 +188,19 @@ def test_sandbox_runtime_requires_exact_operator_command_set(monkeypatch, tmp_pa
 
     with pytest.raises(PermanentTaskError, match="sandbox_runtime_invalid"):
         handler._runtime_configuration()
+
+def test_worker_rejects_suite_result_for_different_proposal_digest(monkeypatch):
+    context = FakeContext()
+    valid = _suite(passed=True)
+    wrong_digest = ProposalValidationSuiteResult(
+        artifact_sha256="b" * 64,
+        tests=valid.tests,
+        security_scan=valid.security_scan,
+        regression=valid.regression,
+    )
+    _configure(monkeypatch, wrong_digest)
+
+    with pytest.raises(PermanentTaskError, match="sandbox_artifact_digest_mismatch"):
+        handler.run_proposal_validation_task(context)
+
+    assert context.db.commits == 0
