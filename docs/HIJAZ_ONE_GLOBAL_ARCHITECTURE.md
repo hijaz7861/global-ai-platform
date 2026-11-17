@@ -433,11 +433,13 @@ where commit heads, CI runs, branch freshness or migration information differ.
 - PR #51 PostgreSQL-backed provider circuit breaker remains Draft at
   `0207cf1c44adb2b82bdb3550a950aac7e2be2689`; exact-head run #862 passed all
   five jobs. It is an opt-in draft feature, not part of master.
-- PR #52 outbound secret-pattern guard is Draft at
-  `ab542c506a56eec119a788f075c08d39dde07729`. Exact-head run #863 was still
-  in progress at this snapshot. The guard blocks known credential patterns in
-  durable agent prompts before quota reservation/provider egress; it is not
-  comprehensive DLP and does not cover the regular chat API.
+- PR #52 outbound secret-pattern guard remains Draft at
+  `ab542c506a56eec119a788f075c08d39dde07729`. Exact-head run #863 completed
+  SUCCESS on this SHA: all five jobs passed; Python 3.11, 3.12 and 3.13 each
+  reported 325 passed / 15 skipped; PostgreSQL integration reported 15 passed;
+  Ruff, migration checks, dependency audit and Bandit passed. The guard blocks
+  known credential patterns in durable agent prompts before quota reservation/
+  provider egress; it is not comprehensive DLP and does not cover regular chat.
 
 GitHub review and inline-thread APIs returned zero submitted reviews and zero
 inline threads for PRs #20, #22, #23, #43, #44, and #48–#52 in this inspection.
