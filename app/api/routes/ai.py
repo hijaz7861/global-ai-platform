@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.model_router import ModelRouteError, create_model_router
+from app.ai.dlp import detect_sensitive_data_types
 from app.ai.providers import ProviderError
 from app.api.deps import require_membership
 from app.audit import record_audit_event
@@ -55,6 +56,12 @@ async def chat(
     except ModelRouteError as exc:
         code = 503 if "not configured" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from None
+
+    if detect_sensitive_data_types(payload.prompt):
+        raise HTTPException(
+            status_code=422,
+            detail="Prompt contains a credential-like value and was not sent to a model provider",
+        )
 
     if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
         raise HTTPException(
