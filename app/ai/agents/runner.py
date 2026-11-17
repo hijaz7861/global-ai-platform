@@ -14,6 +14,12 @@ from app.ai.model_router import ModelRouteError, create_model_router
 from app.ai.memory.service import MemoryConflict, create_memory, search_memories
 from app.ai.skills.service import SkillConflict, list_skill_versions
 from app.ai.providers import ProviderError
+from app.ai.provider_health import (
+    claim_provider_attempt,
+    record_provider_failure,
+    record_provider_success,
+    release_provider_attempt,
+)
 from app.ai.runtime.tasks import PermanentTaskError, TaskExecutionContext
 from app.ai.tools.gateway import (
     ToolExecutionFailed,
@@ -134,6 +140,205 @@ def _fail_model_call(
     )
     db.commit()
 
+
+
+async def _complete_model_call(
+    context: TaskExecutionContext,
+    *,
+    model_router,
+    payload: AgentTaskInput,
+    prompt: str,
+    estimated_tokens: int,
+) -> tuple[dict, str, int]:
+    """Call the selected provider with optional shared circuit-breaker protection."""
+    route = payload.model_route
+    profile = model_router.select(
+        route=route,
+        task_type=payload.task_type,
+        data_class=payload.data_class,
+        max_output_tokens=payload.max_output_tokens,
+    )
+    health_enabled = settings.ai_provider_circuit_breaker_enabled
+    fallback_preselected = False
+
+    if health_enabled:
+        if not settings.database_url.lower().startswith(("postgresql://", "postgresql+")):
+            raise AgentRunError("postgres_required")
+        if not claim_provider_attempt(
+            context.db,
+            provider_name=profile.provider_name,
+            model_name=profile.model_name,
+            probe_lease_seconds=settings.ai_provider_circuit_breaker_probe_lease_seconds,
+        ):
+            if not (settings.ai_auto_failover_enabled and route == "primary"):
+                raise AgentRunError("model_provider_circuit_open")
+            try:
+                route = "fallback"
+                profile = model_router.select(
+                    route=route,
+                    task_type=payload.task_type,
+                    data_class=payload.data_class,
+                    max_output_tokens=payload.max_output_tokens,
+                )
+            except ModelRouteError:
+                raise AgentRunError("model_fallback_unavailable") from None
+            if not claim_provider_attempt(
+                context.db,
+                provider_name=profile.provider_name,
+                model_name=profile.model_name,
+                probe_lease_seconds=settings.ai_provider_circuit_breaker_probe_lease_seconds,
+            ):
+                raise AgentRunError("model_fallback_circuit_open")
+            fallback_preselected = True
+
+    try:
+        request_id = _reserve_model_call(
+            context.db,
+            organization_id=context.task.organization_id,
+            actor_user_id=context.task.created_by_user_id,
+            estimated_tokens=estimated_tokens,
+        )
+    except Exception:
+        if health_enabled:
+            release_provider_attempt(
+                context.db, provider_name=profile.provider_name, model_name=profile.model_name
+            )
+        raise
+
+    try:
+        result = await model_router.complete(
+            route=route,
+            task_type=payload.task_type,
+            data_class=payload.data_class,
+            prompt=prompt,
+            max_output_tokens=payload.max_output_tokens,
+        )
+    except ProviderError as provider_error:
+        _fail_model_call(
+            context.db,
+            request_id=request_id,
+            organization_id=context.task.organization_id,
+            actor_user_id=context.task.created_by_user_id,
+        )
+        if health_enabled:
+            record_provider_failure(
+                context.db,
+                provider_name=profile.provider_name,
+                model_name=profile.model_name,
+                retryable=provider_error.retryable,
+                failure_threshold=settings.ai_provider_circuit_breaker_failure_threshold,
+                cooldown_seconds=settings.ai_provider_circuit_breaker_cooldown_seconds,
+                error_code="retryable" if provider_error.retryable else "non_retryable",
+            )
+
+        if not (
+            settings.ai_auto_failover_enabled
+            and route == "primary"
+            and provider_error.retryable
+        ):
+            error_code = "model_fallback_failed" if fallback_preselected else "model_provider_failed"
+            raise AgentRunError(error_code) from None
+
+        try:
+            fallback_profile = model_router.select(
+                route="fallback",
+                task_type=payload.task_type,
+                data_class=payload.data_class,
+                max_output_tokens=payload.max_output_tokens,
+            )
+        except ModelRouteError:
+            raise AgentRunError("model_fallback_unavailable") from None
+
+        if health_enabled and not claim_provider_attempt(
+            context.db,
+            provider_name=fallback_profile.provider_name,
+            model_name=fallback_profile.model_name,
+            probe_lease_seconds=settings.ai_provider_circuit_breaker_probe_lease_seconds,
+        ):
+            raise AgentRunError("model_fallback_circuit_open")
+
+        try:
+            fallback_request_id = _reserve_model_call(
+                context.db,
+                organization_id=context.task.organization_id,
+                actor_user_id=context.task.created_by_user_id,
+                estimated_tokens=estimated_tokens,
+            )
+        except Exception:
+            if health_enabled:
+                release_provider_attempt(
+                    context.db,
+                    provider_name=fallback_profile.provider_name,
+                    model_name=fallback_profile.model_name,
+                )
+            raise
+
+        try:
+            result = await model_router.complete(
+                route="fallback",
+                task_type=payload.task_type,
+                data_class=payload.data_class,
+                prompt=prompt,
+                max_output_tokens=payload.max_output_tokens,
+            )
+        except ProviderError as fallback_error:
+            _fail_model_call(
+                context.db,
+                request_id=fallback_request_id,
+                organization_id=context.task.organization_id,
+                actor_user_id=context.task.created_by_user_id,
+            )
+            if health_enabled:
+                record_provider_failure(
+                    context.db,
+                    provider_name=fallback_profile.provider_name,
+                    model_name=fallback_profile.model_name,
+                    retryable=fallback_error.retryable,
+                    failure_threshold=settings.ai_provider_circuit_breaker_failure_threshold,
+                    cooldown_seconds=settings.ai_provider_circuit_breaker_cooldown_seconds,
+                    error_code="retryable" if fallback_error.retryable else "non_retryable",
+                )
+            raise AgentRunError("model_fallback_failed") from None
+        except Exception:
+            _fail_model_call(
+                context.db,
+                request_id=fallback_request_id,
+                organization_id=context.task.organization_id,
+                actor_user_id=context.task.created_by_user_id,
+            )
+            if health_enabled:
+                release_provider_attempt(
+                    context.db,
+                    provider_name=fallback_profile.provider_name,
+                    model_name=fallback_profile.model_name,
+                )
+            raise AgentRunError("model_fallback_failed") from None
+
+        if health_enabled:
+            record_provider_success(
+                context.db,
+                provider_name=fallback_profile.provider_name,
+                model_name=fallback_profile.model_name,
+            )
+        return result, fallback_request_id, 2
+    except Exception:
+        _fail_model_call(
+            context.db,
+            request_id=request_id,
+            organization_id=context.task.organization_id,
+            actor_user_id=context.task.created_by_user_id,
+        )
+        if health_enabled:
+            release_provider_attempt(
+                context.db, provider_name=profile.provider_name, model_name=profile.model_name
+            )
+        raise AgentRunError("model_call_failed") from None
+
+    if health_enabled:
+        record_provider_success(
+            context.db, provider_name=profile.provider_name, model_name=profile.model_name
+        )
+    return result, request_id, 1
 
 def _load_approved_context(context: TaskExecutionContext, *, goal: str, data_class: str) -> tuple[list[dict], list[dict]]:
     """Load bounded, tenant-visible memory and owner-approved skill guidance."""
@@ -286,17 +491,18 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
         prompt = _build_prompt(payload.goal, tools, history, memories, skills)
         estimated_tokens = len(prompt.encode("utf-8")) + payload.max_output_tokens
         try:
-            request_id = _reserve_model_call(
-                context.db,
-                organization_id=task.organization_id,
-                actor_user_id=task.created_by_user_id,
+            result, request_id, model_call_count = await _complete_model_call(
+                context,
+                model_router=model_router,
+                payload=payload,
+                prompt=prompt,
                 estimated_tokens=estimated_tokens,
             )
         except AgentRunError as exc:
             if exc.error_code in {"ai_quota_exceeded", "ai_token_quota_exceeded"}:
                 return {
                     "status": "quota_exhausted",
-                    "answer": "Stopped before another model call because the organization's rolling 24-hour AI request limit was reached.",
+                    "answer": "Stopped before another model call because the organization's rolling 24-hour request/token budget was reached.",
                     "steps": trace,
                     "usage": {
                         "model_calls": total_model_calls,
@@ -305,92 +511,7 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
                     },
                 }
             raise
-
-        total_model_calls += 1
-        try:
-            result = await model_router.complete(
-                route=payload.model_route,
-                task_type=payload.task_type,
-                data_class=payload.data_class,
-                prompt=prompt,
-                max_output_tokens=payload.max_output_tokens,
-            )
-        except ProviderError as primary_error:
-            _fail_model_call(
-                context.db,
-                request_id=request_id,
-                organization_id=task.organization_id,
-                actor_user_id=task.created_by_user_id,
-            )
-            if not (
-                settings.ai_auto_failover_enabled
-                and payload.model_route == "primary"
-                and primary_error.retryable
-            ):
-                raise AgentRunError("model_provider_failed") from None
-            try:
-                model_router.select(
-                    route="fallback",
-                    task_type=payload.task_type,
-                    data_class=payload.data_class,
-                    max_output_tokens=payload.max_output_tokens,
-                )
-            except ModelRouteError:
-                raise AgentRunError("model_fallback_unavailable") from None
-            try:
-                fallback_request_id = _reserve_model_call(
-                    context.db,
-                    organization_id=task.organization_id,
-                    actor_user_id=task.created_by_user_id,
-                    estimated_tokens=estimated_tokens,
-                )
-            except AgentRunError as quota_error:
-                if quota_error.error_code in {"ai_quota_exceeded", "ai_token_quota_exceeded"}:
-                    return {
-                        "status": "quota_exhausted",
-                        "answer": "The primary provider failed transiently, and the organization request/token budget does not permit a fallback request.",
-                        "steps": trace,
-                        "usage": {
-                            "model_calls": total_model_calls,
-                            "input_tokens": total_input_tokens,
-                            "output_tokens": total_output_tokens,
-                        },
-                    }
-                raise
-            total_model_calls += 1
-            try:
-                result = await model_router.complete(
-                    route="fallback",
-                    task_type=payload.task_type,
-                    data_class=payload.data_class,
-                    prompt=prompt,
-                    max_output_tokens=payload.max_output_tokens,
-                )
-            except ProviderError:
-                _fail_model_call(
-                    context.db,
-                    request_id=fallback_request_id,
-                    organization_id=task.organization_id,
-                    actor_user_id=task.created_by_user_id,
-                )
-                raise AgentRunError("model_fallback_failed") from None
-            except Exception:
-                _fail_model_call(
-                    context.db,
-                    request_id=fallback_request_id,
-                    organization_id=task.organization_id,
-                    actor_user_id=task.created_by_user_id,
-                )
-                raise AgentRunError("model_fallback_failed") from None
-            request_id = fallback_request_id
-        except Exception:
-            _fail_model_call(
-                context.db,
-                request_id=request_id,
-                organization_id=task.organization_id,
-                actor_user_id=task.created_by_user_id,
-            )
-            raise AgentRunError("model_call_failed") from None
+        total_model_calls += model_call_count
 
         _finish_model_call(
             context.db,
