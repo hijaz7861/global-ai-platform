@@ -6,6 +6,7 @@ invokes the runner. It does not sign evidence, consume approval nonces, or relea
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Callable
 from pathlib import Path
 import secrets
 import tempfile
@@ -65,6 +66,7 @@ def run_proposal_validation_suite(
     test_command: list[str],
     security_command: list[str],
     regression_command: list[str],
+    on_check_start: Callable[[], None] | None = None,
 ) -> ProposalValidationSuiteResult:
     """Run three separately configured checks against the same immutable candidate.
 
@@ -77,14 +79,15 @@ def run_proposal_validation_suite(
         raise ValueError("All validation commands must be non-empty argument lists")
     with tempfile.TemporaryDirectory(prefix="gai-proposal-suite-") as candidate_directory:
         materialize_proposal(proposal, candidate_directory)
-        results = [
-            runner.run(
+        results = []
+        for command in commands:
+            if on_check_start is not None:
+                on_check_start()
+            results.append(runner.run(
                 artifact_directory=candidate_directory,
                 trusted_test_directory=trusted_test_directory,
                 command=command,
-            )
-            for command in commands
-        ]
+            ))
         return ProposalValidationSuiteResult(
             artifact_sha256=proposal.sha256,
             tests=results[0],

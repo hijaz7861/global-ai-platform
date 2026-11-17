@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     github_repository_allowlist: str = ""
     ai_sandbox_attestation_hmac_key: SecretStr | None = None
     ai_human_approval_hmac_key: SecretStr | None = None
+    ai_sandbox_enabled: bool = False
+    ai_sandbox_image: str | None = None
+    ai_sandbox_trusted_test_directory: str | None = None
+    ai_sandbox_validation_commands: str = "{}"
+    ai_sandbox_timeout_seconds: int = Field(default=120, ge=1, le=900)
+    ai_sandbox_memory_limit: str = "512m"
+    ai_sandbox_cpu_limit: str = "1.0"
+    ai_sandbox_pids_limit: int = Field(default=128, ge=16, le=512)
 
     model_config = SettingsConfigDict(
         env_file=".env",

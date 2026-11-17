@@ -88,6 +88,8 @@ class DockerSandboxRunner:
             raise ValueError("Candidate and trusted test paths must be directories")
         if artifact == trusted_tests or artifact in trusted_tests.parents or trusted_tests in artifact.parents:
             raise ValueError("Candidate and trusted tests must be separate, non-nested directories")
+        if "," in str(artifact) or "," in str(trusted_tests):
+            raise ValueError("Docker bind mount paths must not contain commas")
         if not command or len(command) > 128:
             raise ValueError("Command must contain between 1 and 128 arguments")
         if any(not isinstance(part, str) or not part or "\x00" in part or len(part) > 4096

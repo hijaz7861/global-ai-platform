@@ -513,3 +513,65 @@ def test_task_api_creator_can_cancel_queued_task_and_terminal_cancel_is_conflict
         headers={"Authorization": f"Bearer {token}"},
     )
     assert repeated.status_code == 409
+
+
+def test_proposal_validation_task_api_is_disabled_by_default(api_client, monkeypatch):
+    token, organization_id = _owner(api_client)
+    monkeypatch.setattr(settings, "ai_sandbox_enabled", False)
+    monkeypatch.setattr(settings, "environment", "staging")
+    monkeypatch.setattr(settings, "database_url", "postgresql+psycopg://test")
+    response = api_client.post(
+        f"/api/v1/organizations/{organization_id}/ai/tasks",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "proposal-task-disabled-01",
+        },
+        json={
+            "task_type": "proposal.validate",
+            "title": "Validate proposed change",
+            "input_payload": {
+                "files": [{"path": "docs/change.md", "content": "candidate"}]
+            },
+        },
+    )
+    assert response.status_code == 503
+    assert "disabled" in response.json()["detail"].lower()
+
+
+def test_proposal_validation_task_api_validates_input_and_queues_once(api_client, monkeypatch):
+    token, organization_id = _owner(api_client)
+    monkeypatch.setattr(settings, "ai_sandbox_enabled", True)
+    monkeypatch.setattr(settings, "environment", "staging")
+    monkeypatch.setattr(settings, "database_url", "postgresql+psycopg://test")
+    url = f"/api/v1/organizations/{organization_id}/ai/tasks"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": "proposal-task-enabled-01",
+    }
+    invalid = api_client.post(url, headers=headers, json={
+        "task_type": "proposal.validate",
+        "title": "Validate proposed change",
+        "input_payload": {
+            "files": [{"path": "docs/change.md", "content": "candidate", "command": "whoami"}]
+        },
+    })
+    assert invalid.status_code == 422
+
+    headers["Idempotency-Key"] = "proposal-task-enabled-02"
+    valid = api_client.post(url, headers=headers, json={
+        "task_type": "proposal.validate",
+        "title": "Validate proposed change",
+        "input_payload": {
+            "files": [{"path": "docs/change.md", "content": "candidate"}]
+        },
+    })
+    assert valid.status_code == 202, valid.text
+    assert valid.json()["status"] == "queued"
+    assert valid.json()["max_attempts"] == 1
+
+
+def test_default_worker_registers_proposal_validation_handler():
+    from app.ai.runtime.worker import _default_context_handlers
+    handlers = _default_context_handlers()
+    assert "proposal.validate" in handlers
+    assert callable(handlers["proposal.validate"])

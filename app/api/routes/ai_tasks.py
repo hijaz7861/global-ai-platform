@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.agents.schemas import AgentTaskInput
 from app.ai.model_router import ModelRouteError, create_model_router
+from app.ai.proposal_validation_task import ProposalValidationInput
 from app.ai.runtime.schemas import AITaskEventResponse, AITaskResponse, CreateAITaskRequest
 from app.ai.runtime.tasks import (
     TaskConflict,
@@ -72,6 +73,18 @@ def submit_task(
         except ValueError:
             raise HTTPException(status_code=503, detail="AI model provider configuration is incomplete") from None
         input_payload = agent_input.model_dump(mode="json")
+    elif payload.task_type == "proposal.validate":
+        if not settings.ai_sandbox_enabled:
+            raise HTTPException(status_code=503, detail="Isolated proposal validation is disabled by configuration")
+        if settings.environment.strip().lower() not in {"staging", "production"}:
+            raise HTTPException(status_code=503, detail="Isolated proposal validation requires a trusted runtime")
+        if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
+            raise HTTPException(status_code=503, detail="Proposal validation tasks require PostgreSQL")
+        try:
+            proposal_input = ProposalValidationInput.model_validate(input_payload)
+        except ValidationError:
+            raise HTTPException(status_code=422, detail="Invalid proposal validation input") from None
+        input_payload = proposal_input.model_dump(mode="json")
     try:
         task, created = create_task(
             db,
@@ -81,7 +94,7 @@ def submit_task(
             title=payload.title,
             input_payload=input_payload,
             idempotency_key=idempotency_key,
-            max_attempts=1 if payload.task_type == "agent.run" else payload.max_attempts,
+            max_attempts=1 if payload.task_type in {"agent.run", "proposal.validate"} else payload.max_attempts,
         )
     except TaskConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
