@@ -125,6 +125,8 @@ def verify_attestation_with_sqlite_store(
     now: int | None = None,
     max_age_seconds: int = 900,
     max_future_skew_seconds: int = 30,
+    expected_repository: str | None = None,
+    expected_base_sha: str | None = None,
 ) -> tuple[bool, str]:
     """Verify an attestation using the persistent single-host nonce store."""
     return verify_attestation(
