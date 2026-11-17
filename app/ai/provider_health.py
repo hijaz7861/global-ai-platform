@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import hashlib
+from math import ceil
 from typing import Any
 
 from sqlalchemy import select, text
@@ -124,8 +125,8 @@ def _append_state(
         details={
             "provider_state": state,
             "consecutive_failures": consecutive_failures,
-            "open_until_epoch": int(open_until.timestamp()) if open_until else 0,
-            "probe_until_epoch": int(probe_until.timestamp()) if probe_until else 0,
+            "open_until_epoch": ceil(open_until.timestamp()) if open_until else 0,
+            "probe_until_epoch": ceil(probe_until.timestamp()) if probe_until else 0,
             "error_code": safe_error_code,
         },
         created_at=event_time,
