@@ -120,6 +120,8 @@ def evaluate_governed_change(
         now=now,
         max_age_seconds=attestation_max_age_seconds,
         max_future_skew_seconds=attestation_future_skew_seconds,
+        expected_repository=expected_repository,
+        expected_base_sha=expected_base_sha,
     )
     if not valid:
         return GateResult(
