@@ -159,7 +159,7 @@ def test_provider_keeps_contents_read_token_separate_from_writer_token():
         return httpx.Response(
             201,
             json={
-                "token": f"ghs_scoped_token_{counter['value']:02d}",
+                "token": f"ghs_scoped_installation_token_{counter['value']:02d}",
                 "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat(),
             },
         )
