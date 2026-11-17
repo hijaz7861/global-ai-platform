@@ -12,7 +12,7 @@ from app.ai import proposal_validation_task as handler
 
 
 EXPECTED_DIGEST = validate_proposal([
-    ProposedFile(path="docs/worker-validation.md", content="Validated proposal\\n")
+    ProposedFile(path="docs/worker-validation.md", content="Validated proposal\n")
 ]).sha256
 
 
