@@ -371,3 +371,97 @@ The review and inline-thread APIs returned zero submitted reviews and zero threa
 Do not interpret a GitHub `mergeable=true` value on a stale dependent branch as approval or
 release readiness. Preserve every PR as Draft until branch freshness, exact-head CI, owner
 review and the applicable Definition of Done gates are satisfied.
+
+
+## 17. Verified engineering snapshot — 2026-11-17
+
+This addendum records a fresh GitHub inspection. It supersedes earlier status statements
+where commit heads, CI runs, branch freshness or migration information differ.
+
+### Canonical repository and migration chain
+
+- The repository default branch remains `master`, at
+  `76e811d81cb42eefc68f4bafc6ed931701a91749`. PR #21 and PR #42 are merged.
+- The current master Alembic head is `0034_postgres_approval_nonces`, whose
+  `down_revision` is `0033_ai_task_outbox`.
+- Source migration headers confirm the draft vertical chain:
+  `0035_role_entitlements` → `0036_transport_marketplace` →
+  `0037_construction_operations` → `0038_construction_quotes` →
+  `0039_construction_cashbook`. Each revision points to the preceding revision.
+  PR #24 adds no migration.
+- No migration from PR #23–#28 is present on master. The master database head remains 0034.
+
+### Current implementation PRs and exact-head CI
+
+- PR #20 remains Draft/unmerged at `f63abf1dcd5d5282aa76cfe86fb69471dd21aaf2`.
+  Exact-head run #611 passed. Authenticated Streamable HTTP POST
+  `initialize`, `tools/list` and `tools/call` remain unverified.
+- PR #22 (this architecture PR) remains Draft/unmerged. Before this documentation
+  refresh its branch compared as 13 commits ahead and 14 behind master. It is
+  documentation/inventory work only; it must be reconciled against current master
+  before review and is not a release-ready branch.
+- PR #23 multi-role entitlements remains Draft/unmerged at
+  `7e2cbda99aef14932edfbbafd5a187f173d3f33e`; exact-head run #770 passed all
+  five jobs. GitHub reports mergeable=false. Its branch is 22 ahead/14 behind
+  master. PR #24 is based on older commit `13de2075119b4863d54e7c561bbb316ee210c9c2`;
+  the current PR #23 branch is three commits ahead of that snapshot.
+- PR #24 supplier gates remains Draft at `7bfd25636403b017d470ab8eee9b221e7f00f077`;
+  exact-head run #759 passed.
+- PR #25 transport listings remains Draft at `a44c1731179b87c588df6e71f1858b8aad58ca05`;
+  exact-head run #761 passed.
+- PR #26 construction projects/BOQ remains Draft at
+  `35202c34bb91ac2dc16c273ce920f8bb0b6b691d`; exact-head run #764 passed.
+- PR #27 construction quotes remains Draft at
+  `cb659a2a9c63b40704e2f6e963736c98d19a24f3`; exact-head run #766 passed.
+- PR #28 construction cashbook remains Draft at
+  `8e7968731453e1f2f020af2018111bca9f9cb4b2`; exact-head run #768 passed.
+  Preserve dependency order #23 → #24 → #25 → #26 → #27 → #28. The successful
+  historical runs do not remove the stale-base requirement.
+- PR #43 governed GitHub runtime configuration remains Draft at
+  `bdf701d40d3621d068b8004eb11df589d708c4b0`; exact-head run #823 passed.
+- PR #44 authenticated repository approval remains Draft at
+  `7824f98c06a51c875692a7e467c53959605483a3`; exact-head run #838 passed.
+  It is stacked on PR #43.
+- PR #48 durable sandbox-validation task remains Draft at
+  `94c78ee018e13f71b8415a6b673ba98b3bd04197`; exact-head run #849 passed.
+- PR #49 bounded read-only proposal generation remains Draft at
+  `a06f74fb0e2e9aa927beaa4a4e6721f5b8a9940b`; exact-head run #851 passed.
+- PR #50 repository/base-bound sandbox attestation remains Draft at
+  `7d97584efdb0d8cdada9b807655afb7e10da51af`; exact-head run #856 passed.
+  PRs #48–#50 are stacked on #44 → #48 → #49 respectively; review dependencies
+  from the bottom upward and refresh exact-head CI after any rebase.
+- PR #51 PostgreSQL-backed provider circuit breaker remains Draft at
+  `0207cf1c44adb2b82bdb3550a950aac7e2be2689`; exact-head run #862 passed all
+  five jobs. It is an opt-in draft feature, not part of master.
+- PR #52 outbound secret-pattern guard is Draft at
+  `ab542c506a56eec119a788f075c08d39dde07729`. Exact-head run #863 was still
+  in progress at this snapshot. The guard blocks known credential patterns in
+  durable agent prompts before quota reservation/provider egress; it is not
+  comprehensive DLP and does not cover the regular chat API.
+
+GitHub review and inline-thread APIs returned zero submitted reviews and zero
+inline threads for PRs #20, #22, #23, #43, #44, and #48–#52 in this inspection.
+CI success is not owner approval.
+
+### Hatchable and release safety
+
+The last read-only Hatchable Version 40 inventory was recorded on 2026-11-16:
+46 tables, 25 API functions, 74 non-virtual files plus the generated AGENTS.md,
+14 SQL migrations, and an admin-only backup that exports 17/46 tables without
+object bytes or an import endpoint. This inventory was not refreshed in this run.
+No live Hatchable export, file/schema change, data copy, deployment, payment or
+communication provider activation, secret change, domain purchase, or paid
+service was performed.
+
+### Immediate safe next work
+
+1. Keep PRs #20, #22–#28, #43–#52 Draft until owner review and exact-head checks.
+2. Reconcile the role/vertical dependency chain, beginning with PR #23's stale,
+   currently non-mergeable base; do not independently refresh or merge downstream
+   verticals out of order.
+3. Review and extend the narrow agent egress guard, then complete broader DLP,
+   provider-health administration, durable checkpoints/resumption and evaluation.
+4. Continue portable runtime, property/workforce/education, global commerce,
+   complete export/import, backup/restore and independent-host acceptance work.
+5. Preserve the live Hatchable app and current repository identity until every
+   documented Definition of Done gate has been rehearsed and owner-approved.
