@@ -59,7 +59,7 @@ class GitHubAppTokenProvider:
         )
         self._client.follow_redirects = False
         self._client.timeout = httpx.Timeout(15.0)
-        self._cache: dict[str, tuple[str, float]] = {}
+        self._cache: dict[tuple[str, str], tuple[str, float]] = {}
         self._lock = threading.Lock()
 
     @property
@@ -78,12 +78,22 @@ class GitHubAppTokenProvider:
             raise GitHubAppAuthError("github_app_private_key_invalid") from None
 
     def get_token(self, repository: str) -> str:
-        """Return a short-lived installation token scoped to the named repository."""
+        """Return a short-lived token with the writer's minimal required permissions."""
+        return self._get_token(repository, scope="write")
+
+    def get_read_token(self, repository: str) -> str:
+        """Return a short-lived contents-read-only token for repository inspection."""
+        return self._get_token(repository, scope="read")
+
+    def _get_token(self, repository: str, *, scope: str) -> str:
+        if scope not in {"read", "write"}:
+            raise GitHubAppAuthError("github_app_token_scope_invalid")
         if repository not in self._allowed or not _REPOSITORY.fullmatch(repository):
             raise GitHubAppAuthError("repository_not_allowlisted")
         now = time.time()
+        cache_key = (repository, scope)
         with self._lock:
-            cached = self._cache.get(repository)
+            cached = self._cache.get(cache_key)
             if cached is not None and cached[1] > now + 60:
                 return cached[0]
 
@@ -95,13 +105,12 @@ class GitHubAppTokenProvider:
                 "X-GitHub-Api-Version": "2022-11-28",
                 "User-Agent": "global-ai-platform-app-token-provider",
             }
-            payload = {
-                "repositories": [repo_name],
-                "permissions": {
-                    "contents": "write",
-                    "pull_requests": "write",
-                },
-            }
+            permissions = (
+                {"contents": "read"}
+                if scope == "read"
+                else {"contents": "write", "pull_requests": "write"}
+            )
+            payload = {"repositories": [repo_name], "permissions": permissions}
             try:
                 response = self._client.post(path, json=payload, headers=headers)
             except httpx.HTTPError:
@@ -125,5 +134,5 @@ class GitHubAppTokenProvider:
                 raise GitHubAppAuthError("github_app_token_invalid_expiry") from None
             if expiry <= now + 60:
                 raise GitHubAppAuthError("github_app_token_expired")
-            self._cache[repository] = (token, expiry)
+            self._cache[cache_key] = (token, expiry)
             return token
