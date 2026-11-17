@@ -26,7 +26,7 @@ class ProposalGenerationInput(BaseModel):
     repository: str = Field(min_length=3, max_length=201, pattern=r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
     goal: str = Field(min_length=8, max_length=3_000)
     model_route: Literal["primary", "fallback"] = "primary"
-    max_output_tokens: int = Field(default=1024, ge=128, le=2048)
+    max_output_tokens: int = Field(default=512, ge=128, le=2048)
 
 
 class GeneratedProposalFile(BaseModel):
