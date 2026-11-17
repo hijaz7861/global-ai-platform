@@ -74,3 +74,29 @@ Required settings:
 
 Rootless Docker, image availability, trusted test contents, and actual command
 behavior must be verified on the deployed worker host before enabling this feature.
+
+
+## Autonomous repository proposal generation
+
+The durable task type `proposal.generate` reads a bounded set of UTF-8 source files
+from the allowlisted repository's default branch using a short-lived GitHub App
+installation token scoped to `contents: read` only. Read-only and writer tokens
+have separate caches and permission requests; generation never receives the
+writer token's `contents: write` or `pull_requests: write` permissions.
+
+The reader excludes hidden, credential, authentication, security, payment,
+migration, and cryptographic paths; enforces file/count/byte limits; rejects
+truncated repository trees; and verifies every fetched Git blob against its Git
+object SHA before including it in model context.
+
+The model receives repository files as untrusted data and must return a strict
+JSON proposal. The worker validates file paths, modes, UTF-8 content, sensitive
+path restrictions, and total size, then returns the proposal digest and file
+contents as a durable task result. It does not modify GitHub or execute generated
+code. The result must pass the separate `proposal.validate` task before it can
+be presented for human approval and draft PR creation.
+
+Enable only in a trusted staging/production runtime with PostgreSQL, a live AI
+provider, a positive daily request quota, a GitHub App installation, and an
+explicit repository allowlist. The feature is disabled by default with
+`AI_PROPOSAL_GENERATION_ENABLED=false`.
