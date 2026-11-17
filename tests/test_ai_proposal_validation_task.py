@@ -220,13 +220,13 @@ def test_worker_rejects_suite_result_for_different_proposal_digest(monkeypatch):
 def test_worker_validation_can_chain_from_completed_generation_task(monkeypatch):
     generated_files = [{
         "path": "docs/worker-validation.md",
-        "content": "Validated proposal\\n",
+        "content": "Validated proposal\n",
         "mode": "100644",
     }]
     source_proposal = validate_proposal([
         ProposedFile(
             path="docs/worker-validation.md",
-            content="Validated proposal\\n",
+            content="Validated proposal\n",
         )
     ])
     source_task = SimpleNamespace(
