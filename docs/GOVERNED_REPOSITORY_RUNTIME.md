@@ -100,3 +100,25 @@ Enable only in a trusted staging/production runtime with PostgreSQL, a live AI
 provider, a positive daily request quota, a GitHub App installation, and an
 explicit repository allowlist. The feature is disabled by default with
 `AI_PROPOSAL_GENERATION_ENABLED=false`.
+
+
+## Repository-bound validation and task chaining
+
+A completed `proposal.generate` task can be passed directly to
+`proposal.validate` using only its `source_task_id`. The worker accepts the
+source only when it belongs to the same organization and authenticated creator,
+has task type `proposal.generate`, completed successfully, and contains a valid
+proposal result. It recomputes the canonical proposal digest before sandboxing.
+
+For inline validation, the request must include the allowlisted repository,
+its 40-character base commit SHA, and the proposal files. In either mode the
+sandbox HMAC attestation signs both the canonical proposal digest and the
+repository/base-commit binding.
+
+The draft-PR endpoint requires that signed repository binding to match the
+requested allowlisted repository. Before creating any Git objects or branch, the
+writer fetches the repository's current default-branch SHA and compares it to
+the attested base SHA. If the branch moved after generation/validation, the
+write is rejected and a fresh proposal/validation/approval cycle is required.
+This prevents a valid attestation for one repository or base revision from
+being replayed against another.

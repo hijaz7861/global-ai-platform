@@ -26,6 +26,8 @@ class SandboxAttestation:
     regression_suite_passed: bool
     issued_at: int
     nonce: str
+    repository: str | None = None
+    base_sha: str | None = None
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,8 @@ def verify_attestation(
     now: int | None = None,
     max_age_seconds: int = 900,
     max_future_skew_seconds: int = 30,
+    expected_repository: str | None = None,
+    expected_base_sha: str | None = None,
 ) -> tuple[bool, str]:
     """Verify authenticity, binding, freshness and single-use nonce.
 
@@ -74,6 +78,18 @@ def verify_attestation(
         return False, "artifact_digest_mismatch"
     if not payload.run_id.strip() or not payload.sandbox_id.strip():
         return False, "missing_run_or_sandbox_identity"
+    if payload.repository is not None and not re.fullmatch(
+        r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}", payload.repository
+    ):
+        return False, "invalid_repository_binding"
+    if payload.base_sha is not None and not re.fullmatch(r"[0-9a-f]{40}", payload.base_sha):
+        return False, "invalid_base_commit_binding"
+    if expected_repository is not None:
+        if payload.repository is None or not hmac.compare_digest(payload.repository, expected_repository):
+            return False, "repository_binding_mismatch"
+    if expected_base_sha is not None:
+        if payload.base_sha is None or not hmac.compare_digest(payload.base_sha, expected_base_sha):
+            return False, "base_commit_binding_mismatch"
     if not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", payload.nonce):
         return False, "invalid_nonce"
     if not re.fullmatch(r"[0-9a-f]{64}", signed.signature_hex):
@@ -109,6 +125,8 @@ def verify_attestation_with_sqlite_store(
     now: int | None = None,
     max_age_seconds: int = 900,
     max_future_skew_seconds: int = 30,
+    expected_repository: str | None = None,
+    expected_base_sha: str | None = None,
 ) -> tuple[bool, str]:
     """Verify an attestation using the persistent single-host nonce store."""
     return verify_attestation(
@@ -119,4 +137,6 @@ def verify_attestation_with_sqlite_store(
         now=now,
         max_age_seconds=max_age_seconds,
         max_future_skew_seconds=max_future_skew_seconds,
+        expected_repository=expected_repository,
+        expected_base_sha=expected_base_sha,
     )

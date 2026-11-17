@@ -36,6 +36,8 @@ def evaluate_governed_change(
     attestation_future_skew_seconds: int = 30,
     approval_max_lifetime_seconds: int = 900,
     approval_future_skew_seconds: int = 30,
+    expected_repository: str | None = None,
+    expected_base_sha: str | None = None,
 ) -> GateResult:
     """Require digest-bound sandbox attestation and, when needed, human approval.
 
@@ -63,6 +65,8 @@ def evaluate_governed_change(
         now=now,
         max_age_seconds=attestation_max_age_seconds,
         max_future_skew_seconds=attestation_future_skew_seconds,
+        expected_repository=expected_repository,
+        expected_base_sha=expected_base_sha,
     )
     if not valid:
         return GateResult(
@@ -116,6 +120,8 @@ def evaluate_governed_change(
         now=now,
         max_age_seconds=attestation_max_age_seconds,
         max_future_skew_seconds=attestation_future_skew_seconds,
+        expected_repository=expected_repository,
+        expected_base_sha=expected_base_sha,
     )
     if not valid:
         return GateResult(

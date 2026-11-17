@@ -51,6 +51,19 @@ def create_approved_draft_pull_request(
     content risk classification. The approval action is specifically bound to
     repository.pull_request.create; it does not authorize merge or deployment.
     """
+    if not isinstance(signed_attestation, SignedAttestation):
+        raise RepositoryWriteDenied(
+            GateDecision.DENY, ("sandbox_attestation_missing",)
+        )
+    if (
+        signed_attestation.payload.repository != repository
+        or not isinstance(signed_attestation.payload.base_sha, str)
+        or len(signed_attestation.payload.base_sha) != 40
+    ):
+        raise RepositoryWriteDenied(
+            GateDecision.DENY, ("sandbox_attestation_repository_binding_required",)
+        )
+
     try:
         with tempfile.TemporaryDirectory(prefix="gai-approved-proposal-") as workspace:
             materialize_proposal(proposal, workspace)
@@ -80,6 +93,8 @@ def create_approved_draft_pull_request(
         allowed_actor_ids=allowed_actor_ids,
         consume_approval_nonce=consume_approval_nonce,
         now=now,
+        expected_repository=repository,
+        expected_base_sha=signed_attestation.payload.base_sha,
     )
     # SANDBOX_ONLY here means review-only PR creation, not merge or deployment.
     if gate.decision is not GateDecision.SANDBOX_ONLY or signed_approval is None:
@@ -90,6 +105,7 @@ def create_approved_draft_pull_request(
         repository=repository,
         title=title,
         summary=summary,
+        expected_base_sha=signed_attestation.payload.base_sha,
     )
 
 

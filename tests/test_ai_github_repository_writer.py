@@ -196,3 +196,25 @@ def test_writer_rejects_client_with_non_github_origin():
             )
     finally:
         client.close()
+
+
+def test_writer_rejects_repository_head_moved_since_sandbox_attestation():
+    calls = []
+    writer = GitHubRepositoryWriter(
+        token=TOKEN,
+        allowed_repositories={"acme/platform"},
+        client=_client(_successful_handler(calls)),
+    )
+    proposal = validate_proposal([ProposedFile("docs/a.md", "safe")])
+
+    with pytest.raises(RepositoryWriteError, match="repository_base_commit_mismatch"):
+        writer.create_draft_pull_request(
+            proposal,
+            repository="acme/platform",
+            title="Valid title",
+            summary="Summary",
+            expected_base_sha="9" * 40,
+        )
+
+    assert len(calls) == 2
+    assert all(request.method == "GET" for request in calls)

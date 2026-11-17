@@ -157,6 +157,8 @@ def test_approval_endpoint_signs_for_authenticated_actor_and_commits_before_toke
         files=[ProposedFileInput(path=files[0].path, content=files[0].content)],
         attestation=SandboxAttestationInput(
             artifact_sha256=proposal.sha256,
+            repository="hijaz7861/global-ai-platform",
+            base_sha="1" * 40,
             run_id="sandbox-run-0001",
             sandbox_id="isolated-sandbox-01",
             tests_passed=True,
@@ -213,6 +215,8 @@ def test_approval_endpoint_rejects_without_mfa_before_provider_creation(monkeypa
         files=[ProposedFileInput(path="docs/approval.md", content="change")],
         attestation=SandboxAttestationInput(
             artifact_sha256="d" * 64,
+            repository="hijaz7861/global-ai-platform",
+            base_sha="1" * 40,
             run_id="sandbox-run-0001",
             sandbox_id="isolated-sandbox-01",
             tests_passed=True,

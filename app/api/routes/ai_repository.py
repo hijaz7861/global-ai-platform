@@ -41,6 +41,8 @@ class ProposedFileInput(StrictInput):
 
 class SandboxAttestationInput(StrictInput):
     artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    repository: str = Field(pattern=r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
+    base_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
     run_id: str = Field(min_length=1, max_length=128)
     sandbox_id: str = Field(min_length=1, max_length=128)
     tests_passed: bool = Field(strict=True)
@@ -138,6 +140,8 @@ def create_human_approved_draft_pr(
             regression_suite_passed=payload.attestation.regression_suite_passed,
             issued_at=payload.attestation.issued_at,
             nonce=payload.attestation.nonce,
+            repository=payload.attestation.repository,
+            base_sha=payload.attestation.base_sha,
         )
         signed_attestation = SignedAttestation(
             payload=attestation_payload,
@@ -237,7 +241,7 @@ def create_human_approved_draft_pr(
     except RepositoryWriteDenied:
         db.rollback()
         raise HTTPException(status_code=403, detail="Sandbox evidence or human approval was rejected") from None
-    except (GitHubAppAuthError, RepositoryWriteError):
+    except (GitHubAppAuthError, RepositoryWriteError) as exc:
         db.rollback()
         if "audit_event" in locals():
             try:
@@ -249,6 +253,11 @@ def create_human_approved_draft_pr(
                 db.commit()
             except Exception:
                 db.rollback()
+        if str(exc) == "repository_base_commit_mismatch":
+            raise HTTPException(
+                status_code=409,
+                detail="Repository base changed after validation; regenerate and revalidate the proposal",
+            ) from None
         raise HTTPException(status_code=502, detail="Governed GitHub draft PR operation failed") from None
     except (AttributeError, RuntimeError, ValueError):
         db.rollback()

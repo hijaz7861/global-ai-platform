@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from app.ai.autonomy_gate import GateDecision
@@ -50,6 +52,8 @@ def _attestation(proposal):
         regression_suite_passed=True,
         issued_at=NOW,
         nonce="attestation-nonce-0001",
+        repository="acme/platform",
+        base_sha="1" * 40,
     )
     return sign_attestation(payload, ATTESTATION_KEY)
 
@@ -300,3 +304,29 @@ def test_github_app_token_is_scoped_and_used_after_approval(monkeypatch):
     assert created_writers[0]["allowed_repositories"] == provider.allowed_repositories
     assert attestation_nonces == {"attestation-nonce-0001"}
     assert approval_nonces == {"human-approval-nonce-01"}
+
+
+def test_repository_bound_attestation_cannot_be_replayed_to_another_repository():
+    proposal = validate_proposal([ProposedFile("docs/change.md", "safe")])
+    original = _attestation(proposal).payload
+    mismatched = sign_attestation(
+        replace(original, repository="other/repository"),
+        ATTESTATION_KEY,
+    )
+    writer = FakeWriter()
+    used_attestation, consume_attestation = _nonce_consumer()
+    used_approval, consume_approval = _nonce_consumer()
+
+    with pytest.raises(RepositoryWriteDenied):
+        _invoke(
+            proposal,
+            writer,
+            mismatched,
+            _approval(proposal),
+            consume_attestation,
+            consume_approval,
+        )
+
+    assert writer.calls == []
+    assert used_attestation == set()
+    assert used_approval == set()

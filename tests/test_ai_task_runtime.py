@@ -530,7 +530,9 @@ def test_proposal_validation_task_api_is_disabled_by_default(api_client, monkeyp
             "task_type": "proposal.validate",
             "title": "Validate proposed change",
             "input_payload": {
-                "files": [{"path": "docs/change.md", "content": "candidate"}]
+                "repository": "acme/platform",
+                "base_sha": "1" * 40,
+                "files": [{"path": "docs/change.md", "content": "candidate"}],
             },
         },
     )
@@ -562,6 +564,8 @@ def test_proposal_validation_task_api_validates_input_and_queues_once(api_client
         "task_type": "proposal.validate",
         "title": "Validate proposed change",
         "input_payload": {
+            "repository": "acme/platform",
+            "base_sha": "1" * 40,
             "files": [{"path": "docs/change.md", "content": "candidate"}]
         },
     })

@@ -30,6 +30,8 @@ def test_full_approval_gate_reaches_mocked_draft_writer_only_after_valid_proofs(
         regression_suite_passed=True,
         issued_at=now - 1,
         nonce="sandbox-nonce-e2e-00000001",
+        repository="hijaz7861/global-ai-platform",
+        base_sha="1" * 40,
     )
     signed_attestation = sign_attestation(attestation, attestation_key)
 
@@ -141,6 +143,8 @@ def test_full_approval_gate_reaches_mocked_draft_writer_only_after_valid_proofs(
         files=[ProposedFileInput(path=files[0].path, content=files[0].content)],
         attestation=SandboxAttestationInput(
             artifact_sha256=proposal.sha256,
+            repository=attestation.repository,
+            base_sha=attestation.base_sha,
             run_id=attestation.run_id,
             sandbox_id=attestation.sandbox_id,
             tests_passed=True,

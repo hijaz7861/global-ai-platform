@@ -115,3 +115,59 @@ def test_sqlite_store_is_wired_into_attestation_verification(tmp_path):
 
     assert verify() == (True, "attestation_verified")
     assert verify() == (False, "nonce_replayed")
+
+
+def test_attestation_binds_repository_and_base_commit():
+    payload = SandboxAttestation(
+        artifact_sha256=DIGEST,
+        run_id="run-bound-0001",
+        sandbox_id="sandbox-bound-0001",
+        tests_passed=True,
+        security_scan_passed=True,
+        regression_suite_passed=True,
+        issued_at=1100,
+        nonce="nonce_repository_bound_01",
+        repository="acme/platform",
+        base_sha="1" * 40,
+    )
+    signed = sign_attestation(payload, KEY)
+    consumed = set()
+
+    valid, reason = verify_attestation(
+        signed,
+        key=KEY,
+        expected_artifact_sha256=DIGEST,
+        expected_repository="acme/platform",
+        expected_base_sha="1" * 40,
+        consume_nonce=lambda nonce: consumed.add(nonce) is None,
+        now=1100,
+    )
+    assert valid is True
+    assert reason == "attestation_verified"
+
+    mismatch, mismatch_reason = verify_attestation(
+        signed,
+        key=KEY,
+        expected_artifact_sha256=DIGEST,
+        expected_repository="other/repository",
+        expected_base_sha="1" * 40,
+        consume_nonce=lambda nonce: True,
+        now=1100,
+    )
+    assert mismatch is False
+    assert mismatch_reason == "repository_binding_mismatch"
+
+
+def test_attestation_rejects_missing_repository_binding_when_expected():
+    signed = make_signed()
+    valid, reason = verify_attestation(
+        signed,
+        key=KEY,
+        expected_artifact_sha256=DIGEST,
+        expected_repository="acme/platform",
+        expected_base_sha="1" * 40,
+        consume_nonce=lambda nonce: True,
+        now=1100,
+    )
+    assert valid is False
+    assert reason == "repository_binding_mismatch"

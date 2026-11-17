@@ -22,25 +22,30 @@ class FakeMembership:
 
 
 class FakeDB:
-    def __init__(self, membership=None):
+    def __init__(self, membership=None, source_task=None):
         self.membership = membership or FakeMembership()
+        self.source_task = source_task
+        self.scalar_calls = 0
         self.commits = 0
 
     def scalar(self, statement):
-        return self.membership
+        self.scalar_calls += 1
+        return self.membership if self.scalar_calls == 1 else self.source_task
 
     def commit(self):
         self.commits += 1
 
 
 class FakeContext:
-    def __init__(self, membership=None):
-        self.db = FakeDB(membership)
+    def __init__(self, membership=None, source_task=None):
+        self.db = FakeDB(membership, source_task)
         self.task = SimpleNamespace(
             id="task-proposal-0001",
             organization_id="org-0001",
             created_by_user_id="user-0001",
             input_payload={
+                "repository": "acme/platform",
+                "base_sha": "1" * 40,
                 "files": [
                     {"path": "docs/worker-validation.md", "content": "Validated proposal\n"}
                 ]
@@ -73,11 +78,14 @@ def _signed(digest=EXPECTED_DIGEST):
         regression_suite_passed=True,
         issued_at=1_800_000_000,
         nonce="nonce-abcdefghijklmnop",
+        repository="acme/platform",
+        base_sha="1" * 40,
     )
     return SignedAttestation(payload=payload, signature_hex="b" * 64)
 
 
 def _configure(monkeypatch, suite):
+    monkeypatch.setattr(handler.settings, "github_repository_allowlist", "acme/platform")
     monkeypatch.setattr(
         handler,
         "_runtime_configuration",
@@ -107,7 +115,11 @@ def test_worker_validation_returns_signed_attestation_only_after_all_checks_pass
 
     assert result["status"] == "passed"
     assert result["artifact_sha256"] == EXPECTED_DIGEST
+    assert result["repository"] == "acme/platform"
+    assert result["base_sha"] == "1" * 40
     assert result["attestation"]["payload"]["artifact_sha256"] == EXPECTED_DIGEST
+    assert result["attestation"]["payload"]["repository"] == "acme/platform"
+    assert result["attestation"]["payload"]["base_sha"] == "1" * 40
     assert result["attestation"]["payload"]["run_id"] == "run-00000001"
     assert result["attestation"]["signature_hex"] == "b" * 64
     assert set(result["checks"]) == {"unit", "security", "regression"}
@@ -201,6 +213,55 @@ def test_worker_rejects_suite_result_for_different_proposal_digest(monkeypatch):
     _configure(monkeypatch, wrong_digest)
 
     with pytest.raises(PermanentTaskError, match="sandbox_artifact_digest_mismatch"):
+        handler.run_proposal_validation_task(context)
+
+    assert context.db.commits == 0
+
+def test_worker_validation_can_chain_from_completed_generation_task(monkeypatch):
+    generated_files = [{
+        "path": "docs/worker-validation.md",
+        "content": "Validated proposal\n",
+        "mode": "100644",
+    }]
+    source_proposal = validate_proposal([
+        ProposedFile(
+            path="docs/worker-validation.md",
+            content="Validated proposal\n",
+        )
+    ])
+    source_task = SimpleNamespace(
+        id="task-generation-0001",
+        task_type="proposal.generate",
+        status="succeeded",
+        result_payload={
+            "status": "proposal_ready",
+            "repository": "acme/platform",
+            "base_sha": "1" * 40,
+            "artifact_sha256": source_proposal.sha256,
+            "files": generated_files,
+        },
+    )
+    context = FakeContext(source_task=source_task)
+    context.task.input_payload = {"source_task_id": source_task.id}
+    _configure(monkeypatch, _suite(passed=True))
+
+    result = handler.run_proposal_validation_task(context)
+
+    assert result["status"] == "passed"
+    assert result["repository"] == "acme/platform"
+    assert result["base_sha"] == "1" * 40
+    assert result["artifact_sha256"] == source_proposal.sha256
+    assert result["attestation"]["payload"]["repository"] == "acme/platform"
+    assert result["attestation"]["payload"]["base_sha"] == "1" * 40
+
+
+def test_worker_validation_rejects_unavailable_generation_task(monkeypatch):
+    context = FakeContext()
+    context.task.input_payload = {"source_task_id": "missing-generation-task"}
+    context.db.source_task = None
+    _configure(monkeypatch, _suite(passed=True))
+
+    with pytest.raises(PermanentTaskError, match="source_proposal_not_available"):
         handler.run_proposal_validation_task(context)
 
     assert context.db.commits == 0

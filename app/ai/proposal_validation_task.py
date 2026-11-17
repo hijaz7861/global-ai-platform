@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import hmac
 import json
+import re
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import select
 
 from app.ai.change_proposals import ProposedFile, ProposalValidationError, validate_proposal
@@ -14,8 +16,8 @@ from app.ai.proposal_sandbox import run_proposal_validation_suite, sign_validati
 from app.ai.sandbox_runner import DockerSandboxRunner
 from app.ai.runtime.tasks import PermanentTaskError, TaskExecutionContext
 from app.audit import record_audit_event
-from app.core.config import settings
-from app.models import Membership
+from app.core.config import settings, _parse_github_repository_allowlist
+from app.models import AITask, Membership
 
 
 class ProposedFileInput(BaseModel):
@@ -30,7 +32,24 @@ class ProposalValidationInput(BaseModel):
     """Only proposal content is task-controlled; commands/tests/image are operator-controlled."""
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    files: list[ProposedFileInput] = Field(min_length=1, max_length=20)
+    source_task_id: str | None = Field(default=None, min_length=1, max_length=64)
+    repository: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=201,
+        pattern=r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$",
+    )
+    base_sha: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    files: list[ProposedFileInput] | None = Field(default=None, min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_source_shape(self):
+        if self.source_task_id:
+            if self.repository is not None or self.base_sha is not None or self.files is not None:
+                raise ValueError("source_task_id must be used without inline proposal fields")
+        elif not self.repository or not self.base_sha or not self.files:
+            raise ValueError("repository, base_sha and files are required for inline proposals")
+        return self
 
 
 def _runtime_configuration() -> tuple[DockerSandboxRunner, Path, dict[str, list[str]], bytes]:
@@ -82,11 +101,52 @@ def run_proposal_validation_task(context: TaskExecutionContext) -> dict:
 
     try:
         payload = ProposalValidationInput.model_validate(task.input_payload)
-        files = [
+        expected_digest = None
+        if payload.source_task_id:
+            source = context.db.scalar(select(AITask).where(
+                AITask.id == payload.source_task_id,
+                AITask.organization_id == task.organization_id,
+                AITask.created_by_user_id == task.created_by_user_id,
+            ))
+            if (
+                source is None
+                or source.task_type != "proposal.generate"
+                or source.status != "succeeded"
+                or not isinstance(source.result_payload, dict)
+                or source.result_payload.get("status") != "proposal_ready"
+            ):
+                raise PermanentTaskError("source_proposal_not_available")
+            source_result = source.result_payload
+            repository = source_result.get("repository")
+            base_sha = source_result.get("base_sha")
+            expected_digest = source_result.get("artifact_sha256")
+            raw_files = source_result.get("files")
+            if not isinstance(raw_files, list):
+                raise PermanentTaskError("source_proposal_invalid")
+            parsed_files = [ProposedFileInput.model_validate(item) for item in raw_files]
+        else:
+            repository = payload.repository
+            base_sha = payload.base_sha
+            parsed_files = payload.files or []
+        if (
+            not isinstance(repository, str)
+            or not isinstance(base_sha, str)
+            or not re.fullmatch(r"[0-9a-f]{40}", base_sha)
+        ):
+            raise PermanentTaskError("proposal_repository_binding_invalid")
+        allowlist = _parse_github_repository_allowlist(settings.github_repository_allowlist)
+        if repository not in allowlist:
+            raise PermanentTaskError("repository_not_allowlisted")
+        proposal = validate_proposal([
             ProposedFile(path=item.path, content=item.content, mode=item.mode)
-            for item in payload.files
-        ]
-        proposal = validate_proposal(files)
+            for item in parsed_files
+        ])
+        if expected_digest is not None and not hmac.compare_digest(proposal.sha256, str(expected_digest)):
+            raise PermanentTaskError("source_proposal_digest_mismatch")
+    except PermanentTaskError:
+        raise
+    except RuntimeError:
+        raise PermanentTaskError("repository_allowlist_invalid") from None
     except (ValidationError, KeyError, TypeError, ValueError, ProposalValidationError):
         raise PermanentTaskError("invalid_proposal_input") from None
 
@@ -125,12 +185,19 @@ def run_proposal_validation_task(context: TaskExecutionContext) -> dict:
     result: dict[str, Any] = {
         "status": "passed" if suite.passed else "failed",
         "artifact_sha256": proposal.sha256,
+        "repository": repository,
+        "base_sha": base_sha,
         "paths": list(proposal.paths),
         "checks": safe_checks,
         "attestation": None,
     }
     if suite.passed:
-        signed = sign_validation_suite_result(suite, attestation_key=signing_key)
+        signed = sign_validation_suite_result(
+            suite,
+            attestation_key=signing_key,
+            repository=repository,
+            base_sha=base_sha,
+        )
         result["attestation"] = {
             "payload": asdict(signed.payload),
             "signature_hex": signed.signature_hex,
@@ -154,6 +221,8 @@ def run_proposal_validation_task(context: TaskExecutionContext) -> dict:
                 for name, check in safe_checks.items()
             },
             "task_id": task.id,
+            "repository": repository,
+            "base_sha": base_sha,
         },
     )
     context.db.commit()

@@ -100,6 +100,8 @@ def sign_validation_suite_result(
     result: ProposalValidationSuiteResult,
     *,
     attestation_key: bytes,
+    repository: str | None = None,
+    base_sha: str | None = None,
 ) -> SignedAttestation:
     """Sign successful validation evidence inside a trusted sandbox controller.
 
@@ -118,5 +120,7 @@ def sign_validation_suite_result(
         regression_suite_passed=True,
         issued_at=int(time.time()),
         nonce=secrets.token_urlsafe(24),
+        repository=repository,
+        base_sha=base_sha,
     )
     return sign_attestation(payload, attestation_key)
