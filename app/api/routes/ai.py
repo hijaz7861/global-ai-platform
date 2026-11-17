@@ -37,6 +37,13 @@ async def chat(
             status_code=422,
             detail=f"max_output_tokens cannot exceed configured limit ({settings.ai_max_output_tokens})",
         )
+
+    # Reject credential-like prompts before router construction or quota reservation.
+    if detect_sensitive_data_types(payload.prompt):
+        raise HTTPException(
+            status_code=422,
+            detail="Prompt contains a credential-like value and was not sent to a model provider",
+        )
     try:
         model_router = create_model_router(settings)
     except ValueError as exc:
@@ -56,12 +63,6 @@ async def chat(
     except ModelRouteError as exc:
         code = 503 if "not configured" in str(exc).lower() else 422
         raise HTTPException(status_code=code, detail=str(exc)) from None
-
-    if detect_sensitive_data_types(payload.prompt):
-        raise HTTPException(
-            status_code=422,
-            detail="Prompt contains a credential-like value and was not sent to a model provider",
-        )
 
     if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
         raise HTTPException(
