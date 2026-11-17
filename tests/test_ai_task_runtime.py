@@ -575,3 +575,76 @@ def test_default_worker_registers_proposal_validation_handler():
     handlers = _default_context_handlers()
     assert "proposal.validate" in handlers
     assert callable(handlers["proposal.validate"])
+
+
+def test_proposal_generation_task_api_is_disabled_by_default(api_client, monkeypatch):
+    token, organization_id = _owner(api_client)
+    monkeypatch.setattr(settings, "ai_proposal_generation_enabled", False)
+    response = api_client.post(
+        f"/api/v1/organizations/{organization_id}/ai/tasks",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Idempotency-Key": "proposal-generate-disabled-01",
+        },
+        json={
+            "task_type": "proposal.generate",
+            "title": "Generate repository proposal",
+            "input_payload": {
+                "repository": "acme/platform",
+                "goal": "Add a safe status endpoint",
+            },
+        },
+    )
+    assert response.status_code == 503
+    assert "disabled" in response.json()["detail"].lower()
+
+
+def test_proposal_generation_task_api_validates_allowlist_and_queues(api_client, monkeypatch):
+    token, organization_id = _owner(api_client)
+    monkeypatch.setattr(settings, "ai_proposal_generation_enabled", True)
+    monkeypatch.setattr(settings, "environment", "staging")
+    monkeypatch.setattr(settings, "database_url", "postgresql+psycopg://test")
+    monkeypatch.setattr(settings, "ai_live_calls_enabled", True)
+    monkeypatch.setattr(settings, "ai_daily_request_limit", 5)
+    monkeypatch.setattr(settings, "ai_max_output_tokens", 512)
+    monkeypatch.setattr(settings, "github_app_id", "12345")
+    monkeypatch.setattr(settings, "github_app_installation_id", "67890")
+    monkeypatch.setattr(settings, "github_app_private_key_pem", "mocked-private-key")
+    monkeypatch.setattr(settings, "github_repository_allowlist", "acme/platform")
+
+    from app.api.routes import ai_tasks
+
+    class FakeRouter:
+        def select(self, **kwargs):
+            assert kwargs["task_type"] == "analyze"
+            assert kwargs["data_class"] == "internal"
+
+    monkeypatch.setattr(ai_tasks, "create_model_router", lambda config: FakeRouter())
+    url = f"/api/v1/organizations/{organization_id}/ai/tasks"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Idempotency-Key": "proposal-generate-enabled-01",
+    }
+    invalid = api_client.post(url, headers=headers, json={
+        "task_type": "proposal.generate",
+        "title": "Generate repository proposal",
+        "input_payload": {
+            "repository": "other/repository",
+            "goal": "Add a safe status endpoint",
+        },
+    })
+    assert invalid.status_code == 403
+
+    valid = api_client.post(url, headers=headers, json={
+        "task_type": "proposal.generate",
+        "title": "Generate repository proposal",
+        "input_payload": {
+            "repository": "acme/platform",
+            "goal": "Add a safe status endpoint",
+            "model_route": "primary",
+            "max_output_tokens": 512,
+        },
+    })
+    assert valid.status_code == 202, valid.text
+    assert valid.json()["status"] == "queued"
+    assert valid.json()["max_attempts"] == 1
