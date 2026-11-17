@@ -433,16 +433,20 @@ where commit heads, CI runs, branch freshness or migration information differ.
 - PR #51 PostgreSQL-backed provider circuit breaker remains Draft at
   `0207cf1c44adb2b82bdb3550a950aac7e2be2689`; exact-head run #862 passed all
   five jobs. It is an opt-in draft feature, not part of master.
-- PR #52 outbound secret-pattern guard remains Draft at
-  `ab542c506a56eec119a788f075c08d39dde07729`. Exact-head run #863 completed
+- PR #52's agent-only secret guard was closed unmerged as superseded after its
+  functionality was carried forward and extended into PR #53. Its prior exact-head
+  run #863 had passed on `ab542c506a56eec119a788f075c08d39dde07729`.
+- PR #53 secret-pattern egress guard remains Draft at
+  `774fe99cba9920c6d18529b5b07f19c38142eab7`. Exact-head run #866 completed
   SUCCESS on this SHA: all five jobs passed; Python 3.11, 3.12 and 3.13 each
-  reported 325 passed / 15 skipped; PostgreSQL integration reported 15 passed;
-  Ruff, migration checks, dependency audit and Bandit passed. The guard blocks
-  known credential patterns in durable agent prompts before quota reservation/
-  provider egress; it is not comprehensive DLP and does not cover regular chat.
+  reported 326 passed / 15 skipped; PostgreSQL integration reported 15 passed;
+  Ruff, compilation, Alembic migration checks, dependency audit and Bandit passed.
+  The guard covers durable agent prompts and the regular organization AI chat
+  endpoint before quota reservation/provider egress. It remains narrow pattern-
+  based detection, not comprehensive DLP.
 
 GitHub review and inline-thread APIs returned zero submitted reviews and zero
-inline threads for PRs #20, #22, #23, #43, #44, and #48–#52 in this inspection.
+inline threads for PRs #20, #22, #23, #43, #44, and #48–#53 in this inspection.
 CI success is not owner approval.
 
 ### Hatchable and release safety
@@ -461,8 +465,8 @@ service was performed.
 2. Reconcile the role/vertical dependency chain, beginning with PR #23's stale,
    currently non-mergeable base; do not independently refresh or merge downstream
    verticals out of order.
-3. Review and extend the narrow agent egress guard, then complete broader DLP,
-   provider-health administration, durable checkpoints/resumption and evaluation.
+3. Keep PR #53 Draft pending owner review; continue broader DLP, provider-health
+   administration, durable checkpoints/resumption and evaluation.
 4. Continue portable runtime, property/workforce/education, global commerce,
    complete export/import, backup/restore and independent-host acceptance work.
 5. Preserve the live Hatchable app and current repository identity until every
