@@ -436,3 +436,41 @@ def test_agent_does_not_persist_result_by_default(agent_context, monkeypatch):
         query="transient answer",
         limit=5,
     ) == []
+
+
+
+def test_agent_blocks_secret_in_goal_before_quota_reservation_or_provider_call(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    context.task.input_payload["goal"] = "Review this repository token: ghp_" + "A" * 36
+    router_instance = FakeRouter([])
+    _patch_runner(monkeypatch, router_instance)
+
+    monkeypatch.setattr(
+        runner,
+        "_reserve_model_call",
+        lambda *args, **kwargs: pytest.fail("secret-bearing prompt must be blocked before quota reservation"),
+    )
+
+    with pytest.raises(AgentRunError) as exc:
+        asyncio.run(run_agent_task(context))
+
+    assert exc.value.error_code == "sensitive_data_detected"
+    assert router_instance.calls == []
+
+
+def test_agent_does_not_forward_secret_returned_by_read_only_tool(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    context.task.input_payload["max_steps"] = 2
+    router_instance = FakeRouter([
+        _model_response({"action": "tool", "tool": "organization.profile", "arguments": {}}),
+    ])
+    _patch_runner(monkeypatch, router_instance)
+    secret = "ghp_" + "B" * 36
+    monkeypatch.setattr(runner, "execute_tool", lambda *args, **kwargs: {"note": secret})
+
+    with pytest.raises(AgentRunError) as exc:
+        asyncio.run(run_agent_task(context))
+
+    assert exc.value.error_code == "sensitive_data_detected"
+    assert len(router_instance.calls) == 1
+    assert secret not in router_instance.calls[0]["prompt"]
