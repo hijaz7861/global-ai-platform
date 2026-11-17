@@ -204,7 +204,7 @@ async def _complete_model_call(
     except Exception:
         if health_enabled:
             release_provider_attempt(
-                context.db, provider_name=profile.provider_name, model_name=profile.model_name
+                context.db, provider_name=profile.provider_name, model_name=profile.model_name, route=profile.route
             )
         raise
 
@@ -281,6 +281,7 @@ async def _complete_model_call(
             raise
 
         try:
+            call_counter[0] += 1
             result = await model_router.complete(
                 route="fallback",
                 task_type=payload.task_type,
@@ -340,13 +341,13 @@ async def _complete_model_call(
         )
         if health_enabled:
             release_provider_attempt(
-                context.db, provider_name=profile.provider_name, model_name=profile.model_name
+                context.db, provider_name=profile.provider_name, model_name=profile.model_name, route=profile.route
             )
         raise AgentRunError("model_call_failed") from None
 
     if health_enabled:
         record_provider_success(
-            context.db, provider_name=profile.provider_name, model_name=profile.model_name
+            context.db, provider_name=profile.provider_name, model_name=profile.model_name, route=profile.route
         )
     return result, request_id, call_counter[0]
 
