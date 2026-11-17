@@ -105,6 +105,9 @@ def run_proposal_validation_task(context: TaskExecutionContext) -> dict:
     except (RuntimeError, OSError, ValueError):
         raise PermanentTaskError("sandbox_execution_failed") from None
 
+    if suite.artifact_sha256 != proposal.sha256:
+        raise PermanentTaskError("sandbox_artifact_digest_mismatch")
+
     checks = {
         "unit": suite.tests,
         "security": suite.security_scan,
