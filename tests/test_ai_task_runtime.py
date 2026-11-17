@@ -566,6 +566,8 @@ def test_proposal_validation_task_api_validates_input_and_queues_once(api_client
         "task_type": "proposal.validate",
         "title": "Validate proposed change",
         "input_payload": {
+            "repository": "acme/platform",
+            "base_sha": "1" * 40,
             "files": [{"path": "docs/change.md", "content": "candidate"}]
         },
     })
