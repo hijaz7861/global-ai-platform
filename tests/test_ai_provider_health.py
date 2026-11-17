@@ -199,3 +199,17 @@ def test_circuit_state_isolated_between_primary_and_fallback_routes(db):
     )
     assert primary["state"] == "open"
     assert fallback["state"] == "closed"
+
+
+def test_healthy_closed_provider_does_not_append_redundant_success_events(db):
+    record_provider_success(
+        db,
+        provider_name="healthy-provider",
+        model_name="healthy-model",
+        route="primary",
+        now=datetime(2026, 11, 17, 12, 0, tzinfo=timezone.utc),
+    )
+    count = db.scalar(
+        select(AuditEvent.id).where(AuditEvent.entity_type == "ai_provider_health")
+    )
+    assert count is None
