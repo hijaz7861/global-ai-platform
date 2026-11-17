@@ -50,6 +50,8 @@ def _attestation(proposal):
         regression_suite_passed=True,
         issued_at=NOW,
         nonce="attestation-nonce-0001",
+        repository="acme/platform",
+        base_sha="1" * 40,
     )
     return sign_attestation(payload, ATTESTATION_KEY)
 
