@@ -51,6 +51,13 @@ def create_approved_draft_pull_request(
     content risk classification. The approval action is specifically bound to
     repository.pull_request.create; it does not authorize merge or deployment.
     """
+    if (
+        signed_attestation.payload.repository != repository
+        or not isinstance(signed_attestation.payload.base_sha, str)
+        or len(signed_attestation.payload.base_sha) != 40
+    ):
+        raise RepositoryWriteError("sandbox_attestation_repository_binding_required")
+
     try:
         with tempfile.TemporaryDirectory(prefix="gai-approved-proposal-") as workspace:
             materialize_proposal(proposal, workspace)
