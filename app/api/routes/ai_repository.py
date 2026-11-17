@@ -241,7 +241,7 @@ def create_human_approved_draft_pr(
     except RepositoryWriteDenied:
         db.rollback()
         raise HTTPException(status_code=403, detail="Sandbox evidence or human approval was rejected") from None
-    except (GitHubAppAuthError, RepositoryWriteError):
+    except (GitHubAppAuthError, RepositoryWriteError) as exc:
         db.rollback()
         if "audit_event" in locals():
             try:
@@ -253,6 +253,11 @@ def create_human_approved_draft_pr(
                 db.commit()
             except Exception:
                 db.rollback()
+        if str(exc) == "repository_base_commit_mismatch":
+            raise HTTPException(
+                status_code=409,
+                detail="Repository base changed after validation; regenerate and revalidate the proposal",
+            ) from None
         raise HTTPException(status_code=502, detail="Governed GitHub draft PR operation failed") from None
     except (AttributeError, RuntimeError, ValueError):
         db.rollback()
