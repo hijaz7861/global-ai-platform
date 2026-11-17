@@ -4,14 +4,12 @@ from __future__ import annotations
 from dataclasses import asdict
 import json
 from pathlib import Path
-import re
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 
 from app.ai.change_proposals import ProposedFile, ProposalValidationError, validate_proposal
-from app.ai.evidence_attestation import sign_attestation
 from app.ai.proposal_sandbox import run_proposal_validation_suite, sign_validation_suite_result
 from app.ai.sandbox_runner import DockerSandboxRunner
 from app.ai.runtime.tasks import PermanentTaskError, TaskExecutionContext
@@ -20,11 +18,19 @@ from app.core.config import settings
 from app.models import Membership
 
 
+class ProposedFileInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    path: str = Field(min_length=1, max_length=240)
+    content: str = Field(max_length=65_536)
+    mode: Literal["100644"] = "100644"
+
+
 class ProposalValidationInput(BaseModel):
     """Only proposal content is task-controlled; commands/tests/image are operator-controlled."""
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
-    files: list[dict[str, Any]] = Field(min_length=1, max_length=20)
+    files: list[ProposedFileInput] = Field(min_length=1, max_length=20)
 
 
 def _runtime_configuration() -> tuple[DockerSandboxRunner, Path, dict[str, list[str]], bytes]:
@@ -45,7 +51,7 @@ def _runtime_configuration() -> tuple[DockerSandboxRunner, Path, dict[str, list[
             not isinstance(commands[name], list)
             or not commands[name]
             or len(commands[name]) > 64
-            or any(not isinstance(arg, str) or not arg or len(arg) > 2048 or "\\x00" in arg for arg in commands[name])
+            or any(not isinstance(arg, str) or not arg or len(arg) > 2048 or "\x00" in arg for arg in commands[name])
             for name in ("unit", "security", "regression")
         ):
             raise ValueError
@@ -77,17 +83,9 @@ def run_proposal_validation_task(context: TaskExecutionContext) -> dict:
     try:
         payload = ProposalValidationInput.model_validate(task.input_payload)
         files = [
-            ProposedFile(
-                path=item["path"],
-                content=item["content"],
-                mode=item.get("mode", "100644"),
-            )
+            ProposedFile(path=item.path, content=item.content, mode=item.mode)
             for item in payload.files
-            if set(item).issubset({"path", "content", "mode"})
-            and "path" in item and "content" in item
         ]
-        if len(files) != len(payload.files):
-            raise ValueError
         proposal = validate_proposal(files)
     except (ValidationError, KeyError, TypeError, ValueError, ProposalValidationError):
         raise PermanentTaskError("invalid_proposal_input") from None
