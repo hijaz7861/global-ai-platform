@@ -76,7 +76,7 @@ class FakeRouter:
 
     def select(self, **kwargs):
         self.selections.append(kwargs)
-        return SimpleNamespace(provider_name=kwargs["route"], model_name=f"{kwargs['route']}-model")
+        return SimpleNamespace(route=kwargs["route"], provider_name=kwargs["route"], model_name=str(kwargs["route"]) + "-model")
 
     async def complete(self, **kwargs):
         self.calls.append(kwargs)
