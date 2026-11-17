@@ -573,7 +573,9 @@ def test_proposal_validation_task_api_validates_input_and_queues_once(api_client
 def test_default_worker_registers_proposal_validation_handler():
     from app.ai.runtime.worker import _default_context_handlers
     handlers = _default_context_handlers()
+    assert "proposal.generate" in handlers
     assert "proposal.validate" in handlers
+    assert callable(handlers["proposal.generate"])
     assert callable(handlers["proposal.validate"])
 
 
