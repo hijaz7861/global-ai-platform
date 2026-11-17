@@ -14,6 +14,7 @@ from urllib.parse import quote
 from uuid import uuid4
 
 import httpx
+import hmac
 
 from app.ai.change_proposals import ProposalValidationError, ValidatedProposal, materialize_proposal
 
@@ -111,6 +112,7 @@ class GitHubRepositoryWriter:
         repository: str,
         title: str,
         summary: str,
+        expected_base_sha: str | None = None,
     ) -> DraftPullRequest:
         """Publish a verified proposal on a new branch and open a draft PR.
 
@@ -154,6 +156,11 @@ class GitHubRepositoryWriter:
         base_sha = (ref_data.get("object") or {}).get("sha")
         if not isinstance(base_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", base_sha):
             raise RepositoryWriteError("invalid_base_commit")
+        if expected_base_sha is not None:
+            if not re.fullmatch(r"[0-9a-f]{40}", expected_base_sha):
+                raise RepositoryWriteError("invalid_expected_base_commit")
+            if not hmac.compare_digest(base_sha, expected_base_sha):
+                raise RepositoryWriteError("repository_base_commit_mismatch")
         commit_data = self._request("GET", f"{api_root}/git/commits/{base_sha}")
         base_tree = (commit_data.get("tree") or {}).get("sha")
         if not isinstance(base_tree, str) or not re.fullmatch(r"[0-9a-f]{40}", base_tree):
