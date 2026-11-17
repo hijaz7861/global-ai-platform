@@ -51,6 +51,8 @@ def create_approved_draft_pull_request(
     content risk classification. The approval action is specifically bound to
     repository.pull_request.create; it does not authorize merge or deployment.
     """
+    if not isinstance(signed_attestation, SignedAttestation):
+        raise RepositoryWriteError("sandbox_attestation_missing")
     if (
         signed_attestation.payload.repository != repository
         or not isinstance(signed_attestation.payload.base_sha, str)
