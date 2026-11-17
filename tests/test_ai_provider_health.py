@@ -177,3 +177,25 @@ def test_audit_state_contains_only_sanitized_fingerprints_and_allowlisted_fields
     }
     assert "api_key" not in event.details
     assert "prompt" not in event.details
+
+
+def test_circuit_state_isolated_between_primary_and_fallback_routes(db):
+    now = datetime(2026, 11, 17, 12, 0, tzinfo=timezone.utc)
+    record_provider_failure(
+        db,
+        provider_name="same-provider",
+        model_name="same-model",
+        route="primary",
+        retryable=True,
+        failure_threshold=1,
+        cooldown_seconds=30,
+        now=now,
+    )
+    primary = get_provider_health_snapshot(
+        db, provider_name="same-provider", model_name="same-model", route="primary"
+    )
+    fallback = get_provider_health_snapshot(
+        db, provider_name="same-provider", model_name="same-model", route="fallback"
+    )
+    assert primary["state"] == "open"
+    assert fallback["state"] == "closed"
