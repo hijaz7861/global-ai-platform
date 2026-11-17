@@ -204,7 +204,7 @@ class GitHubRepositoryReader:
             if blob.get("encoding") != "base64" or not isinstance(blob.get("content"), str):
                 continue
             try:
-                raw = base64.b64decode(blob["content"], validate=True)
+                raw = base64.b64decode("".join(blob["content"].split()), validate=True)
             except (ValueError, TypeError):
                 continue
             if len(raw) != expected_size or b"\x00" in raw:
