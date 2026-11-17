@@ -325,7 +325,7 @@ The following foundations are implemented in `feat/ai-agent-operating-layer-desi
 - a static six-tool read-only gateway with strict input schemas, tenant-aware handlers, fail-closed unknown-tool handling, approved-skill-only retrieval, and audit events;
 - a bounded single-agent JSON-decision loop connected to the model router and read-only gateway, submitted through durable tasks and run by a standalone polling worker command.
 
-Still not implemented: an external worker supervisor/health service, forceful interruption of in-flight provider HTTP calls, PostgreSQL-backed nonce replacement, per-turn durable agent checkpoints/resumption, multi-agent planning/role orchestration, vector/embedding retrieval, memory retention and hard deletion, automatic skill selection, write-capable tools or memory writes, provider token/cost reservation, provider health/circuit breaking, automatic failover, DLP, and the full evaluation/observability pipeline. Agent tasks are deliberately single-attempt to avoid automatic replay of paid model calls. Do not describe these as complete.
+Still not implemented: an external worker supervisor/health service, forceful interruption of in-flight provider HTTP calls, PostgreSQL-backed nonce replacement, per-turn durable agent checkpoints/resumption, multi-agent planning/role orchestration, vector/embedding retrieval, memory retention and hard deletion, automatic skill selection, write-capable tools or memory writes, provider token/cost reservation, provider health/circuit breaking, automatic failover, comprehensive DLP/content classification (the narrow outbound secret-pattern guard described in Section 20 is not a full DLP solution), and the full evaluation/observability pipeline. Agent tasks are deliberately single-attempt to avoid automatic replay of paid model calls. Do not describe these as complete.
 
 
 ## 15. Model capability router (initial implementation)
@@ -369,3 +369,29 @@ The task runtime now writes a durable outbox record alongside each integration-r
 Migration `0034_postgres_approval_nonces` adds the shared `consumed_approval_nonces` table. `app.ai.postgres_nonce_store.PostgresNonceStore` performs retention cleanup and a conflict-safe insert in one PostgreSQL transaction. The primary-key uniqueness constraint and `ON CONFLICT DO NOTHING RETURNING` ensure that concurrent workers cannot both consume the same nonce. The signed approval policy helper now accepts a nonce-consumer protocol, so callers can inject either the existing SQLite store (single-host local development) or the PostgreSQL store (shared deployment).
 
 The PostgreSQL store requires the migration to be applied and a shared PostgreSQL engine to be injected. Storage failures propagate and fail closed. This does not yet provide trusted human identity issuance, approval audit persistence, an HTTP release API, or deployment execution. The test added here validates the PostgreSQL SQL shape and dialect guard; the dedicated PostgreSQL CI integration run remains the authoritative database/concurrency verification.
+
+
+
+## 20. Outbound secret-pattern guard — feature branch
+
+The durable `agent.run` loop now scans the complete serialized prompt immediately
+after context construction and before token/request quota reservation or provider
+completion. The scan therefore covers the user goal, prior tool arguments/results,
+approved skill guidance and retrieved memory that are actually included in the
+outbound prompt.
+
+The detector recognizes high-confidence patterns for private-key PEM headers,
+common GitHub/AWS/Slack/Stripe/Google credentials, bearer authorization headers,
+JWT-shaped tokens, credential assignments and database connection strings. It
+returns category names only. On a match, the task fails with the generic
+`sensitive_data_detected` code; the matched value is not added to an audit event,
+error message or provider request. Regression tests cover both a secret in the
+initial goal and a secret returned by a read-only tool before the next model turn.
+
+**Scope and limitations:** this guard applies only to the durable `agent.run`
+provider egress path. It is pattern-based, does not detect unknown credentials,
+does not classify general PII or confidential business content, and does not
+inspect images, arbitrary attachments or data that never enters the agent prompt.
+It blocks rather than redacts. The caller-declared `public`/`internal` data
+class remains a policy label, not automatic content inspection. Comprehensive
+DLP, provider-side controls and broader data classification remain release work.
