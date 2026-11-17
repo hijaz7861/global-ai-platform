@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from app.ai.autonomy_gate import GateDecision
