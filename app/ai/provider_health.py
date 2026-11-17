@@ -18,7 +18,10 @@ from app.models import AuditEvent
 _ACTION = "ai.provider.health"
 _ENTITY_TYPE = "ai_provider_health"
 _STATES = {"closed", "open", "half_open"}
-_ERROR_CODES = {"", "retryable", "non_retryable", "timeout", "connection", "http_429", "http_5xx", "probe_abandoned"}
+_ERROR_CODES = {
+    "", "retryable", "non_retryable", "timeout", "connection",
+    "http_429", "http_5xx", "probe_abandoned",
+}
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -194,7 +197,7 @@ def record_provider_failure(
     if not 1 <= cooldown_seconds <= 3600:
         raise ValueError("Circuit cooldown must be between 1 and 3600 seconds")
     current = _now(now)
-    key = _health_key(provider_name, model_name)
+    key = _health_key(provider_name, model_name, route)
     _lock_provider(db, key)
     latest = _latest_event(db, key)
     previous = _read_state(latest)
@@ -223,7 +226,7 @@ def record_provider_success(
 ) -> None:
     """Close the circuit and reset the consecutive failure count after success."""
     current = _now(now)
-    key = _health_key(provider_name, model_name)
+    key = _health_key(provider_name, model_name, route)
     _lock_provider(db, key)
     latest = _latest_event(db, key)
     _append_state(
@@ -244,7 +247,7 @@ def release_provider_attempt(
 ) -> None:
     """Release a half-open probe when quota or local policy prevents the call."""
     current = _now(now)
-    key = _health_key(provider_name, model_name)
+    key = _health_key(provider_name, model_name, route)
     _lock_provider(db, key)
     latest = _latest_event(db, key)
     previous = _read_state(latest)
@@ -266,7 +269,7 @@ def get_provider_health_snapshot(
     route: str = "",
 ) -> dict[str, Any]:
     """Return sanitized operational state without exposing the configured model name."""
-    key = _health_key(provider_name, model_name)
+    key = _health_key(provider_name, model_name, route)
     state = _read_state(_latest_event(db, key))
     return {
         "provider_name": provider_name.strip().lower(),
