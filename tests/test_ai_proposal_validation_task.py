@@ -22,20 +22,23 @@ class FakeMembership:
 
 
 class FakeDB:
-    def __init__(self, membership=None):
+    def __init__(self, membership=None, source_task=None):
         self.membership = membership or FakeMembership()
+        self.source_task = source_task
+        self.scalar_calls = 0
         self.commits = 0
 
     def scalar(self, statement):
-        return self.membership
+        self.scalar_calls += 1
+        return self.membership if self.scalar_calls == 1 else self.source_task
 
     def commit(self):
         self.commits += 1
 
 
 class FakeContext:
-    def __init__(self, membership=None):
-        self.db = FakeDB(membership)
+    def __init__(self, membership=None, source_task=None):
+        self.db = FakeDB(membership, source_task)
         self.task = SimpleNamespace(
             id="task-proposal-0001",
             organization_id="org-0001",
@@ -78,6 +81,7 @@ def _signed(digest=EXPECTED_DIGEST):
 
 
 def _configure(monkeypatch, suite):
+    monkeypatch.setattr(handler.settings, "github_repository_allowlist", "acme/platform")
     monkeypatch.setattr(
         handler,
         "_runtime_configuration",
@@ -107,6 +111,8 @@ def test_worker_validation_returns_signed_attestation_only_after_all_checks_pass
 
     assert result["status"] == "passed"
     assert result["artifact_sha256"] == EXPECTED_DIGEST
+    assert result["repository"] == "acme/platform"
+    assert result["base_sha"] == "1" * 40
     assert result["attestation"]["payload"]["artifact_sha256"] == EXPECTED_DIGEST
     assert result["attestation"]["payload"]["run_id"] == "run-00000001"
     assert result["attestation"]["signature_hex"] == "b" * 64
