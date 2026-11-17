@@ -76,6 +76,8 @@ def submit_task(
     elif payload.task_type == "proposal.validate":
         if not settings.ai_sandbox_enabled:
             raise HTTPException(status_code=503, detail="Isolated proposal validation is disabled by configuration")
+        if settings.environment.strip().lower() not in {"staging", "production"}:
+            raise HTTPException(status_code=503, detail="Isolated proposal validation requires a trusted runtime")
         if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
             raise HTTPException(status_code=503, detail="Proposal validation tasks require PostgreSQL")
         try:
