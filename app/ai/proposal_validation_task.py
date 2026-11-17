@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import hmac
 import json
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -32,7 +33,12 @@ class ProposalValidationInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     source_task_id: str | None = Field(default=None, min_length=1, max_length=64)
-    repository: str | None = Field(default=None, min_length=3, max_length=201)
+    repository: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=201,
+        pattern=r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$",
+    )
     base_sha: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
     files: list[ProposedFileInput] | None = Field(default=None, min_length=1, max_length=20)
 
@@ -139,6 +145,8 @@ def run_proposal_validation_task(context: TaskExecutionContext) -> dict:
             raise PermanentTaskError("source_proposal_digest_mismatch")
     except PermanentTaskError:
         raise
+    except RuntimeError:
+        raise PermanentTaskError("repository_allowlist_invalid") from None
     except (ValidationError, KeyError, TypeError, ValueError, ProposalValidationError):
         raise PermanentTaskError("invalid_proposal_input") from None
 
