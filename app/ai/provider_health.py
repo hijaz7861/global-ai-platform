@@ -1,6 +1,6 @@
 """PostgreSQL-serialized provider circuit state stored in the append-only audit log.
 
-Only a provider name and a one-way model fingerprint are persisted. Raw model names,
+Only a one-way fingerprint of provider, model and route is persisted. Raw model names,
 credentials, prompts, provider URLs, and response bodies are never written to this log.
 """
 from __future__ import annotations
