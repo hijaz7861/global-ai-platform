@@ -99,7 +99,7 @@ def test_worker_validation_returns_signed_attestation_only_after_all_checks_pass
     assert result["attestation"]["payload"]["run_id"] == "run-00000001"
     assert result["attestation"]["signature_hex"] == "b" * 64
     assert set(result["checks"]) == {"unit", "security", "regression"}
-    assert context.heartbeats == 2
+    assert context.heartbeats == 4
     assert context.db.commits == 1
     assert audit[0]["action"] == "ai.proposal.validation.completed"
 
@@ -150,3 +150,29 @@ def test_worker_validation_does_not_sign_failed_suite(monkeypatch):
 
     assert result["attestation"] is None
     assert signed_calls == []
+
+def test_sandbox_runtime_is_disabled_by_default(monkeypatch):
+    monkeypatch.setattr(handler.settings, "ai_sandbox_enabled", False)
+    with pytest.raises(PermanentTaskError, match="sandbox_validation_disabled"):
+        handler._runtime_configuration()
+
+
+def test_sandbox_runtime_rejects_untrusted_environment(monkeypatch):
+    monkeypatch.setattr(handler.settings, "ai_sandbox_enabled", True)
+    monkeypatch.setattr(handler.settings, "environment", "development")
+    with pytest.raises(PermanentTaskError, match="sandbox_requires_trusted_runtime"):
+        handler._runtime_configuration()
+
+
+def test_sandbox_runtime_requires_exact_operator_command_set(monkeypatch, tmp_path):
+    from pydantic import SecretStr
+
+    monkeypatch.setattr(handler.settings, "ai_sandbox_enabled", True)
+    monkeypatch.setattr(handler.settings, "environment", "staging")
+    monkeypatch.setattr(handler.settings, "ai_sandbox_image", "registry.test/runner@sha256:" + "a" * 64)
+    monkeypatch.setattr(handler.settings, "ai_sandbox_trusted_test_directory", str(tmp_path))
+    monkeypatch.setattr(handler.settings, "ai_sandbox_validation_commands", '{"unit":["pytest"],"security":["scanner"]}')
+    monkeypatch.setattr(handler.settings, "ai_sandbox_attestation_hmac_key", SecretStr("k" * 32))
+
+    with pytest.raises(PermanentTaskError, match="sandbox_runtime_invalid"):
+        handler._runtime_configuration()
