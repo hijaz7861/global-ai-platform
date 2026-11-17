@@ -3,11 +3,17 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.ai.change_proposals import ProposedFile, validate_proposal
 from app.ai.evidence_attestation import SandboxAttestation, SignedAttestation
 from app.ai.proposal_sandbox import ProposalValidationSuiteResult
 from app.ai.sandbox_runner import SandboxResult
 from app.ai.runtime.tasks import PermanentTaskError
 from app.ai import proposal_validation_task as handler
+
+
+EXPECTED_DIGEST = validate_proposal([
+    ProposedFile(path="docs/worker-validation.md", content="Validated proposal\\n")
+]).sha256
 
 
 @dataclass
@@ -50,16 +56,16 @@ def _suite(passed=True):
     ok = SandboxResult(0, "ignored", "", False, False, 0.1)
     bad = SandboxResult(1, "ignored", "ignored", False, False, 0.2)
     return ProposalValidationSuiteResult(
-        artifact_sha256="a" * 64,
+        artifact_sha256=EXPECTED_DIGEST,
         tests=ok,
         security_scan=ok if passed else bad,
         regression=ok,
     )
 
 
-def _signed():
+def _signed(digest=EXPECTED_DIGEST):
     payload = SandboxAttestation(
-        artifact_sha256="a" * 64,
+        artifact_sha256=digest,
         run_id="run-00000001",
         sandbox_id="sandbox-000001",
         tests_passed=True,
@@ -87,7 +93,7 @@ def _configure(monkeypatch, suite):
         return suite
 
     monkeypatch.setattr(handler, "run_proposal_validation_suite", run_suite)
-    monkeypatch.setattr(handler, "sign_validation_suite_result", lambda *a, **kw: _signed())
+    monkeypatch.setattr(handler, "sign_validation_suite_result", lambda suite, **kw: _signed(suite.artifact_sha256))
     audit = []
     monkeypatch.setattr(handler, "record_audit_event", lambda *a, **kw: audit.append(kw))
     return audit
@@ -100,7 +106,8 @@ def test_worker_validation_returns_signed_attestation_only_after_all_checks_pass
     result = handler.run_proposal_validation_task(context)
 
     assert result["status"] == "passed"
-    assert result["artifact_sha256"] == "a" * 64
+    assert result["artifact_sha256"] == EXPECTED_DIGEST
+    assert result["attestation"]["payload"]["artifact_sha256"] == EXPECTED_DIGEST
     assert result["attestation"]["payload"]["run_id"] == "run-00000001"
     assert result["attestation"]["signature_hex"] == "b" * 64
     assert set(result["checks"]) == {"unit", "security", "regression"}
