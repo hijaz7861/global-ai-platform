@@ -20,15 +20,26 @@
 Use environment variables documented in `.env.example`. Set `AI_LIVE_CALLS_ENABLED=true` only when external calls and charges are intentionally accepted. Configure a positive `AI_DAILY_REQUEST_LIMIT`, optionally set `AI_DAILY_TOKEN_LIMIT` for a conservative rolling 24-hour agent token-reservation cap, keep `AI_MAX_OUTPUT_TOKENS` low, and use a secret manager for deployed API keys. The token estimate reserves UTF-8 prompt bytes plus the requested maximum output tokens; it is deliberately conservative and is not a provider-billing meter. Failed attempts remain reserved for the rolling window, preventing retries from bypassing the budget.
 
 ## Remaining Universal AI Connector Hub work
-The inbound MCP endpoint, runtime security gateway, encrypted secret-manager integration, automatic provider failover, tenant cost budgets, expanded capability-scoped tool permissions, OAuth/webhook lifecycle and staged release automation remain incomplete. Explicit capability-aware text routing and an internal static read-only tool gateway are implemented. No public MCP endpoint or production deployment is enabled.
+The inbound MCP endpoint, runtime security gateway, encrypted secret-manager integration, health-based provider scoring beyond the circuit breaker, cost-aware routing, expanded capability-scoped tool permissions, OAuth/webhook lifecycle and staged release automation remain incomplete. Explicit capability-aware text routing and an internal static read-only tool gateway are implemented. No public MCP endpoint or production deployment is enabled.
 
 ## Current limitations
 - Provider selection is explicit by default. An opt-in `AI_AUTO_FAILOVER_ENABLED=true` allows the agent runtime to retry on the configured fallback only after a retryable primary timeout, connection failure, HTTP 429, or HTTP 5xx. Authentication/other 4xx, invalid responses, policy failures, and missing/unauthorized fallback routes do not trigger failover. Each fallback attempt consumes a separate organization quota reservation. The client-declared data class is a policy hint, not automatic DLP or trusted content classification.
-- Provider routing supports text generation only. Native Anthropic and Gemini adapters are integrated. The agent loop uses strict JSON decisions and a local static read-only tool gateway rather than native provider function-calling. Task input may explicitly set `remember_result=true` to save the final answer as a user-private, sensitive, unverified 30-day session-summary memory; the default is false, and this opt-in never creates organization-shared memory. Failover is request-error-driven and opt-in; there is no health-based provider scoring, circuit breaker, cost optimization, or automatic provider selection.
+- Provider routing supports text generation only. Native Anthropic and Gemini adapters are integrated. The agent loop uses strict JSON decisions and a local static read-only tool gateway rather than native provider function-calling. Task input may explicitly set `remember_result=true` to save the final answer as a user-private, sensitive, unverified 30-day session-summary memory; the default is false, and this opt-in never creates organization-shared memory. Failover is request-error-driven and opt-in. The optional PostgreSQL-backed circuit breaker can skip an open primary and serialize one half-open probe across workers; there is still no multi-provider health scoring, cost optimization, or automatic provider selection.
 - Signed approvals are integrated as library-level policy helpers, not issued through a trusted identity service or exposed through a release API.
 - SQLite nonce storage remains single-host only; production callers must explicitly inject `PostgresNonceStore` backed by the shared PostgreSQL engine. The approval policy helper accepts either backend through the `consume_nonce` contract.
 - CI unit tests are not proof of real Docker isolation.
 - No live provider credentials, paid API calls, payments, or deployment are used by tests.
+
+
+## Provider health and circuit breaker (opt-in)
+
+- `AI_PROVIDER_CIRCUIT_BREAKER_ENABLED` defaults to false. Configure a failure threshold, cooldown and half-open probe lease only after PostgreSQL migrations are current.
+- Circuit state is appended to the existing immutable audit log and keyed by a SHA-256 fingerprint of provider plus model. Raw model names, provider URLs, credentials, prompts and response bodies are not persisted.
+- PostgreSQL transaction-scoped advisory locks serialize state transitions and ensure only one worker owns a half-open probe. The runtime refuses to enable this feature on SQLite; SQLite is used only for deterministic unit tests.
+- Retryable timeout/connection/HTTP 429/5xx failures increment the consecutive-failure count. Reaching the configured threshold opens the circuit for the cooldown. One worker may probe after expiry; success closes and resets the circuit. Non-retryable errors do not poison provider health.
+- When `AI_AUTO_FAILOVER_ENABLED=true`, an open primary is skipped and the configured fallback may be used. The fallback has its own circuit state and consumes a separate request/token reservation. If both routes are open, the task fails closed without making a provider call.
+- The internal health snapshot exposes only the provider label, a short model fingerprint, state, failure count and probe/cooldown timestamps. No public administration endpoint is exposed yet.
+- The feature is disabled by default. CI uses mocked providers and does not make live provider calls or incur provider charges.
 
 Do not describe this as a fully autonomous multi-provider agent platform yet. It is a guarded AI adapter and API foundation with separate safety primitives.
 
