@@ -115,6 +115,8 @@ def run_proposal_generation_task(context: TaskExecutionContext) -> dict:
     except ValidationError:
         raise PermanentTaskError("invalid_proposal_generation_input") from None
 
+    if payload.max_output_tokens > settings.ai_max_output_tokens:
+        raise PermanentTaskError("proposal_output_token_limit_exceeded")
     provider, allowlist = _runtime_provider()
     if payload.repository not in allowlist:
         provider.close()
