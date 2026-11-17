@@ -64,6 +64,8 @@ def _latest_event(db: Session, key: str) -> AuditEvent | None:
             AuditEvent.action == _ACTION,
             AuditEvent.entity_type == _ENTITY_TYPE,
             AuditEvent.entity_id == key,
+            AuditEvent.actor_user_id.is_(None),
+            AuditEvent.organization_id.is_(None),
         )
         .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
         .limit(1)
@@ -229,6 +231,10 @@ def record_provider_success(
     key = _health_key(provider_name, model_name, route)
     _lock_provider(db, key)
     latest = _latest_event(db, key)
+    previous = _read_state(latest)
+    if previous["state"] == "closed" and previous["consecutive_failures"] == 0:
+        db.commit()
+        return
     _append_state(
         db, key=key, latest=latest, state="closed",
         consecutive_failures=0, open_until=None, probe_until=None,
