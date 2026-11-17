@@ -6,6 +6,7 @@ import json
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlalchemy import select
 
 from app.ai.agents.runner import _fail_model_call, _finish_model_call, _reserve_model_call
 from app.ai.change_proposals import ProposedFile, ProposalValidationError, validate_proposal
@@ -103,12 +104,10 @@ def _build_generation_prompt(*, goal: str, repository: str, branch: str, commit_
 def run_proposal_generation_task(context: TaskExecutionContext) -> dict:
     """Read an allowlisted repository, ask the configured model for a proposal, and validate it."""
     task = context.task
-    membership = context.db.scalar(
-        __import__("sqlalchemy").select(Membership).where(
-            Membership.user_id == task.created_by_user_id,
-            Membership.organization_id == task.organization_id,
-        )
-    )
+    membership = context.db.scalar(select(Membership).where(
+        Membership.user_id == task.created_by_user_id,
+        Membership.organization_id == task.organization_id,
+    ))
     if membership is None or membership.role not in {"owner", "admin"}:
         raise PermanentTaskError("membership_revoked")
     try:
