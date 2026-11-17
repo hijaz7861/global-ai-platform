@@ -86,14 +86,6 @@ class GitHubAppTokenProvider:
         return self._get_token(repository, scope="read")
 
     def _get_token(self, repository: str, *, scope: str) -> str:
-        """Return a short-lived token with the writer's minimal required permissions."""
-        return self._get_token(repository, scope="write")
-
-    def get_read_token(self, repository: str) -> str:
-        """Return a short-lived contents-read-only token for repository inspection."""
-        return self._get_token(repository, scope="read")
-
-    def _get_token(self, repository: str, *, scope: str) -> str:
         if scope not in {"read", "write"}:
             raise GitHubAppAuthError("github_app_token_scope_invalid")
         if repository not in self._allowed or not _REPOSITORY.fullmatch(repository):
