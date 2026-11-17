@@ -169,6 +169,7 @@ async def _complete_model_call(
             context.db,
             provider_name=profile.provider_name,
             model_name=profile.model_name,
+            route=profile.route,
             probe_lease_seconds=settings.ai_provider_circuit_breaker_probe_lease_seconds,
         ):
             if not (settings.ai_auto_failover_enabled and route == "primary"):
@@ -187,6 +188,7 @@ async def _complete_model_call(
                 context.db,
                 provider_name=profile.provider_name,
                 model_name=profile.model_name,
+                route=profile.route,
                 probe_lease_seconds=settings.ai_provider_circuit_breaker_probe_lease_seconds,
             ):
                 raise AgentRunError("model_fallback_circuit_open")
@@ -227,6 +229,7 @@ async def _complete_model_call(
                 context.db,
                 provider_name=profile.provider_name,
                 model_name=profile.model_name,
+                route=profile.route,
                 retryable=provider_error.retryable,
                 failure_threshold=settings.ai_provider_circuit_breaker_failure_threshold,
                 cooldown_seconds=settings.ai_provider_circuit_breaker_cooldown_seconds,
@@ -255,6 +258,7 @@ async def _complete_model_call(
             context.db,
             provider_name=fallback_profile.provider_name,
             model_name=fallback_profile.model_name,
+            route=fallback_profile.route,
             probe_lease_seconds=settings.ai_provider_circuit_breaker_probe_lease_seconds,
         ):
             raise AgentRunError("model_fallback_circuit_open")
@@ -272,6 +276,7 @@ async def _complete_model_call(
                     context.db,
                     provider_name=fallback_profile.provider_name,
                     model_name=fallback_profile.model_name,
+                    route=fallback_profile.route,
                 )
             raise
 
@@ -295,6 +300,7 @@ async def _complete_model_call(
                     context.db,
                     provider_name=fallback_profile.provider_name,
                     model_name=fallback_profile.model_name,
+                    route=fallback_profile.route,
                     retryable=fallback_error.retryable,
                     failure_threshold=settings.ai_provider_circuit_breaker_failure_threshold,
                     cooldown_seconds=settings.ai_provider_circuit_breaker_cooldown_seconds,
@@ -313,6 +319,7 @@ async def _complete_model_call(
                     context.db,
                     provider_name=fallback_profile.provider_name,
                     model_name=fallback_profile.model_name,
+                    route=fallback_profile.route,
                 )
             raise AgentRunError("model_fallback_failed") from None
 
@@ -321,6 +328,7 @@ async def _complete_model_call(
                 context.db,
                 provider_name=fallback_profile.provider_name,
                 model_name=fallback_profile.model_name,
+                route=fallback_profile.route,
             )
         return result, fallback_request_id, call_counter[0]
     except Exception:
