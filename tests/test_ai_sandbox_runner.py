@@ -91,3 +91,18 @@ def test_runner_rejects_nested_candidate_and_trusted_tests(tmp_path, monkeypatch
             trusted_test_directory=trusted,
             command=["pytest", "/trusted-tests"],
         )
+
+
+def test_runner_rejects_comma_in_docker_mount_paths(tmp_path, monkeypatch):
+    candidate = tmp_path / "candidate"
+    trusted = tmp_path / "trusted,tests"
+    candidate.mkdir()
+    trusted.mkdir()
+    runner = DockerSandboxRunner(image=PINNED_IMAGE)
+    monkeypatch.setattr(runner, "_require_rootless_daemon", lambda: pytest.fail("Docker must not start"))
+    with pytest.raises(ValueError, match="must not contain commas"):
+        runner.run(
+            artifact_directory=candidate,
+            trusted_test_directory=trusted,
+            command=["pytest", "/trusted-tests"],
+        )
