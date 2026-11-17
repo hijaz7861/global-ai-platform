@@ -165,3 +165,38 @@ def test_ai_chat_rejects_confidential_data_before_provider_call(client, monkeypa
     )
     assert response.status_code == 422
     assert "data classification" in response.json()["detail"]
+
+
+
+def test_ai_chat_blocks_secret_patterns_before_quota_or_provider_call(client, monkeypatch):
+    token, org_id = owner(client)
+    monkeypatch.setattr(settings, "ai_live_calls_enabled", True)
+    monkeypatch.setattr(settings, "ai_daily_request_limit", 3)
+    monkeypatch.setattr(settings, "ai_max_output_tokens", 32)
+    calls = {}
+
+    class FakeRouter:
+        def select(self, **kwargs):
+            calls["selected"] = kwargs
+            return object()
+
+        async def complete(self, **kwargs):
+            calls["completed"] = kwargs
+            pytest.fail("credential-bearing chat prompt must not reach a provider")
+
+    monkeypatch.setattr("app.api.routes.ai.create_model_router", lambda config: FakeRouter())
+    monkeypatch.setattr(
+        "app.api.routes.ai.record_audit_event",
+        lambda *args, **kwargs: pytest.fail("blocked prompt must not reserve or audit a provider request"),
+    )
+    secret = "ghp_" + "C" * 36
+    response = client.post(
+        f"/api/v1/organizations/{org_id}/ai/chat",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"prompt": "Summarize this token: " + secret, "max_output_tokens": 8},
+    )
+
+    assert response.status_code == 422
+    assert "credential-like" in response.json()["detail"]
+    assert secret not in response.text
+    assert "completed" not in calls
