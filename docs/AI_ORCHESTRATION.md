@@ -34,7 +34,7 @@ The inbound MCP endpoint, runtime security gateway, encrypted secret-manager int
 ## Provider health and circuit breaker (opt-in)
 
 - `AI_PROVIDER_CIRCUIT_BREAKER_ENABLED` defaults to false. Configure a failure threshold, cooldown and half-open probe lease only after PostgreSQL migrations are current.
-- Circuit state is appended to the existing immutable audit log and keyed by a SHA-256 fingerprint of provider plus model. Raw model names, provider URLs, credentials, prompts and response bodies are not persisted.
+- Circuit state is appended to the existing immutable audit log and keyed by a SHA-256 fingerprint of provider, model and configured route. Raw model names, provider URLs, credentials, prompts and response bodies are not persisted.
 - PostgreSQL transaction-scoped advisory locks serialize state transitions and ensure only one worker owns a half-open probe. The runtime refuses to enable this feature on SQLite; SQLite is used only for deterministic unit tests.
 - Retryable timeout/connection/HTTP 429/5xx failures increment the consecutive-failure count. Reaching the configured threshold opens the circuit for the cooldown. One worker may probe after expiry; success closes and resets the circuit. Non-retryable errors do not poison provider health.
 - When `AI_AUTO_FAILOVER_ENABLED=true`, an open primary is skipped and the configured fallback may be used. The fallback has its own circuit state and consumes a separate request/token reservation. If both routes are open, the task fails closed without making a provider call.
