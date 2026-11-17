@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.agents.schemas import AgentTaskInput
 from app.ai.model_router import ModelRouteError, create_model_router
+from app.ai.proposal_generation_task import ProposalGenerationInput
 from app.ai.proposal_validation_task import ProposalValidationInput
 from app.ai.runtime.schemas import AITaskEventResponse, AITaskResponse, CreateAITaskRequest
 from app.ai.runtime.tasks import (
@@ -17,7 +18,7 @@ from app.ai.runtime.tasks import (
     request_task_cancel,
 )
 from app.api.deps import require_membership
-from app.core.config import settings
+from app.core.config import settings, _parse_github_repository_allowlist
 from app.db import get_db
 from app.models import AITask, AITaskEvent, Membership
 
@@ -85,6 +86,43 @@ def submit_task(
         except ValidationError:
             raise HTTPException(status_code=422, detail="Invalid proposal validation input") from None
         input_payload = proposal_input.model_dump(mode="json")
+    elif payload.task_type == "proposal.generate":
+        if not settings.ai_proposal_generation_enabled:
+            raise HTTPException(status_code=503, detail="Autonomous proposal generation is disabled by configuration")
+        if settings.environment.strip().lower() not in {"staging", "production"}:
+            raise HTTPException(status_code=503, detail="Proposal generation requires a trusted runtime")
+        if not settings.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
+            raise HTTPException(status_code=503, detail="Proposal generation tasks require PostgreSQL")
+        if not settings.ai_live_calls_enabled or settings.ai_daily_request_limit < 1:
+            raise HTTPException(status_code=503, detail="A live AI provider and positive request quota are required")
+        if not settings.github_app_id or not settings.github_app_installation_id or not settings.github_app_private_key_pem:
+            raise HTTPException(status_code=503, detail="GitHub App read credentials are not configured")
+        try:
+            generation_input = ProposalGenerationInput.model_validate(input_payload)
+            allowlist = _parse_github_repository_allowlist(settings.github_repository_allowlist)
+            if generation_input.repository not in allowlist:
+                raise HTTPException(status_code=403, detail="Repository is not allowlisted")
+            if generation_input.max_output_tokens > settings.ai_max_output_tokens:
+                raise HTTPException(status_code=422, detail="Proposal output token limit exceeds configured maximum")
+            router = create_model_router(settings)
+            router.select(
+                route=generation_input.model_route,
+                task_type="analyze",
+                data_class="internal",
+                max_output_tokens=generation_input.max_output_tokens,
+            )
+        except ValidationError:
+            raise HTTPException(status_code=422, detail="Invalid proposal generation input") from None
+        except HTTPException:
+            raise
+        except RuntimeError:
+            raise HTTPException(status_code=503, detail="GitHub repository allowlist is not configured safely") from None
+        except ModelRouteError as exc:
+            code = 503 if "not configured" in str(exc).lower() else 422
+            raise HTTPException(status_code=code, detail="Selected proposal model route is unavailable") from None
+        except ValueError:
+            raise HTTPException(status_code=503, detail="AI model provider configuration is incomplete") from None
+        input_payload = generation_input.model_dump(mode="json")
     try:
         task, created = create_task(
             db,
@@ -94,7 +132,7 @@ def submit_task(
             title=payload.title,
             input_payload=input_payload,
             idempotency_key=idempotency_key,
-            max_attempts=1 if payload.task_type in {"agent.run", "proposal.validate"} else payload.max_attempts,
+            max_attempts=1 if payload.task_type in {"agent.run", "proposal.generate", "proposal.validate"} else payload.max_attempts,
         )
     except TaskConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None

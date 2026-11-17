@@ -143,3 +143,39 @@ def test_provider_rejects_client_with_untrusted_origin():
             )
     finally:
         client.close()
+
+
+def test_provider_keeps_contents_read_token_separate_from_writer_token():
+    private_pem, public_key = _key_pair()
+    permissions_seen = []
+    counter = {"value": 0}
+
+    def handler(request):
+        app_jwt = request.headers["Authorization"].removeprefix("Bearer ")
+        jwt.decode(app_jwt, public_key, algorithms=["RS256"])
+        payload = json.loads(request.read())
+        permissions_seen.append(payload["permissions"])
+        counter["value"] += 1
+        return httpx.Response(
+            201,
+            json={
+                "token": f"ghs_scoped_installation_token_{counter['value']:02d}",
+                "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat(),
+            },
+        )
+
+    provider, client, _ = _provider(handler, private_pem, public_key)
+    try:
+        read_first = provider.get_read_token("acme/platform")
+        assert provider.get_read_token("acme/platform") == read_first
+        write_token = provider.get_token("acme/platform")
+        assert write_token != read_first
+        assert provider.get_token("acme/platform") == write_token
+        assert provider.get_read_token("acme/platform") == read_first
+        assert permissions_seen == [
+            {"contents": "read"},
+            {"contents": "write", "pull_requests": "write"},
+        ]
+    finally:
+        provider.close()
+        client.close()
