@@ -22,6 +22,8 @@ def _request() -> CreateApprovedRepositoryPRRequest:
         files=[ProposedFileInput(path="docs/review.md", content="review me")],
         attestation=SandboxAttestationInput(
             artifact_sha256="a" * 64,
+            repository="hijaz7861/global-ai-platform",
+            base_sha="1" * 40,
             run_id="sandbox-run-authorization-01",
             sandbox_id="isolated-sandbox-01",
             tests_passed=True,
