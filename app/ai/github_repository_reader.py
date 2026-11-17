@@ -210,7 +210,7 @@ class GitHubRepositoryReader:
             if len(raw) != expected_size or b"\x00" in raw:
                 continue
             # Verify the Git blob identity, not merely the JSON's claimed SHA.
-            actual_sha = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\x00" + raw).hexdigest()
+            actual_sha = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\x00" + raw, usedforsecurity=False).hexdigest()
             if not hmac.compare_digest(actual_sha, blob_sha):
                 continue
             try:
