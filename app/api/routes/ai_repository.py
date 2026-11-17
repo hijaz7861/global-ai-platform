@@ -41,6 +41,8 @@ class ProposedFileInput(StrictInput):
 
 class SandboxAttestationInput(StrictInput):
     artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    repository: str = Field(pattern=r"^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
+    base_sha: str = Field(pattern=r"^[0-9a-f]{40}$")
     run_id: str = Field(min_length=1, max_length=128)
     sandbox_id: str = Field(min_length=1, max_length=128)
     tests_passed: bool = Field(strict=True)
@@ -138,6 +140,8 @@ def create_human_approved_draft_pr(
             regression_suite_passed=payload.attestation.regression_suite_passed,
             issued_at=payload.attestation.issued_at,
             nonce=payload.attestation.nonce,
+            repository=payload.attestation.repository,
+            base_sha=payload.attestation.base_sha,
         )
         signed_attestation = SignedAttestation(
             payload=attestation_payload,
