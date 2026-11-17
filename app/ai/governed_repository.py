@@ -80,6 +80,8 @@ def create_approved_draft_pull_request(
         allowed_actor_ids=allowed_actor_ids,
         consume_approval_nonce=consume_approval_nonce,
         now=now,
+        expected_repository=repository,
+        expected_base_sha=signed_attestation.payload.base_sha,
     )
     # SANDBOX_ONLY here means review-only PR creation, not merge or deployment.
     if gate.decision is not GateDecision.SANDBOX_ONLY or signed_approval is None:
@@ -90,6 +92,7 @@ def create_approved_draft_pull_request(
         repository=repository,
         title=title,
         summary=summary,
+        expected_base_sha=signed_attestation.payload.base_sha,
     )
 
 
