@@ -35,12 +35,13 @@ def _now(value: datetime | None) -> datetime:
     return normalized
 
 
-def _health_key(provider_name: str, model_name: str) -> str:
+def _health_key(provider_name: str, model_name: str, route: str = "") -> str:
     provider = provider_name.strip().lower()
     model = model_name.strip()
+    route_key = route.strip().lower()
     if not provider or not model:
         raise ValueError("Provider and model identifiers are required")
-    return hashlib.sha256(f"{provider}\0{model}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{provider}\0{model}\0{route_key}".encode("utf-8")).hexdigest()
 
 
 def _lock_provider(db: Session, key: str) -> None:
@@ -132,13 +133,14 @@ def claim_provider_attempt(
     provider_name: str,
     model_name: str,
     probe_lease_seconds: int,
+    route: str = "",
     now: datetime | None = None,
 ) -> bool:
     """Claim a provider call; only one worker may probe an expired open circuit."""
     if not 5 <= probe_lease_seconds <= 300:
         raise ValueError("Probe lease must be between 5 and 300 seconds")
     current = _now(now)
-    key = _health_key(provider_name, model_name)
+    key = _health_key(provider_name, model_name, route)
     _lock_provider(db, key)
     latest = _latest_event(db, key)
     state = _read_state(latest)
@@ -182,6 +184,7 @@ def record_provider_failure(
     retryable: bool,
     failure_threshold: int,
     cooldown_seconds: int,
+    route: str = "",
     error_code: str = "retryable",
     now: datetime | None = None,
 ) -> None:
@@ -215,6 +218,7 @@ def record_provider_success(
     *,
     provider_name: str,
     model_name: str,
+    route: str = "",
     now: datetime | None = None,
 ) -> None:
     """Close the circuit and reset the consecutive failure count after success."""
@@ -235,6 +239,7 @@ def release_provider_attempt(
     *,
     provider_name: str,
     model_name: str,
+    route: str = "",
     now: datetime | None = None,
 ) -> None:
     """Release a half-open probe when quota or local policy prevents the call."""
@@ -258,6 +263,7 @@ def get_provider_health_snapshot(
     *,
     provider_name: str,
     model_name: str,
+    route: str = "",
 ) -> dict[str, Any]:
     """Return sanitized operational state without exposing the configured model name."""
     key = _health_key(provider_name, model_name)
