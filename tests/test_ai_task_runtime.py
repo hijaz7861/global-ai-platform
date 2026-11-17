@@ -532,9 +532,7 @@ def test_proposal_validation_task_api_is_disabled_by_default(api_client, monkeyp
             "input_payload": {
                 "repository": "acme/platform",
                 "base_sha": "1" * 40,
-                "repository": "acme/platform",
-            "base_sha": "1" * 40,
-            "files": [{"path": "docs/change.md", "content": "candidate"}]
+                "files": [{"path": "docs/change.md", "content": "candidate"}],
             },
         },
     )
