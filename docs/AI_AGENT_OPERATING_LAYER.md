@@ -388,10 +388,12 @@ returns category names only. On a match, the task fails with the generic
 error message or provider request. Regression tests cover both a secret in the
 initial goal and a secret returned by a read-only tool before the next model turn.
 
-**Scope and limitations:** this guard applies only to the durable `agent.run`
-provider egress path. It is pattern-based, does not detect unknown credentials,
-does not classify general PII or confidential business content, and does not
-inspect images, arbitrary attachments or data that never enters the agent prompt.
-It blocks rather than redacts. The caller-declared `public`/`internal` data
-class remains a policy label, not automatic content inspection. Comprehensive
-DLP, provider-side controls and broader data classification remain release work.
+**Scope and limitations:** the guard applies to both the durable `agent.run`
+provider egress path and the regular organization AI chat endpoint. In both paths
+it runs before request quota is reserved and before prompt content is sent to a
+model provider. It is pattern-based, does not detect unknown credentials, does
+not classify general PII or confidential business content, and does not inspect
+images, arbitrary attachments or other integration egress paths. It blocks rather
+than redacts. The caller-declared `public`/`internal` data class remains a policy
+label, not automatic content inspection. Comprehensive DLP, provider-side
+controls and broader data classification remain release work.
