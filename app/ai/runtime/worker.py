@@ -18,10 +18,12 @@ ContextTaskHandler = Callable[[TaskExecutionContext], dict[str, Any]]
 
 def _default_context_handlers() -> dict[str, ContextTaskHandler]:
     from app.ai.agents.worker import run_agent_task
+    from app.ai.proposal_generation_task import run_proposal_generation_task
     from app.ai.proposal_validation_task import run_proposal_validation_task
 
     return {
         "agent.run": run_agent_task,
+        "proposal.generate": run_proposal_generation_task,
         "proposal.validate": run_proposal_validation_task,
     }
 
