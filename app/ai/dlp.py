@@ -39,7 +39,7 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("credential_assignment", re.compile(
         r"\b[A-Z0-9_]*(?:API[_-]?KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN|"
         r"CLIENT[_-]?SECRET|AWS_SECRET_ACCESS_KEY|PASSWORD|PASSWD|"
-        r"PRIVATE[_-]?KEY|TOKEN)\b\s*[:=]\s*[\\\"']?[^\\s\\\"'\\x60,;]{16,}",
+        r"PRIVATE[_-]?KEY|TOKEN)\b\s*[:=]\s*[\"']?[^\s\"'\x60,;]{16,}",
         re.IGNORECASE,
     )),
 )
