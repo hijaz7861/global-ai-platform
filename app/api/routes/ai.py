@@ -82,6 +82,25 @@ async def chat(
         db.rollback()
         raise HTTPException(status_code=429, detail="Organization AI request limit reached")
 
+    # Reserve a conservative, deterministic estimate before provider egress. This
+    # matches the durable agent runner's accounting unit; it is not billed usage.
+    estimated_tokens = len(payload.prompt.encode("utf-8")) + payload.max_output_tokens
+    if settings.ai_daily_token_limit > 0:
+        recent_requests = db.scalars(
+            select(AuditEvent).where(
+                AuditEvent.organization_id == membership.organization_id,
+                AuditEvent.action == "ai.request.started",
+                AuditEvent.created_at >= cutoff,
+            )
+        ).all()
+        reserved_tokens = sum(
+            int((event.details or {}).get("estimated_tokens", 0))
+            for event in recent_requests
+        )
+        if reserved_tokens + estimated_tokens > settings.ai_daily_token_limit:
+            db.rollback()
+            raise HTTPException(status_code=429, detail="Organization AI token budget reached")
+
     request_id = str(uuid4())
     record_audit_event(
         db,
@@ -90,7 +109,11 @@ async def chat(
         action="ai.request.started",
         entity_type="ai_request",
         entity_id=request_id,
-        details={"status": "started"},
+        details={
+            "status": "started",
+            "estimated_tokens": estimated_tokens,
+            "token_estimation": "utf8_bytes_plus_max_output",
+        },
     )
     db.commit()
 
