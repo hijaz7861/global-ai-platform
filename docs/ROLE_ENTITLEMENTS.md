@@ -46,3 +46,19 @@ The current migration establishes the entitlement system and reusable authorizat
 - Role definitions are currently a platform-level catalogue. Country-specific fee policies and organization-scoped role entitlements need an additional policy layer before multi-country commercial launch.
 - Existing Hatchable profiles are not automatically imported or activated. A reviewed mapping and user/organization reconciliation is required.
 - Database triggers reject application-level UPDATE/DELETE of entitlement event rows on SQLite and PostgreSQL. Production database roles must still prevent privileged trigger removal or bypass.
+
+
+## Concurrent administration safety — 2026-11-18
+
+Role application, role-definition updates, administrator review, and entitlement
+lifecycle transitions now acquire PostgreSQL row locks for the affected role
+definition and/or entitlement before validating state and writing changes.
+This serializes concurrent fee/catalogue edits with application/approval and
+prevents two administrators from independently reviewing or transitioning the
+same entitlement from the same stale state.
+
+The focused regression test compiles the lock queries with the PostgreSQL
+dialect and asserts that they include `FOR UPDATE`. SQLite remains useful for
+local functional tests, but it does not provide PostgreSQL row-lock semantics;
+the exact-head PostgreSQL integration workflow remains required before this
+change is considered verified.
