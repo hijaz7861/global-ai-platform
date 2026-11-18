@@ -579,3 +579,36 @@ inline threads for the currently open PRs inspected, including #20, #22–#28,
    reservations, DLP evaluation and provider administration.
 5. Build complete Hatchable source-to-target mapping and staged export/import
    rehearsal before any data movement; keep the live app untouched.
+
+
+## 19. Role-entitlement concurrency review — 2026-11-18
+
+A source review of PR #23 identified that administrator review and lifecycle
+handlers previously loaded entitlement/role rows without row-level locking.
+Concurrent administrators could therefore validate the same stale pending
+state and write conflicting transitions. The Draft branch now uses PostgreSQL
+`SELECT ... FOR UPDATE` for role definitions during application/configuration/
+approval/reinstatement and for entitlement rows during review and lifecycle
+transitions. A regression test compiles both lock queries with the PostgreSQL
+dialect and asserts the generated SQL includes `FOR UPDATE`.
+
+- Latest PR #23 head is now
+  `63b037cfc13ad2d121ca556934f6d2dbe44e6011` (26 commits ahead / 14 behind
+  master; merge base remains PR #21 merge commit
+  `21480c93f105052ad35f343b84a6f7858de5631d`).
+- PR #23 remains Draft and GitHub reports `mergeable=false`.
+- PR #24's supplier branch remains based on the older role snapshot. Compare
+  between the current role branch and supplier branch is diverged (7 commits
+  ahead / 4 behind relative to the supplier branch), so the downstream stack
+  cannot be refreshed by a simple fast-forward.
+- Exact-head workflow lookup and combined commit status returned no workflow
+  run/status for the new code head or the documentation-updated PR head.
+  Previous Run #770 passed only on the earlier head
+  `7e2cbda99aef14932edfbbafd5a187f173d3f33e`; it does not verify these changes.
+- The local container cannot resolve `github.com`, so a repository clone and
+  local project test run were not possible. A focused local SQLAlchemy compile
+  check confirmed that both PostgreSQL-dialect statements render `FOR UPDATE`.
+
+No branch rebase, force-push, merge, deployment or live-data change was made.
+The row-lock hardening remains unverified by exact-head CI and requires
+PostgreSQL integration plus owner review before it can be considered complete.
