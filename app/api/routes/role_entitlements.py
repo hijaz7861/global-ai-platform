@@ -283,7 +283,7 @@ def review_role_entitlement(
         raise HTTPException(status_code=404, detail="Role application not found")
     if item.status not in {"pending_payment", "pending_review"}:
         raise HTTPException(status_code=409, detail="Only pending role applications can be reviewed")
-    role = db.get(RoleDefinition, item.role_key)
+    role = _get_role_for_update(db, item.role_key)
     if role is None:
         raise HTTPException(status_code=409, detail="Role definition is unavailable")
     if payload.decision == "reject":
@@ -345,7 +345,7 @@ def update_role_entitlement_lifecycle(
     item = _get_entitlement_for_update(db, entitlement_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Role entitlement not found")
-    role = db.get(RoleDefinition, item.role_key)
+    role = _get_role_for_update(db, item.role_key)
     if role is None:
         raise HTTPException(status_code=409, detail="Role definition is unavailable")
 
