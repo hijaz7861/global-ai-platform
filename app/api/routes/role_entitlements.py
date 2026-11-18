@@ -83,6 +83,24 @@ def _role_payload(role: RoleDefinition) -> dict:
     }
 
 
+def _get_role_for_update(db: Session, role_key: str) -> RoleDefinition | None:
+    """Serialize fee/catalogue changes with applications and approval decisions."""
+    return db.scalar(
+        select(RoleDefinition)
+        .where(RoleDefinition.role_key == role_key)
+        .with_for_update()
+    )
+
+
+def _get_entitlement_for_update(db: Session, entitlement_id: str) -> UserRoleEntitlement | None:
+    """Serialize concurrent review and lifecycle transitions for one entitlement."""
+    return db.scalar(
+        select(UserRoleEntitlement)
+        .where(UserRoleEntitlement.id == entitlement_id)
+        .with_for_update()
+    )
+
+
 def _entitlement_payload(item: UserRoleEntitlement, role: RoleDefinition) -> dict:
     return {
         "id": item.id,
@@ -131,7 +149,7 @@ def apply_for_role(
 ) -> dict:
     if not user.email_verified:
         raise HTTPException(status_code=403, detail="Verified email required before applying for a platform role")
-    role = db.get(RoleDefinition, payload.role_key)
+    role = _get_role_for_update(db, payload.role_key)
     if role is None or not role.is_active:
         raise HTTPException(status_code=404, detail="Role is unavailable")
     if role.fee_amount_minor is None:
@@ -199,7 +217,7 @@ def update_role_definition(
 ) -> dict:
     if not user.email_verified or not _is_platform_admin(user.email):
         raise HTTPException(status_code=403, detail="Verified platform administrator required")
-    role = db.get(RoleDefinition, role_key)
+    role = _get_role_for_update(db, role_key)
     if role is None:
         raise HTTPException(status_code=404, detail="Role not found")
     previous_values = {
@@ -260,7 +278,7 @@ def review_role_entitlement(
 ) -> dict:
     if not user.email_verified or not _is_platform_admin(user.email):
         raise HTTPException(status_code=403, detail="Verified platform administrator required")
-    item = db.get(UserRoleEntitlement, entitlement_id)
+    item = _get_entitlement_for_update(db, entitlement_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Role application not found")
     if item.status not in {"pending_payment", "pending_review"}:
@@ -324,7 +342,7 @@ def update_role_entitlement_lifecycle(
     """Suspend, revoke, or safely reinstate an existing role entitlement."""
     if not user.email_verified or not _is_platform_admin(user.email):
         raise HTTPException(status_code=403, detail="Verified platform administrator required")
-    item = db.get(UserRoleEntitlement, entitlement_id)
+    item = _get_entitlement_for_update(db, entitlement_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Role entitlement not found")
     role = db.get(RoleDefinition, item.role_key)
