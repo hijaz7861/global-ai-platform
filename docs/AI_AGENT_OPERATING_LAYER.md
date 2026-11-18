@@ -397,3 +397,19 @@ images, arbitrary attachments or other integration egress paths. It blocks rathe
 than redacts. The caller-declared `public`/`internal` data class remains a policy
 label, not automatic content inspection. Comprehensive DLP, provider-side
 controls and broader data classification remain release work.
+
+
+### Credential-pattern coverage refresh — 2026-11-18
+
+The narrow outbound detector was extended with high-confidence patterns for
+OpenAI project/legacy-style keys, Anthropic API/admin keys, OpenRouter, Groq,
+Hugging Face, GitLab personal access tokens, npm, PyPI, and Azure Storage
+connection strings. The OpenAI pattern explicitly excludes the OpenRouter and
+Anthropic prefixes so one synthetic credential is not reported under multiple
+provider categories. Regression fixtures use synthetic strings only and include
+redacted-placeholder negatives.
+
+This remains a pattern matcher, not comprehensive DLP: it does not prove that a
+value is live, inspect arbitrary files/images, classify general PII, or cover
+every integration egress path. A match blocks the outbound request; no secret
+value or match excerpt is returned.
