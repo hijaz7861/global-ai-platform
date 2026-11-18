@@ -471,3 +471,111 @@ service was performed.
    complete export/import, backup/restore and independent-host acceptance work.
 5. Preserve the live Hatchable app and current repository identity until every
    documented Definition of Done gate has been rehearsed and owner-approved.
+
+
+## 18. Verified engineering snapshot — 2026-11-18
+
+This addendum records the current GitHub state checked for this run. It supersedes
+older commit, PR, workflow and branch-freshness statements above where they differ.
+
+### Canonical repository and migrations
+
+- Repository default branch is `master`; latest commit search returned
+  `76e811d81cb42eefc68f4bafc6ed931701a91749`.
+- Master contains migration `0034_postgres_approval_nonces`, whose
+  `down_revision` is `0033_ai_task_outbox`. Migration `0035_role_entitlements`
+  is absent from master.
+- Draft migration headers were re-read from their respective branches:
+  `0035_role_entitlements` → `0036_transport_marketplace` →
+  `0037_construction_operations` → `0038_construction_quotes` →
+  `0039_construction_cashbook`. Each declared down-revision points to the
+  preceding revision; PR #24 adds no migration. This is a source-level branch
+  chain check, not evidence that these migrations are installed on master.
+- The canonical master does not currently contain
+  `docs/HIJAZ_ONE_GLOBAL_ARCHITECTURE.md`; that document exists on this Draft
+  architecture branch.
+
+### Open PR and exact-head workflow snapshot
+
+The repository currently has 19 open PRs. Relevant current states:
+
+- PR #20 read-only MCP bridge remains Draft/unmerged at
+  `f63abf1dcd5d5282aa76cfe86fb69471dd21aaf2`; exact-head Run #611 succeeded.
+  Authenticated Streamable HTTP POST `initialize`, `tools/list` and
+  `tools/call` are still unverified. The prior unauthenticated POST was stopped
+  by Vercel SSO before the app, so it is neither protocol success nor protocol
+  failure.
+- PR #22 (this architecture PR) remains Draft/unmerged at
+  `839db8a03c020dda8516970ff19384c5a60dba65`. It compares 16 commits ahead
+  and 14 behind current master, with merge base
+  `21480c93f105052ad35f343b84a6f7858de5631d`. It has no workflow run for its
+  latest documentation-only head and no submitted review or inline thread.
+- PR #23 multi-role foundation remains Draft/unmerged at
+  `7e2cbda99aef14932edfbbafd5a187f173d3f33e`; exact-head Run #770 succeeded
+  (265 passed/17 skipped in each Python matrix job; 17 PostgreSQL tests).
+  GitHub reports `mergeable=false`; compare shows 22 ahead/14 behind master.
+- PRs #24–#28 remain Draft/unmerged and their exact-head runs #759, #761,
+  #764, #766 and #768 respectively succeeded. They remain stacked on older
+  dependency snapshots; preserve order #23 → #24 → #25 → #26 → #27 → #28.
+  Their historical green runs do not prove the current dependency stack is
+  reconciled.
+- PR #43 governed GitHub configuration remains Draft at
+  `bdf701d40d3621d068b8004eb11df589d708c4b0`; exact-head Run #823 succeeded.
+  PR #44 authenticated approval runtime remains Draft at
+  `7824f98c06a51c875692a7e467c53959605483a3`; exact-head Run #838 succeeded.
+  PRs #48, #49 and #50 remain stacked on #44 in order and their exact-head
+  runs #849, #851 and #856 succeeded. PR #51 provider circuit breaker remains
+  Draft at `0207cf1c44adb2b82bdb3550a950aac7e2be2689`; Run #862 succeeded.
+- PR #53 outbound secret-pattern guard is Draft/unmerged at
+  `c7dd1d8f3e0c0318c0c33eb14c95eab266d1f560`. Exact-head Run #868 succeeded:
+  5/5 jobs; Python 3.11–3.13 each 337 passed/15 skipped; PostgreSQL 15 passed;
+  lint, compilation, Alembic checks, dependency audit and Bandit passed. It now
+  detects high-confidence OpenAI, Anthropic, OpenRouter, Groq, Hugging Face,
+  GitLab, npm, PyPI and Azure Storage patterns in addition to the earlier
+  credential patterns. It remains narrow pattern-based blocking, not
+  comprehensive DLP.
+- PR #54 rolling AI chat token-budget enforcement is Draft/unmerged at
+  `b8eb5840f7f1301790f8db538c21c63153dd115f`. Exact-head Run #869 succeeded:
+  5/5 jobs; Python 3.11–3.13 each 312 passed/15 skipped; PostgreSQL 15 passed;
+  lint, compilation, Alembic checks, dependency audit and Bandit passed. It
+  brings the existing `AI_DAILY_TOKEN_LIMIT` reservation logic to regular
+  organization chat and records a conservative UTF-8-byte-plus-output estimate
+  in the append-only audit event. This is not tokenizer-derived or billed usage.
+
+GitHub review and inline-thread APIs returned zero submitted reviews and zero
+inline threads for the currently open PRs inspected, including #20, #22–#28,
+#43–#54, #10, #4, #3 and #2. CI success is not owner approval.
+
+### Remaining release blockers and safety
+
+- PR #23 is the root role/vertical dependency blocker: it is stale and
+  non-mergeable against current master. No rebase, force-push, merge or
+  downstream branch rewrite was performed.
+- MCP authenticated POST verification remains unavailable through the
+  currently evidenced access path.
+- The last read-only Hatchable Version 40 inventory is dated 2026-11-16:
+  46 tables, 25 functions, 74 non-virtual files plus generated AGENTS.md,
+  14 migrations; admin backup covers only 17/46 tables and does not include
+  object bytes or an import endpoint. No newer inventory or data export was
+  performed in this run.
+- No live Hatchable changes, data export/import, migration, production
+  deployment, provider activation, secret change, paid service, domain
+  purchase or repository rename was performed.
+- Owner review, branch protection/required-check configuration, complete
+  migration rehearsals, portable-host rehearsal, backup/restore, global
+  commerce, property/workforce/education verticals, guardian consent, complete
+  AI governance and full DLP remain open Definition of Done gates.
+
+### Next safe engineering sequence
+
+1. Reconcile the PR #23 entitlement foundation against current master in a
+   reviewed branch without force-updating its existing history; rerun exact-head
+   migration, SQLite/PostgreSQL and role/tenant-negative tests.
+2. Refresh dependent PRs #24–#28 in dependency order only after the role
+   foundation is reconciled.
+3. Complete authenticated MCP POST protocol verification through an authorized
+   POST-capable access path.
+4. Continue durable AI checkpoints/resumption, approval governance, cost
+   reservations, DLP evaluation and provider administration.
+5. Build complete Hatchable source-to-target mapping and staged export/import
+   rehearsal before any data movement; keep the live app untouched.
