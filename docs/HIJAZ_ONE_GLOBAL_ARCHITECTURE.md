@@ -612,3 +612,27 @@ dialect and asserts the generated SQL includes `FOR UPDATE`.
 No branch rebase, force-push, merge, deployment or live-data change was made.
 The row-lock hardening remains unverified by exact-head CI and requires
 PostgreSQL integration plus owner review before it can be considered complete.
+
+
+## 20. Portable worker configuration audit — 2026-11-18
+
+The current master Compose file already defines a separate PostgreSQL-backed
+`worker` service and an API health dependency. It does not define a scheduler
+service. `app/maintenance.py` is a bounded one-shot maintenance command, not a
+durable scheduler with persisted next-run state, leases and missed-run recovery.
+
+A configuration defect was found: the API container received
+`AI_DAILY_TOKEN_LIMIT` and `AI_AUTO_FAILOVER_ENABLED`, but the worker container
+did not. That meant durable agent calls could use different budget/failover
+settings from regular API chat in the same Compose deployment. Draft PR #55
+adds both variables to the worker environment and a regression check comparing
+the API and worker service sections.
+
+- PR #55 head: `021d00d69d9ae29fab50aa263ad8dbadf8a8bc09`; Draft/unmerged.
+- Exact-head GitHub Actions Run #870 is queued, not yet passed.
+- No production Compose file was changed; this is a Draft source change only.
+
+The durable scheduler, persisted schedule/lease state, missed-run recovery,
+scheduler observability, backup/restore rehearsal and portable-host deployment
+remain unimplemented release gates. Do not describe the existing one-shot
+maintenance command as a completed scheduler.
