@@ -4,11 +4,13 @@ from datetime import timedelta
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, delete, select, update
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.routes import identity as identity_routes
+from app.api.routes.role_entitlements import _get_entitlement_for_update, _get_role_for_update
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
@@ -528,3 +530,15 @@ def test_reinstatement_enforces_professional_age_floor_after_database_tampering(
     with _TEST_SESSION_FACTORY() as db:
         assert db.get(UserRoleEntitlement, entitlement_id).status == "suspended"
 
+
+
+def test_role_admin_mutations_use_postgresql_row_locks():
+    class StatementCapture:
+        def scalar(self, statement):
+            compiled = str(statement.compile(dialect=postgresql.dialect()))
+            assert "FOR UPDATE" in compiled
+            return object()
+
+    db = StatementCapture()
+    assert _get_role_for_update(db, "teacher") is not None
+    assert _get_entitlement_for_update(db, "entitlement-lock-test") is not None
