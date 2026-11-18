@@ -674,3 +674,43 @@ A final repository refresh after the Draft PRs in this run confirms:
 
 This is a repository snapshot only; it does not satisfy the global release
 Definition of Done.
+
+
+## 22. Read-only Hatchable Version 40 refresh — 2026-11-18
+
+The connected Hatchable metadata/schema/file/function APIs were used read-only.
+The existing live project remains active at
+`https://hijaz-construction.hatchable.site`, current Version 40. Its latest
+listed deployment is Version 40, deployed 2026-11-13 07:25:10 UTC.
+
+Current inventory:
+
+- 46 PostgreSQL tables and their column/index metadata.
+- 25 active API functions/routes, covering assistant/admin, backup, education,
+  engagement, follow-up, management, marketplace, property, provider workspace,
+  suppliers, transport and media upload.
+- 75 files in the project manifest, including 25 API files, 14 SQL migrations,
+  public pages/assets and the generated `AGENTS.md`.
+- 14 migrations, `0001` through `0014`.
+- One active scheduled function, `POST /api/jobs/follow-up`, declared hourly
+  (`0 * * * *`). The scheduler reports 136 runs in the last 7 days, zero
+  5xx errors in that window, last fired at 2026-11-18 18:05 UTC and next fire
+  at 19:05 UTC. This is the live Hatchable scheduler, not the portable
+  platform's missing scheduler.
+
+### Backup/import boundary
+
+The current `api/backup.js` was read without executing it. It declares
+`access = 'admin'` and `methods = ['GET']`. It exports 17 table datasets:
+clients, projects, transactions, labour entries, material entries, pricing
+items, quotes, audit events, suppliers, supplier products, quote requests,
+workforce profiles, service requests, material orders, platform reviews,
+platform media metadata and platform fee settings. The media export contains
+metadata/storage keys, not object bytes. The file does not provide an import
+endpoint. This is not a complete backup of all 46 tables and cannot be treated
+as a migration-ready export.
+
+No backup endpoint was executed, no row data or media bytes were read, and no
+file, schema, record, environment variable, deployment or live workflow was
+changed. The staged export/import and reconciliation design remains a release
+gate. Keep the current live Version 40 untouched.
