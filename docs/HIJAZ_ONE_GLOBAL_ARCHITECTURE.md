@@ -647,3 +647,30 @@ all 5 jobs succeeded; Python 3.11–3.13 each reported 311 passed/15 skipped;
 PostgreSQL integration reported 15 passed; lint, compilation, Alembic checks,
 dependency audit and Bandit passed. PR #55 remains Draft/unmerged with no
 submitted review or inline review thread.
+
+
+## 21. End-of-run repository inventory — 2026-11-18
+
+A final repository refresh after the Draft PRs in this run confirms:
+
+- Default branch remains `master`; the verified master SHA remains
+  `76e811d81cb42eefc68f4bafc6ed931701a91749`.
+- There are now 21 open PRs and 58 branches. The two new feature branches
+  `feat/ai-chat-token-budget` and `fix/worker-ai-budget-env-parity` are
+  represented by Draft PRs #54 and #55.
+- This architecture branch's latest head is
+  `7a078dab19c7750d101b3796b8ebf9b44ca14756`; compare to master is 20 ahead /
+  14 behind, merge base still `21480c93f105052ad35f343b84a6f7858de5631d`.
+- PR #23 latest head remains
+  `63b037cfc13ad2d121ca556934f6d2dbe44e6011`, 26 ahead / 14 behind and
+  `mergeable=false`. PR #24 supplier branch is 4 commits ahead of and 7
+  commits behind the current role branch, so both branches contain unique work.
+- PR #53 Run #868 and PR #54 Run #869 succeeded 5/5 jobs on their exact heads.
+  PR #55 Run #870 succeeded 5/5 jobs on its exact head. PR #23 has no workflow
+  run or combined status for its new head in the connected GitHub status
+  lookup; PR #22's documentation-only commits were marked `[skip ci]`.
+- No reviewed PR gained an owner review or inline review thread during this
+  run. All new implementation PRs remain Draft/unmerged.
+
+This is a repository snapshot only; it does not satisfy the global release
+Definition of Done.
