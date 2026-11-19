@@ -11,6 +11,7 @@ from app.ai.memory.service import (
     archive_memory,
     create_memory,
     get_memory,
+    purge_memory,
     search_memories,
 )
 from app.api.deps import require_membership
@@ -142,4 +143,27 @@ def archive_memory_record(
         raise HTTPException(status_code=404, detail="Memory record not found") from None
     except MemoryConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/organizations/{organization_id}/ai/memory/{memory_id}/purge",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def purge_memory_record(
+    organization_id: str,
+    memory_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    try:
+        purge_memory(
+            db,
+            memory_id=memory_id,
+            actor_user_id=membership.user_id,
+            organization_id=membership.organization_id,
+            role=membership.role,
+        )
+    except MemoryNotFound:
+        raise HTTPException(status_code=404, detail="Memory record not found") from None
     return Response(status_code=status.HTTP_204_NO_CONTENT)

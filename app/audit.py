@@ -8,6 +8,7 @@ from app.models import AuditEvent
 _ALLOWED_DETAIL_KEYS = {
     "status", "quantity", "price_minor", "total_minor", "currency", "role",
     "membership_count", "buyer_order_count", "estimated_tokens", "token_estimation",
+    "scope", "reason",
 }
 
 
@@ -25,6 +26,10 @@ def record_audit_event(
     safe_details: dict[str, str | int | bool] = {}
     for key, value in (details or {}).items():
         if key in _ALLOWED_DETAIL_KEYS and isinstance(value, (str, int, bool)):
+            if key == "scope" and value not in {"user", "organization"}:
+                continue
+            if key == "reason" and value not in {"user_requested", "expired"}:
+                continue
             safe_details[key] = value
     db.add(
         AuditEvent(

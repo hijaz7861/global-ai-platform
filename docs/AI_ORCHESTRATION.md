@@ -56,11 +56,11 @@ The feature branch adds user-private and organization-shared memory records:
 - `POST /api/v1/organizations/{organization_id}/ai/memory` creates a record. User-private memory is scoped to the authenticated user; shared memory requires an organization owner/admin.
 - `GET /api/v1/organizations/{organization_id}/ai/memory?q=...` returns only the caller's private records plus permitted organization records.
 - `GET .../ai/memory/{memory_id}` inspects one authorized record.
-- `DELETE .../ai/memory/{memory_id}` archives a record; it does not physically erase its row.
+- `DELETE .../ai/memory/{memory_id}` archives a record; it does not physically erase its row. `DELETE .../ai/memory/{memory_id}/purge` permanently removes the caller's private record; organization-shared memory requires the organization owner.
 - Records store a SHA-256 content fingerprint, source type/reference, confidence percentage, sensitivity, verification status, optional expiry, and supersession link. User-submitted records begin as `unverified`; the API cannot mark them verified.
 - Search uses bounded BM25-style lexical ranking over at most 500 recent eligible records, with matched terms and scores returned. It is not vector search and does not yet use PostgreSQL full-text indexes or embeddings.
 - Private memory is visible only to its owner. Organization memory is visible to members only at normal sensitivity; admins may also see sensitive records, and only the organization owner may see restricted shared records.
-- Superseding creates a new record and marks the prior record superseded. Archiving is soft deletion. Retention automation, hard deletion/export workflows, verification attestations, and vector retrieval remain future work.
+- Superseding creates a new record and marks the prior record superseded. Archiving remains reversible soft deletion. Explicitly expired records are physically purged in bounded batches by `python -m app.maintenance`; the purge writes metadata-only audit events. A default retention policy for records without `expires_at`, comprehensive memory export, verification attestations, and vector retrieval remain future work.
 
 
 ## Versioned skill registry (initial implementation)

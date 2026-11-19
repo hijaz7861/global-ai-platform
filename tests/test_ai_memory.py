@@ -14,6 +14,8 @@ from app.ai.memory.service import (
     archive_memory,
     create_memory,
     get_memory,
+    purge_expired_memories,
+    purge_memory,
     search_memories,
 )
 from app.core.config import settings
@@ -273,3 +275,99 @@ def test_memory_api_creates_searches_and_archives_private_memory(api_client):
     after = api_client.get(url, headers=headers)
     assert after.status_code == 200
     assert after.json() == []
+
+
+
+def test_hard_purge_enforces_private_and_shared_memory_authority(database):
+    db, user, other, organization = database
+    private = create_memory(
+        db, actor_user_id=user.id, scope="user", organization_id=None,
+        memory_type="reference", content="Private note that must be physically erased",
+    )
+
+    with pytest.raises(MemoryNotFound):
+        purge_memory(
+            db, memory_id=private.id, actor_user_id=other.id,
+            organization_id=organization.id, role="member",
+        )
+    assert db.query(models.AIMemoryRecord).filter_by(id=private.id).count() == 1
+
+    purge_memory(
+        db, memory_id=private.id, actor_user_id=user.id,
+        organization_id=organization.id, role="member",
+    )
+    assert db.query(models.AIMemoryRecord).filter_by(id=private.id).count() == 0
+
+    shared = create_memory(
+        db, actor_user_id=user.id, scope="organization",
+        organization_id=organization.id, memory_type="reference",
+        content="Organization memory requiring owner-controlled purge",
+    )
+    with pytest.raises(MemoryNotFound):
+        purge_memory(
+            db, memory_id=shared.id, actor_user_id=other.id,
+            organization_id=organization.id, role="admin",
+        )
+    purge_memory(
+        db, memory_id=shared.id, actor_user_id=user.id,
+        organization_id=organization.id, role="owner",
+    )
+    assert db.query(models.AIMemoryRecord).filter_by(id=shared.id).count() == 0
+
+    events = db.query(models.AuditEvent).filter(
+        models.AuditEvent.action == "ai.memory.purged"
+    ).all()
+    assert {event.entity_id for event in events} == {private.id, shared.id}
+    assert all("Private note" not in str(event.details) for event in events)
+
+
+def test_expired_memory_purge_is_bounded_idempotent_and_content_free(database):
+    db, user, _, organization = database
+    now = datetime.now(timezone.utc)
+    expired = [
+        create_memory(
+            db, actor_user_id=user.id, scope="user", organization_id=None,
+            memory_type="reference", content=f"Expired private note {index}",
+            expires_at=now + timedelta(days=1),
+        )
+        for index in range(2)
+    ]
+    future = create_memory(
+        db, actor_user_id=user.id, scope="organization",
+        organization_id=organization.id, memory_type="reference",
+        content="This memory must remain until its future expiry",
+        expires_at=now + timedelta(days=2),
+    )
+    for record in expired:
+        record.expires_at = now - timedelta(seconds=1)
+    db.commit()
+
+    assert purge_expired_memories(db, limit=1, now=now) == 1
+    db.expire_all()
+    assert db.query(models.AIMemoryRecord).filter(
+        models.AIMemoryRecord.id.in_([item.id for item in expired])
+    ).count() == 1
+    assert db.query(models.AIMemoryRecord).filter_by(id=future.id).count() == 1
+
+    assert purge_expired_memories(db, limit=1, now=now) == 1
+    assert purge_expired_memories(db, limit=1, now=now) == 0
+    events = db.query(models.AuditEvent).filter_by(action="ai.memory.expired_purged").all()
+    assert len(events) == 2
+    assert all("Expired private note" not in str(event.details) for event in events)
+
+
+def test_memory_api_hard_purge_physically_removes_private_record(api_client):
+    token, organization_id = _owner(api_client)
+    url = f"/api/v1/organizations/{organization_id}/ai/memory"
+    headers = {"Authorization": f"Bearer {token}"}
+    created = api_client.post(url, headers=headers, json={
+        "scope": "user",
+        "memory_type": "reference",
+        "content": "A private memory requested for permanent deletion",
+    })
+    assert created.status_code == 201, created.text
+    memory_id = created.json()["id"]
+
+    purged = api_client.delete(f"{url}/{memory_id}/purge", headers=headers)
+    assert purged.status_code == 204
+    assert api_client.get(f"{url}/{memory_id}", headers=headers).status_code == 404
