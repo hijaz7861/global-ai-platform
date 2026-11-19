@@ -27,23 +27,24 @@ Indexes exist for audit creation time and task status. One `infrastructure.initi
 
 Base URL: `https://hijaz-ai-edge.hijaz-ai-platform.workers.dev`
 
-- `GET /health`
-- `GET /api/v1/health`
-- `GET /api/v1/status`
+- `GET /` — service identity and endpoint list
+- `GET /health` and `GET /api/v1/health` — D1 connectivity and schema health
+- `GET /api/v1/status` — platform metadata and audit/task counters
 
 The Worker uses prepared D1 statements and returns non-cacheable JSON with basic browser security headers. It is read-only by design.
 
-## Verification and limitations
+## Verification
 
-Verified through Cloudflare control-plane reads:
+Verified on 2026-11-19:
 
-- Worker upload returned `success: true` and a version/deployment identifier.
-- Worker deployment list shows version 1 assigned 100%.
-- Worker subdomain route is enabled.
+- Worker upload returned `success: true` and version ID `104bc791-8660-469a-a2f8-7f936edf2430`.
+- Cloudflare deployment list shows version 1 assigned 100%.
+- Worker `workers.dev` route is enabled.
 - Worker settings show both the D1 and KV bindings.
-- D1 query verified four tables including the three application tables plus one internal SQLite table, one audit event, and zero agent tasks.
-
-Live HTTP verification through the available external fetch clients returned `target_unreachable` / inaccessible URL. Therefore, DNS/edge HTTP reachability and actual endpoint response are **not yet independently verified**, despite the successful Cloudflare control-plane deployment state. Re-test the public URL after propagation before declaring production readiness.
+- D1 SQL API verified the application tables, one initialization audit event, and zero agent tasks.
+- Live browser request to `/api/v1/health` returned `200` with `ok: true`, `database: connected`, and schema version `1`.
+- Live browser request to `/api/v1/status` returned `200`, showing D1 and KV as configured and the expected metadata/counters.
+- `node --check` passed for the Worker module syntax.
 
 ## Important boundary
 
