@@ -5,7 +5,7 @@ The portable runtime includes a separate scheduler process. It runs the existing
 ## Coordination and durable checkpoint
 
 - The last committed platform.maintenance_completed row in audit_events is the durable last-success checkpoint. The maintenance operations and this audit event are committed in the same database transaction.
-- PostgreSQL deployments use a session-level advisory lock derived from the fixed scheduler lock name. Only one scheduler replica can run a maintenance batch at a time. The lock connection is held for the entire batch and explicitly unlocked before returning it to the connection pool.
+- PostgreSQL deployments acquire a transaction-level advisory lock derived from the fixed scheduler lock name inside the same SQLAlchemy session and transaction that performs the maintenance batch. A connection loss rolls back the batch and releases the lock together, preventing a separate lock connection from being lost while work continues.
 - SQLite is supported only for local single-process development and uses a process-local lock. Production configuration already requires PostgreSQL; do not run multiple SQLite scheduler processes.
 - On startup, no previous checkpoint means one immediate bounded run. An overdue checkpoint triggers one recovery run; missed intervals are coalesced instead of generating a catch-up burst. A successful run moves the checkpoint forward through the existing audit event.
 - If the maintenance transaction fails, its completion event is rolled back and the scheduler retries on a later poll. If the process exits after commit, the durable audit checkpoint prevents an unnecessary duplicate run.
