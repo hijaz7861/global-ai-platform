@@ -23,7 +23,7 @@ A public, modular project for building a global business platform incrementally.
 - Orders remain `pending_payment`; no payment is charged or processed.
 - SQLAlchemy models and Alembic migrations for identity, rotating refresh-token families, tenants, catalog, inventory adjustment history, orders, audit, accounting periods, journal entries and reversals, token revocation, password reset, and supplier profiles.
 - GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks. The test requirements include `httpx2` for the current Starlette `TestClient` and `httpx` for the AI adapter's async provider client.
-- Platform-admin security cleanup endpoint for expired credentials and stale throttle records; schedule it through a trusted external scheduler.
+- Platform-admin security cleanup endpoint for expired credentials and stale throttle records; the separate Compose scheduler runs the bounded cleanup automatically.
 - Optional Docker packaging that applies migrations before starting the API.
 
 ## Current delivery focus
