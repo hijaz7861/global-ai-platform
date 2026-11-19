@@ -1,9 +1,8 @@
 """Durable database-coordinated scheduler for bounded platform maintenance.
 
 The last committed platform.maintenance_completed audit event is the
-persistent schedule checkpoint. PostgreSQL transaction-level advisory locks
-serialize replicas in the same transaction as the maintenance work.
-SQLite is supported for local single-process development only.
+persistent schedule checkpoint. PostgreSQL advisory locking is held on the
+same connection used by the maintenance runner. SQLite is local-only.
 """
 from __future__ import annotations
 
@@ -17,11 +16,12 @@ from threading import Lock
 from typing import Any
 
 from sqlalchemy import select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings, validate_runtime_settings
-from app.db import SessionLocal
-from app.maintenance import run_maintenance_in_session
+from app.db import SessionLocal, engine
+from app.maintenance import run_maintenance_once
 from app.models import AuditEvent
 
 _LOCK_NAME = "hijaz-one:platform-maintenance:v1"
@@ -36,39 +36,68 @@ def _as_utc(value: datetime) -> datetime:
 
 
 @contextmanager
-def _scheduler_transaction(
-    db: Session,
+def _scheduler_session_factory(
+    session_factory: Callable[[], Session],
+    database_engine: Engine,
     *,
     lock_name: str = _LOCK_NAME,
-) -> Iterator[bool]:
-    """Hold the scheduler lock through the same transaction as maintenance."""
+) -> Iterator[tuple[Callable[[], Session], bool]]:
+    """Hold one scheduler lock and, on PostgreSQL, bind all work to its connection."""
     if not lock_name or len(lock_name) > 128:
         raise ValueError("Invalid scheduler lock name")
 
-    dialect = db.get_bind().dialect.name
-    if dialect == "postgresql":
-        # The transaction-level lock is released automatically on commit,
-        # rollback, or connection loss. Maintenance runs on this same session.
-        with db.begin():
+    if database_engine.dialect.name == "postgresql":
+        connection = database_engine.connect()
+        acquired = False
+        try:
             acquired = bool(
-                db.scalar(
+                connection.execute(
                     text(
-                        "SELECT pg_try_advisory_xact_lock("
+                        "SELECT pg_try_advisory_lock("
                         "hashtextextended(:lock_name, 0))"
                     ),
                     {"lock_name": lock_name},
-                )
+                ).scalar_one()
             )
-            yield acquired
+            # Session-level advisory locks survive transaction commits. Every
+            # maintenance Session is bound to this same connection, so a
+            # disconnect aborts the work and releases the lock together.
+            connection.commit()
+            bound_factory = sessionmaker(
+                bind=connection,
+                autoflush=False,
+                autocommit=False,
+                expire_on_commit=False,
+            )
+            yield bound_factory if acquired else session_factory, acquired
+        finally:
+            if acquired:
+                try:
+                    released = bool(
+                        connection.execute(
+                            text(
+                                "SELECT pg_advisory_unlock("
+                                "hashtextextended(:lock_name, 0))"
+                            ),
+                            {"lock_name": lock_name},
+                        ).scalar_one()
+                    )
+                    connection.commit()
+                    if not released:
+                        raise RuntimeError("Maintenance scheduler lock was lost")
+                except Exception:
+                    # Never return a connection with an unknown advisory-lock state to the pool.
+                    connection.invalidate()
+                    raise
+            connection.close()
         return
 
-    if dialect == "sqlite":
+    if database_engine.dialect.name == "sqlite":
         # SQLite has no cross-process advisory lock. This is intentionally
-        # limited to one local scheduler process and held through commit.
+        # limited to a single local scheduler process.
         acquired = _LOCAL_LOCK.acquire(blocking=False)
         try:
-            with db.begin():
-                yield acquired
+            yield session_factory, acquired
         finally:
             if acquired:
                 _LOCAL_LOCK.release()
@@ -80,6 +109,7 @@ def _scheduler_transaction(
 def run_scheduler_once(
     session_factory: Callable[[], Session] = SessionLocal,
     *,
+    database_engine: Engine = engine,
     interval_seconds: int = 3600,
     order_limit: int = 100,
     now: datetime | None = None,
@@ -96,45 +126,50 @@ def run_scheduler_once(
         raise ValueError("order_limit must be between 1 and 500")
 
     current = _as_utc(now or datetime.now(timezone.utc))
-    with session_factory() as db:
-        with _scheduler_transaction(db, lock_name=lock_name) as acquired:
-            if not acquired:
-                return {"status": "locked"}
+    with _scheduler_session_factory(
+        session_factory,
+        database_engine,
+        lock_name=lock_name,
+    ) as (active_factory, acquired):
+        if not acquired:
+            return {"status": "locked"}
 
+        with active_factory() as db:
             last_completed_at = db.scalar(
                 select(AuditEvent.created_at)
                 .where(AuditEvent.action == "platform.maintenance_completed")
                 .order_by(AuditEvent.created_at.desc())
                 .limit(1)
             )
-            if last_completed_at is not None:
-                next_run_at = _as_utc(last_completed_at) + timedelta(
-                    seconds=interval_seconds
-                )
-                if current < next_run_at:
-                    return {
-                        "status": "not_due",
-                        "next_run_at": next_run_at.isoformat(),
-                    }
 
-            result = run_maintenance_in_session(
-                db,
-                order_limit=order_limit,
-                now=current,
+        if last_completed_at is not None:
+            next_run_at = _as_utc(last_completed_at) + timedelta(
+                seconds=interval_seconds
             )
-            # Do not emit order IDs or memory content to scheduler logs.
-            return {
-                "status": "completed",
-                "expired_orders": int(result["expired_orders"]),
-                "security_cleanup": {
-                    key: int(value)
-                    for key, value in result["security_cleanup"].items()
-                    if isinstance(value, int)
-                },
-                "expired_memory_records_deleted": int(
-                    result["expired_memory_records_deleted"]
-                ),
-            }
+            if current < next_run_at:
+                return {
+                    "status": "not_due",
+                    "next_run_at": next_run_at.isoformat(),
+                }
+
+        result = run_maintenance_once(
+            active_factory,
+            order_limit=order_limit,
+            now=current,
+        )
+        # Do not emit order IDs or memory content to scheduler logs.
+        return {
+            "status": "completed",
+            "expired_orders": int(result["expired_orders"]),
+            "security_cleanup": {
+                key: int(value)
+                for key, value in result["security_cleanup"].items()
+                if isinstance(value, int)
+            },
+            "expired_memory_records_deleted": int(
+                result["expired_memory_records_deleted"]
+            ),
+        }
 
 
 def main(argv: list[str] | None = None) -> int:
