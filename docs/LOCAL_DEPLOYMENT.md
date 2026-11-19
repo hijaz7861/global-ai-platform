@@ -1,6 +1,6 @@
 # Local and private-host deployment
 
-This is a reproducible Docker Compose deployment path for the HIJAZ ONE portable core. It runs the API, durable AI task worker, database-coordinated maintenance scheduler, and PostgreSQL 16. Worker and scheduler start only after the API is healthy (and therefore after its migration entrypoint has completed). API and worker share PostgreSQL and AI configuration; the scheduler uses a transaction-scoped PostgreSQL advisory lock on the same connection as the maintenance batch and the committed maintenance audit event as its durable checkpoint. SQLite is limited to local single-process scheduler use.
+This is a reproducible Docker Compose deployment path for the HIJAZ ONE portable core. It runs the API, durable AI task worker, database-coordinated maintenance scheduler, and PostgreSQL 16. Worker and scheduler start only after the API is healthy (and therefore after its migration entrypoint has completed). API and worker share PostgreSQL and AI configuration; the scheduler uses a PostgreSQL session-level advisory lock and binds the maintenance runner to that same connection, with the committed maintenance audit event as its durable checkpoint. SQLite is limited to local single-process scheduler use.
 
 ## 1. Prepare secrets
 
