@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.agents.schemas import AgentDecision, AgentTaskInput
+from app.ai.dlp import detect_sensitive_data_types
 from app.ai.model_router import ModelRouteError, create_model_router
 from app.ai.memory.service import MemoryConflict, create_memory, search_memories
 from app.ai.skills.service import SkillConflict, list_skill_versions
@@ -284,6 +285,10 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
         _current_authorized_membership(context)
         context.heartbeat()
         prompt = _build_prompt(payload.goal, tools, history, memories, skills)
+        # Scan the complete outbound context (goal, memory, skills and tool history)
+        # before reserving quota or sending any bytes to a model provider.
+        if detect_sensitive_data_types(prompt):
+            raise AgentRunError("sensitive_data_detected")
         estimated_tokens = len(prompt.encode("utf-8")) + payload.max_output_tokens
         try:
             request_id = _reserve_model_call(
