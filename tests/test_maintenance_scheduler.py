@@ -126,7 +126,7 @@ def test_scheduler_failure_rolls_back_checkpoint_and_allows_retry(
     def fail_batch(*args, **kwargs):
         raise RuntimeError("maintenance failed")
 
-    monkeypatch.setattr("app.maintenance.run_maintenance_once", fail_batch)
+    monkeypatch.setattr("app.maintenance_scheduler.run_maintenance_once", fail_batch)
     with pytest.raises(RuntimeError):
         run_scheduler_once(factory, database_engine=engine, interval_seconds=3600)
 
