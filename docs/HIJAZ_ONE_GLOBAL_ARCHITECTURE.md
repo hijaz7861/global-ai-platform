@@ -714,3 +714,50 @@ No backup endpoint was executed, no row data or media bytes were read, and no
 file, schema, record, environment variable, deployment or live workflow was
 changed. The staged export/import and reconciliation design remains a release
 gate. Keep the current live Version 40 untouched.
+
+
+## 23. Verified repository, AI-control and governance snapshot — 2026-11-19
+
+### Canonical repository and migration state
+
+- Default branch is `master`, verified at `72d20700116e5ca7ef76c5d303a0ceb824e0c217`. A direct compare of `master` with this SHA returned `identical`.
+- The current master Alembic head remains `0034_postgres_approval_nonces`. Migration `0035_role_entitlements` is not present on master; a master-path lookup returned 404. Draft role/vertical revisions `0035`–`0039` remain outside master.
+- Current repository inventory: 18 open PRs and 63 branches.
+- The master commit `973f55de96e01ddc64e209ba4a4dd468153c053b` added the Cloudflare Free edge Worker source and deployment record. That record describes a read-only status/health façade with D1 and KV; it explicitly does not host the FastAPI application or Qwen3-8B. External Cloudflare resource state was not revalidated in this run, and no deployment or configuration change was made here.
+
+### AI control slices now present on master
+
+The following PRs are now reported by GitHub as merged. Their exact-head CI evidence was checked:
+
+- PR #53 secret-pattern egress guard, merge commit `f4701c89cb704dfdb24a4a2904fb5b08bacc9aad`; Run #868 passed 5/5 jobs (Python 3.11–3.13: 337 passed/15 skipped each; PostgreSQL: 15 passed). This remains narrow pattern-based blocking, not comprehensive DLP.
+- PR #55 worker AI budget/failover environment parity, merge commit `53cf8bf025ef549e2036e24ad8ac138691067a68`; Run #870 passed 5/5 jobs (311 passed/15 skipped each Python version; PostgreSQL: 15 passed).
+- PR #57 governed memory purge and expiry retention, merge commit `6efd39840f9192b213c0f655e5763eaf5717fc6b`; exact-head Run #879 passed 5/5 jobs (314 passed/16 skipped each Python version; PostgreSQL: 16 passed). The API preserves archive-only `DELETE /{memory_id}`; a separate purge route physically deletes caller-owned private memory, while organization-shared memory requires the organization owner. Explicitly expired records are purged in bounded batches by the one-shot maintenance command, with allowlisted metadata-only audit details. No default TTL is imposed, and the portable durable scheduler is still missing.
+- PR #59 rolling organization chat token budget, merge commit `72d20700116e5ca7ef76c5d303a0ceb824e0c217`; exact-head Run #889 passed 5/5 jobs (346 passed/16 skipped each Python version; PostgreSQL: 16 passed). The chat estimate is UTF-8 prompt bytes plus maximum output tokens, not tokenizer-derived or billed usage.
+
+GitHub now reports PRs #53, #55, #57 and #59 as merged. This scheduled engineering run did not invoke the merge action. The connected PR metadata did not expose `merged_by`; do not attribute these merges to a specific actor from the available evidence. Review and inline-thread APIs returned zero submitted reviews and zero threads for PRs #57 and #59 at inspection time. This is a governance concern because the owner's standing rule is to keep work Draft until owner review. Branch protection/required-review enforcement remains unverified; a previous branch-protection lookup was denied by GitHub. Do not assume that CI success alone authorizes a merge.
+
+PR #54 remains Draft/open at `b8eb5840f7f1301790f8db538c21c63153dd115f` with successful Run #869, but its chat token-budget implementation is superseded by the merged PR #59 branch. It is a stale duplicate candidate; it has not been closed or altered in this run.
+
+### Remaining dependency blockers
+
+- PR #20 remains Draft/open at `f63abf1dcd5d5282aa76cfe86fb69471dd21aaf2`; Run #611 passed 5/5 jobs, but authenticated Streamable HTTP POST verification for `initialize`, `tools/list`, and `tools/call` remains outstanding.
+- PR #22 remains Draft/open. Before this documentation refresh its head was `a35d5399a09b9fa51d6902a207f94514c5fa6aa9`; compare to current master was 22 ahead/20 behind with merge base `21480c93f105052ad35f343b84a6f7858de5631d`. This document update is documentation-only and uses `[skip ci]`; it does not reconcile the branch.
+- PR #23 remains Draft/open at `63b037cfc13ad2d121ca556934f6d2dbe44e6011`, 26 ahead/20 behind master and `mergeable=false`. Exact-head workflow and combined status lookups returned no run/status; Run #770 applies only to an earlier head. No rebase, force-push or merge was performed.
+- PR #24 remains based on the older role snapshot. The supplier branch is diverged from the current role branch (4 commits ahead / 7 behind); refresh PRs #24–#28 in dependency order only after a safe role-foundation reconciliation.
+- PRs #43–#51 retain their previously verified Draft implementation slices and exact-head CI evidence; owner review and integration reconciliation remain release gates.
+
+### Live data and release boundaries
+
+- The last read-only Hatchable Version 40 inventory is dated 2026-11-18: 46 tables, 25 active API functions, 75 files and 14 migrations. Its admin-only backup covers 17 table datasets and media metadata, not object bytes; no import endpoint was found.
+- No Hatchable export/import, row-data copy, live application edit, production deployment, provider activation, secret change, paid service, domain purchase or repository rename was performed in this run.
+- The full Definition of Done remains open: role/tenant lifecycle and branch reconciliation, authenticated MCP POST verification, all verticals, portable durable scheduler/worker, complete commerce and payment reconciliation, complete AI governance/DLP/evaluation, full backup/restore and staged data reconciliation, owner review, branch protection and portable-host rehearsal.
+
+### Next safe engineering sequence
+
+1. Reconcile PR #23 against current master without rewriting its existing history; rerun exact-head SQLite/PostgreSQL migration and role/tenant negative tests.
+2. Refresh PRs #24–#28 in dependency order after the role foundation is reconciled.
+3. Keep the now-merged memory expiry routine explicitly one-shot until a persisted, leased, missed-run-safe portable scheduler is implemented and tested.
+4. Complete authenticated MCP POST protocol verification through an authorized POST-capable path.
+5. Continue the remaining property, workforce, education, global commerce, AI checkpoint/resumption, retention/export and release-rehearsal work.
+
+This snapshot records GitHub evidence; it is not a production-readiness or Definition-of-Done claim.
