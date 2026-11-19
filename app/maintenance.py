@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.ai.memory.service import purge_expired_memories
 from app.audit import record_audit_event
 from app.db import SessionLocal
 from app.services.order_expiry import expire_due_orders
@@ -25,6 +26,9 @@ def run_maintenance_once(
         with db.begin():
             expired_order_ids = expire_due_orders(db, limit=order_limit, now=now)
             cleanup_counts = cleanup_expired_security_records(db, now=now)
+            expired_memory_records_deleted = purge_expired_memories(
+                db, limit=order_limit, now=now
+            )
             record_audit_event(
                 db,
                 actor_user_id=None,
@@ -38,6 +42,7 @@ def run_maintenance_once(
             "expired_orders": len(expired_order_ids),
             "expired_order_ids": expired_order_ids,
             "security_cleanup": cleanup_counts,
+            "expired_memory_records_deleted": expired_memory_records_deleted,
         }
 
 
