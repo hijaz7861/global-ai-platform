@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app import models  # noqa: F401
 from app.db import Base
-from app.maintenance_scheduler import _scheduler_lock, run_scheduler_once
+from app.maintenance_scheduler import _scheduler_transaction, run_scheduler_once
 from app.models import AuditEvent
 
 
@@ -34,12 +34,11 @@ def scheduler_db():
 
 
 def test_scheduler_runs_due_batch_once_and_uses_audit_checkpoint(scheduler_db):
-    engine, factory = scheduler_db
+    _, factory = scheduler_db
     now = datetime.now(timezone.utc)
 
     first = run_scheduler_once(
         factory,
-        database_engine=engine,
         interval_seconds=3600,
         order_limit=7,
         now=now,
@@ -50,7 +49,6 @@ def test_scheduler_runs_due_batch_once_and_uses_audit_checkpoint(scheduler_db):
 
     second = run_scheduler_once(
         factory,
-        database_engine=engine,
         interval_seconds=3600,
         order_limit=7,
         now=now + timedelta(minutes=5),
@@ -66,7 +64,7 @@ def test_scheduler_runs_due_batch_once_and_uses_audit_checkpoint(scheduler_db):
 
 
 def test_scheduler_coalesces_missed_intervals_into_one_recovery_run(scheduler_db):
-    engine, factory = scheduler_db
+    _, factory = scheduler_db
     now = datetime.now(timezone.utc)
 
     with factory() as db:
@@ -83,7 +81,6 @@ def test_scheduler_coalesces_missed_intervals_into_one_recovery_run(scheduler_db
 
     recovered = run_scheduler_once(
         factory,
-        database_engine=engine,
         interval_seconds=3600,
         now=now,
     )
@@ -91,7 +88,6 @@ def test_scheduler_coalesces_missed_intervals_into_one_recovery_run(scheduler_db
 
     follow_up = run_scheduler_once(
         factory,
-        database_engine=engine,
         interval_seconds=3600,
         now=now + timedelta(minutes=5),
     )
@@ -104,15 +100,15 @@ def test_scheduler_coalesces_missed_intervals_into_one_recovery_run(scheduler_db
 
 
 def test_scheduler_skips_when_another_local_scheduler_holds_lock(scheduler_db):
-    engine, factory = scheduler_db
-    with _scheduler_lock(engine, lock_name="scheduler-lock-test") as acquired:
-        assert acquired is True
-        result = run_scheduler_once(
-            factory,
-            database_engine=engine,
-            interval_seconds=3600,
-            lock_name="scheduler-lock-test",
-        )
+    _, factory = scheduler_db
+    with factory() as db:
+        with _scheduler_transaction(db, lock_name="scheduler-lock-test") as acquired:
+            assert acquired is True
+            result = run_scheduler_once(
+                factory,
+                interval_seconds=3600,
+                lock_name="scheduler-lock-test",
+            )
     assert result == {"status": "locked"}
 
 
@@ -123,11 +119,10 @@ def test_scheduler_skips_when_another_local_scheduler_holds_lock(scheduler_db):
 def test_scheduler_rejects_unbounded_configuration(
     scheduler_db, interval_seconds, order_limit
 ):
-    engine, factory = scheduler_db
+    _, factory = scheduler_db
     with pytest.raises(ValueError):
         run_scheduler_once(
             factory,
-            database_engine=engine,
             interval_seconds=interval_seconds,
             order_limit=order_limit,
         )
