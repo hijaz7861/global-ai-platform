@@ -1285,14 +1285,19 @@ def test_provider_circuit_breaker_allows_only_one_concurrent_half_open_probe():
 
 
 def test_postgres_maintenance_scheduler_advisory_lock_serializes_replicas():
-    from app.maintenance_scheduler import _scheduler_lock
+    from sqlalchemy.orm import sessionmaker
+
+    from app.maintenance_scheduler import _scheduler_transaction
 
     engine = create_engine(os.environ["DATABASE_URL"])
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     lock_name = f"hijaz-one-maintenance-test:{uuid4().hex}"
     try:
-        with _scheduler_lock(engine, lock_name=lock_name) as first:
-            assert first is True
-            with _scheduler_lock(engine, lock_name=lock_name) as second:
-                assert second is False
+        with factory() as first_db:
+            with _scheduler_transaction(first_db, lock_name=lock_name) as first:
+                assert first is True
+                with factory() as second_db:
+                    with _scheduler_transaction(second_db, lock_name=lock_name) as second:
+                        assert second is False
     finally:
         engine.dispose()
