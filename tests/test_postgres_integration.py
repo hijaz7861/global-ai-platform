@@ -1285,6 +1285,8 @@ def test_provider_circuit_breaker_allows_only_one_concurrent_half_open_probe():
 
 
 def test_postgres_maintenance_scheduler_advisory_lock_serializes_replicas():
+    from sqlalchemy.orm import sessionmaker
+
     from app.maintenance_scheduler import _scheduler_session_factory
 
     engine = create_engine(os.environ["DATABASE_URL"])
