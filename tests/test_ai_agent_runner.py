@@ -76,7 +76,7 @@ class FakeRouter:
 
     def select(self, **kwargs):
         self.selections.append(kwargs)
-        return object()
+        return SimpleNamespace(route=kwargs["route"], provider_name=kwargs["route"], model_name=str(kwargs["route"]) + "-model")
 
     async def complete(self, **kwargs):
         self.calls.append(kwargs)
@@ -436,6 +436,158 @@ def test_agent_does_not_persist_result_by_default(agent_context, monkeypatch):
         query="transient answer",
         limit=5,
     ) == []
+
+
+def test_agent_skips_open_primary_and_uses_healthy_fallback(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    monkeypatch.setattr(runner.settings, "ai_provider_circuit_breaker_enabled", True)
+    monkeypatch.setattr(runner.settings, "ai_auto_failover_enabled", True)
+    monkeypatch.setattr(runner.settings, "database_url", "postgresql+psycopg://test")
+    router_instance = FakeRouter([
+        _model_response({"action": "final", "answer": "Fallback was selected after the primary circuit opened."}),
+    ])
+    _patch_runner(monkeypatch, router_instance)
+    claims = []
+    successes = []
+
+    def claim(_db, *, provider_name, model_name, **kwargs):
+        claims.append(provider_name)
+        return provider_name == "fallback"
+
+    monkeypatch.setattr(runner, "claim_provider_attempt", claim)
+    monkeypatch.setattr(
+        runner, "record_provider_success",
+        lambda _db, **kwargs: successes.append(kwargs["provider_name"]),
+    )
+
+    result = asyncio.run(run_agent_task(context))
+
+    assert result["status"] == "completed"
+    assert [call["route"] for call in router_instance.calls] == ["fallback"]
+    assert claims == ["primary", "fallback"]
+    assert successes == ["fallback"]
+    assert result["usage"]["model_calls"] == 1
+
+
+def test_agent_fails_closed_when_primary_circuit_is_open_and_failover_is_disabled(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    monkeypatch.setattr(runner.settings, "ai_provider_circuit_breaker_enabled", True)
+    monkeypatch.setattr(runner.settings, "ai_auto_failover_enabled", False)
+    monkeypatch.setattr(runner.settings, "database_url", "postgresql+psycopg://test")
+    router_instance = FakeRouter([])
+    _patch_runner(monkeypatch, router_instance)
+    monkeypatch.setattr(runner, "claim_provider_attempt", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        runner, "_reserve_model_call",
+        lambda *args, **kwargs: pytest.fail("quota must not be reserved for an open circuit"),
+    )
+
+    with pytest.raises(AgentRunError) as exc:
+        asyncio.run(run_agent_task(context))
+
+    assert exc.value.error_code == "model_provider_circuit_open"
+    assert router_instance.calls == []
+
+
+def test_agent_records_retryable_primary_failure_and_fallback_success(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    monkeypatch.setattr(runner.settings, "ai_provider_circuit_breaker_enabled", True)
+    monkeypatch.setattr(runner.settings, "ai_auto_failover_enabled", True)
+    monkeypatch.setattr(runner.settings, "database_url", "postgresql+psycopg://test")
+    router_instance = FakeRouter([
+        ProviderError("temporary upstream failure", retryable=True),
+        _model_response({"action": "final", "answer": "Fallback recovered."}),
+    ])
+    _patch_runner(monkeypatch, router_instance)
+    failures = []
+    successes = []
+    monkeypatch.setattr(runner, "claim_provider_attempt", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        runner, "record_provider_failure",
+        lambda _db, **kwargs: failures.append((kwargs["provider_name"], kwargs["retryable"])),
+    )
+    monkeypatch.setattr(
+        runner, "record_provider_success",
+        lambda _db, **kwargs: successes.append(kwargs["provider_name"]),
+    )
+
+    result = asyncio.run(run_agent_task(context))
+
+    assert result["status"] == "completed"
+    assert [call["route"] for call in router_instance.calls] == ["primary", "fallback"]
+    assert failures == [("primary", True)]
+    assert successes == ["fallback"]
+    assert result["usage"]["model_calls"] == 2
+
+
+def test_agent_does_not_call_an_open_fallback_after_primary_failure(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    monkeypatch.setattr(runner.settings, "ai_provider_circuit_breaker_enabled", True)
+    monkeypatch.setattr(runner.settings, "ai_auto_failover_enabled", True)
+    monkeypatch.setattr(runner.settings, "database_url", "postgresql+psycopg://test")
+    router_instance = FakeRouter([ProviderError("temporary upstream failure", retryable=True)])
+    _patch_runner(monkeypatch, router_instance)
+    claims = []
+    failures = []
+
+    def claim(_db, *, provider_name, model_name, **kwargs):
+        claims.append(provider_name)
+        return provider_name == "primary"
+
+    monkeypatch.setattr(runner, "claim_provider_attempt", claim)
+    monkeypatch.setattr(
+        runner, "record_provider_failure",
+        lambda _db, **kwargs: failures.append(kwargs["provider_name"]),
+    )
+
+    with pytest.raises(AgentRunError) as exc:
+        asyncio.run(run_agent_task(context))
+
+    assert exc.value.error_code == "model_fallback_circuit_open"
+    assert claims == ["primary", "fallback"]
+    assert failures == ["primary"]
+    assert [call["route"] for call in router_instance.calls] == ["primary"]
+
+
+def test_agent_circuit_breaker_requires_postgres(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    monkeypatch.setattr(runner.settings, "ai_provider_circuit_breaker_enabled", True)
+    monkeypatch.setattr(runner.settings, "database_url", "sqlite:///./unit-test.db")
+    router_instance = FakeRouter([])
+    _patch_runner(monkeypatch, router_instance)
+
+    with pytest.raises(AgentRunError) as exc:
+        asyncio.run(run_agent_task(context))
+
+    assert exc.value.error_code == "postgres_required"
+    assert router_instance.calls == []
+
+
+def test_agent_counts_primary_attempt_when_fallback_quota_is_exhausted(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    monkeypatch.setattr(runner.settings, "ai_provider_circuit_breaker_enabled", True)
+    monkeypatch.setattr(runner.settings, "ai_auto_failover_enabled", True)
+    monkeypatch.setattr(runner.settings, "database_url", "postgresql+psycopg://test")
+    router_instance = FakeRouter([ProviderError("temporary upstream failure", retryable=True)])
+    _patch_runner(monkeypatch, router_instance)
+    monkeypatch.setattr(runner, "claim_provider_attempt", lambda *args, **kwargs: True)
+    monkeypatch.setattr(runner, "record_provider_failure", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runner, "release_provider_attempt", lambda *args, **kwargs: None)
+    reservations = []
+
+    def reserve(*args, **kwargs):
+        reservations.append(True)
+        if len(reservations) == 1:
+            return "primary-request"
+        raise AgentRunError("ai_quota_exceeded")
+
+    monkeypatch.setattr(runner, "_reserve_model_call", reserve)
+
+    result = asyncio.run(run_agent_task(context))
+
+    assert result["status"] == "quota_exhausted"
+    assert result["usage"]["model_calls"] == 1
+    assert [call["route"] for call in router_instance.calls] == ["primary"]
 
 
 
