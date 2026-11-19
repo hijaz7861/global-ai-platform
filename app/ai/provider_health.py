@@ -233,6 +233,11 @@ def record_provider_success(
     _lock_provider(db, key)
     latest = _latest_event(db, key)
     previous = _read_state(latest)
+    # A success from a request that was already in flight must not close a
+    # circuit opened by newer failures. Only a fresh half-open probe can close it.
+    if previous["state"] == "open":
+        db.commit()
+        return
     if previous["state"] == "closed" and previous["consecutive_failures"] == 0:
         db.commit()
         return
