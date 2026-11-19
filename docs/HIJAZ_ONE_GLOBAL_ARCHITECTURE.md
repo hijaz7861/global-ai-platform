@@ -761,3 +761,51 @@ PR #54 remains Draft/open at `b8eb5840f7f1301790f8db538c21c63153dd115f` with suc
 5. Continue the remaining property, workforce, education, global commerce, AI checkpoint/resumption, retention/export and release-rehearsal work.
 
 This snapshot records GitHub evidence; it is not a production-readiness or Definition-of-Done claim.
+
+## 24. Verified repository and scheduler snapshot — 2026-11-19
+
+### Canonical master and migration state
+
+- GitHub compare confirms current default branch master is exactly 5add4c1cb6c54b696620d3f3d28ca8708ca6a4cd, the merge commit for PR #60. The current master Alembic head remains 0034_postgres_approval_nonces; PRs #56–#60 added no migration. The role/vertical chain 0035–0039 remains on unmerged branches.
+- Repository inventory: 18 open PRs and 64 branches. Review and inline-thread APIs returned zero submitted reviews and zero threads for all 18 open PRs, including new PR #61. This is not owner approval.
+- PR #22 remains Draft/open at 57b3e455b35d23624cc8feafff369c27a06a51b5. Compare to master is 23 ahead / 21 behind with merge base 21480c93f105052ad35f343b84a6f7858de5631d. GitHub currently reports mergeable=true, but the branch is still diverged and contains no owner review; do not treat it as release-ready.
+- PR #23 remains Draft/open at 63b037cfc13ad2d121ca556934f6d2dbe44e6011, 26 ahead / 20 behind master and mergeable=false. The exact-head workflow lookup returned no run; the historical Run #770 applies only to an earlier SHA.
+- PR #20 remains Draft/open at f63abf1dcd5d5282aa76cfe86fb69471dd21aaf2; Run #611 passed, but authenticated Streamable HTTP POST initialize, tools/list, and tools/call remain unverified.
+- PRs #24–#28 remain a stacked role/supplier/transport/construction dependency chain. Their historical exact-head CI passed, but their base snapshots must be reconciled after the role foundation. PR #43 remains Draft and stale/non-mergeable; PRs #44 and #48–#50 remain stacked governed GitHub/sandbox work. All are unreviewed.
+
+### AI-control and runtime work now merged
+
+GitHub reports these PRs merged, and the exact PR-head workflow runs inspected for this snapshot completed successfully:
+
+- PR #53 outbound secret-pattern guard — merge commit f4701c89cb704dfdb24a4a2904fb5b08bacc9aad, Run #868 passed 5/5 jobs. It remains narrow pattern-based blocking, not comprehensive DLP.
+- PR #55 worker token-budget/failover environment parity — merge commit 53cf8bf025ef549e2036e24ad8ac138691067a68, Run #870 passed 5/5 jobs.
+- PR #56 Cloudflare edge health/status slice — merge commit 973f55de96e01ddc64e209ba4a4dd468153c053b, Run #44585055435 passed 5/5 jobs. Its PR description reports a read-only Worker with D1/KV; external Cloudflare resource state was not revalidated in this run.
+- PR #57 governed memory purge/expiry — merge commit 6efd39840f9192b213c0f655e5763eaf5717fc6b, Run #44588798825 passed 5/5 jobs. The purge remains explicit/owner-gated for shared memory; no default TTL is imposed.
+- PR #58 PostgreSQL URL normalization for psycopg 3 — merge commit d6543e63fb8902cdcaaf0452bcf31fefe89f9e0e, Run #44588600768 passed 5/5 jobs.
+- PR #59 rolling organization chat token budget — merge commit 72d20700116e5ca7ef76c5d303a0ceb824e0c217, Run #44589349123 passed 5/5 jobs. Its quota estimate is UTF-8 prompt bytes plus maximum output tokens, not tokenizer-derived or billed usage.
+- PR #60 PostgreSQL provider circuit breaker/failover — merge commit 5add4c1cb6c54b696620d3f3d28ca8708ca6a4cd, Run #44590149295 passed 5/5 jobs. It is disabled by default and covers the durable agent-runner path; regular chat circuit integration and an operational health API remain gaps.
+
+PR #54 was closed unmerged as superseded by PR #59. This run did not invoke any merge, deployment, provider activation or Cloudflare configuration action. The GitHub metadata used here does not establish who performed the merges.
+
+### Durable maintenance scheduler — Draft PR #61
+
+- New Draft PR #61: feat(runtime): durable database-coordinated maintenance scheduler, branch feat/durable-maintenance-scheduler, current head 8ef025e3a0c257c589065e7d6ffcdbb868e2b452, directly based on current master 5add4c1.
+- It adds a separate Compose scheduler, bounded interval/poll/batch settings, a durable checkpoint using the existing committed platform.maintenance_completed audit event, PostgreSQL advisory-lock coordination, one-run missed-interval recovery, and count-only logs. No migration is introduced, avoiding a collision with the unmerged role migration 0035.
+- SQLite is limited to a single local scheduler process; production configuration requires PostgreSQL.
+- Exact-head Actions Run #896 is pending/in progress at this snapshot. No pass is claimed until all five jobs finish successfully. The local clone/test attempt was blocked because the execution environment could not resolve github.com.
+- PR #61 remains Draft, open and unmerged; no reviews or inline threads exist.
+
+### Hatchable and release boundaries
+
+The last read-only Hatchable Version 40 inventory remains the 2026-11-18 snapshot: 46 tables, 25 API functions, 75 files and 14 SQL migrations. The admin-only backup covers only 17 table datasets and media metadata, not object bytes, and no import endpoint was found. No export was run and no live Hatchable record, file, schema, deployment or environment was changed.
+
+The Definition of Done remains open: role/tenant reconciliation, authenticated MCP POST verification, property/workforce/education verticals, portable backup/restore and data reconciliation, full commerce/payment settlement, AI checkpoints/resumption and comprehensive DLP/evaluation, owner review, branch protection and independent-host rehearsal.
+
+### Next safe engineering sequence
+
+1. Finish exact-head CI and code review for PR #61; keep it Draft until the scheduler lock/checkpoint behavior is verified.
+2. Reconcile the role-entitlement foundation against current master without force-pushing or rewriting the historical branch, then refresh PRs #24–#28 in dependency order.
+3. Obtain an authorized POST-capable MCP test path for PR #20.
+4. Continue property, workforce, education, commerce and full backup/import/reconciliation implementation.
+
+This snapshot is evidence tracking, not production approval or a Definition-of-Done claim.
