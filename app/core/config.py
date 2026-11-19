@@ -1,5 +1,5 @@
 """Environment-backed application settings."""
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,6 +49,18 @@ class Settings(BaseSettings):
     ai_max_response_bytes: int = Field(default=1048576, ge=1024, le=10485760)
     ai_daily_request_limit: int = Field(default=0, ge=0, le=10000)
     ai_daily_token_limit: int = Field(default=0, ge=0, le=10000000)
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_postgres_driver(cls, value: str) -> str:
+        """Use the installed psycopg 3 driver for standard hosted PostgreSQL URLs."""
+        if not isinstance(value, str):
+            return value
+        if value.startswith("postgres://"):
+            return "postgresql+psycopg://" + value[len("postgres://"):]
+        if value.startswith("postgresql://"):
+            return "postgresql+psycopg://" + value[len("postgresql://"):]
+        return value
 
     model_config = SettingsConfigDict(
         env_file=".env",
