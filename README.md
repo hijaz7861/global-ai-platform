@@ -105,7 +105,8 @@ Never point integration tests at a real or production database. The PostgreSQL s
 | `tests/test_audit.py` | Audit-event authorization and safe detail filtering |
 | `tests/test_ai_provider.py` | OpenAI-compatible provider adapter behavior |
 | `tests/test_ai_routes.py` | AI API authorization, limits, and provider selection |
-| `tests/test_maintenance_runner.py` | Bounded one-shot maintenance runner behavior |\n| `tests/test_maintenance_scheduler.py` | Durable scheduler checkpoint, missed-run recovery, and local lock behavior |
+| `tests/test_maintenance_runner.py` | Bounded one-shot maintenance runner behavior |
+| `tests/test_maintenance_scheduler.py` | Durable scheduler checkpoint, missed-run recovery, and local lock behavior |
 | `tests/test_security_maintenance.py` | Expired security-record cleanup |
 | `tests/test_production_config.py` | Fail-closed production configuration |
 | `tests/test_privacy_export.py` | Authenticated user data export, tenant privacy, and credential exclusion |
