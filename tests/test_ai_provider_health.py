@@ -213,3 +213,19 @@ def test_healthy_closed_provider_does_not_append_redundant_success_events(db):
         select(AuditEvent.id).where(AuditEvent.entity_type == "ai_provider_health")
     )
     assert count is None
+
+
+def test_stale_inflight_success_does_not_close_open_circuit(db):
+    now = datetime(2026, 11, 17, 12, 0, tzinfo=timezone.utc)
+    _record_failure(db, now=now, threshold=1)
+    record_provider_success(
+        db,
+        provider_name="test-provider",
+        model_name="private-model-name",
+        now=now + timedelta(seconds=1),
+    )
+    state = get_provider_health_snapshot(
+        db, provider_name="test-provider", model_name="private-model-name"
+    )
+    assert state["state"] == "open"
+    assert state["consecutive_failures"] == 1
