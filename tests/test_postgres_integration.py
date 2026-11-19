@@ -1235,3 +1235,50 @@ def test_postgres_concurrent_expiry_memory_purge_is_bounded_and_audited():
             assert all(event.details == {"status": "expired_purged"} for event in events)
     finally:
         engine.dispose()
+
+
+
+def test_provider_circuit_breaker_allows_only_one_concurrent_half_open_probe():
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.ai.provider_health import claim_provider_attempt, record_provider_failure
+
+    suffix = uuid4().hex
+    provider_name = f"postgres-circuit-{suffix[:12]}"
+    model_name = f"model-{suffix}"
+    now = datetime.now(timezone.utc)
+    engine = create_engine(os.environ["DATABASE_URL"])
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    try:
+        with factory() as db:
+            record_provider_failure(
+                db,
+                provider_name=provider_name,
+                model_name=model_name,
+                retryable=True,
+                failure_threshold=1,
+                cooldown_seconds=1,
+                error_code="http_5xx",
+                now=now,
+            )
+
+        probe_time = now + timedelta(seconds=2)
+
+        def claim_probe(_):
+            with factory() as db:
+                return claim_provider_attempt(
+                    db,
+                    provider_name=provider_name,
+                    model_name=model_name,
+                    probe_lease_seconds=60,
+                    now=probe_time,
+                )
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(claim_probe, range(8)))
+
+        assert sum(results) == 1
+    finally:
+        engine.dispose()
