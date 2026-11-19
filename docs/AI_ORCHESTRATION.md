@@ -150,3 +150,12 @@ Agent execution is submitted as task type `agent.run`. It requires live AI to be
 Cooperative cancellation is available at `POST /api/v1/organizations/{organization_id}/ai/tasks/{task_id}/cancel`. Creators can cancel their own tasks; organization owners/admins can cancel any task in their organization. Queued tasks cancel immediately. Running tasks observe cancellation at a heartbeat or terminal transition. A provider HTTP request already in flight cannot be forcibly interrupted.
 
 The runtime is single-agent, not a multi-agent planner. It has no write tools, memory-write tools, per-turn durable checkpoint/resumption, task preemption, automatic provider retry/failover, or external worker supervisor. Do not represent it as a fully autonomous multi-agent system.
+
+
+## PostgreSQL provider circuit breaker (optional)
+
+The durable agent worker can use an append-only, PostgreSQL-serialized provider health state machine. It fingerprints provider/model/route identifiers before persistence, records only allowlisted state metadata, opens a circuit after a configurable number of retryable failures, and permits a single leased half-open probe after cooldown. Non-retryable failures do not poison provider health. The circuit breaker is disabled by default and requires PostgreSQL when enabled.
+
+Configuration: `AI_PROVIDER_CIRCUIT_BREAKER_ENABLED=false`, `AI_PROVIDER_CIRCUIT_BREAKER_FAILURE_THRESHOLD=3`, `AI_PROVIDER_CIRCUIT_BREAKER_COOLDOWN_SECONDS=60`, and `AI_PROVIDER_CIRCUIT_BREAKER_PROBE_LEASE_SECONDS=30`. Automatic primary-to-fallback retry remains separately controlled by `AI_AUTO_FAILOVER_ENABLED`; only retryable provider failures may trigger it. Request and token reservations are performed independently for each attempted provider call.
+
+This is not a provider status dashboard or a guarantee of upstream availability. It covers the durable agent-runner path; regular chat route circuit integration and a dedicated operational health API remain future work.
