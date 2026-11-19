@@ -299,3 +299,95 @@ def archive_memory(
         details={"status": "archived"},
     )
     db.commit()
+
+
+def purge_memory(
+    db: Session,
+    *,
+    memory_id: str,
+    actor_user_id: str,
+    organization_id: str,
+    role: str,
+) -> None:
+    """Physically remove caller-owned private memory or owner-authorized shared memory.
+
+    The audit event records only the memory identifier, scope and reason; it never
+    copies memory content or source references into the audit log.
+    """
+    record = db.scalar(
+        select(AIMemoryRecord)
+        .where(AIMemoryRecord.id == memory_id)
+        .with_for_update()
+    )
+    if record is None:
+        raise MemoryNotFound("Memory record not found")
+
+    allowed = (
+        record.scope == "user"
+        and record.owner_user_id == actor_user_id
+        and record.organization_id is None
+    ) or (
+        record.scope == "organization"
+        and record.organization_id == organization_id
+        and role == "owner"
+    )
+    if not allowed:
+        raise MemoryNotFound("Memory record not found")
+
+    record_id = record.id
+    record_scope = record.scope
+    record_organization_id = record.organization_id
+    db.delete(record)
+    record_audit_event(
+        db,
+        actor_user_id=actor_user_id,
+        organization_id=record_organization_id,
+        action="ai.memory.purged",
+        entity_type="ai_memory_record",
+        entity_id=record_id,
+        details={"scope": record_scope, "reason": "user_requested"},
+    )
+    db.commit()
+
+
+def purge_expired_memories(
+    db: Session,
+    *,
+    limit: int = 100,
+    now: datetime | None = None,
+) -> int:
+    """Hard-delete a bounded batch of expired memories inside the caller's transaction."""
+    if not 1 <= limit <= 500:
+        raise ValueError("memory purge limit must be between 1 and 500")
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None or moment.utcoffset() is None:
+        raise ValueError("Memory purge time must include a timezone")
+    moment = moment.astimezone(timezone.utc)
+
+    records = db.scalars(
+        select(AIMemoryRecord)
+        .where(
+            AIMemoryRecord.expires_at.is_not(None),
+            AIMemoryRecord.expires_at <= moment,
+        )
+        .order_by(AIMemoryRecord.expires_at, AIMemoryRecord.id)
+        .with_for_update(skip_locked=True)
+        .limit(limit)
+    ).all()
+
+    for record in records:
+        record_id = record.id
+        record_scope = record.scope
+        record_organization_id = record.organization_id
+        db.delete(record)
+        record_audit_event(
+            db,
+            actor_user_id=None,
+            organization_id=record_organization_id,
+            action="ai.memory.expired_purged",
+            entity_type="ai_memory_record",
+            entity_id=record_id,
+            details={"scope": record_scope, "reason": "expired"},
+        )
+    db.flush()
+    return len(records)
