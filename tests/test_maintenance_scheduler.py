@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app import models  # noqa: F401
 from app.db import Base
-from app.maintenance_scheduler import _scheduler_transaction, run_scheduler_once
+from app.maintenance_scheduler import _LOCAL_LOCK, run_scheduler_once
 from app.models import AuditEvent
 
 
@@ -101,14 +101,15 @@ def test_scheduler_coalesces_missed_intervals_into_one_recovery_run(scheduler_db
 
 def test_scheduler_skips_when_another_local_scheduler_holds_lock(scheduler_db):
     _, factory = scheduler_db
-    with factory() as db:
-        with _scheduler_transaction(db, lock_name="scheduler-lock-test") as acquired:
-            assert acquired is True
-            result = run_scheduler_once(
-                factory,
-                interval_seconds=3600,
-                lock_name="scheduler-lock-test",
-            )
+    assert _LOCAL_LOCK.acquire(blocking=False) is True
+    try:
+        result = run_scheduler_once(
+            factory,
+            interval_seconds=3600,
+            lock_name="scheduler-lock-test",
+        )
+    finally:
+        _LOCAL_LOCK.release()
     assert result == {"status": "locked"}
 
 
@@ -126,3 +127,24 @@ def test_scheduler_rejects_unbounded_configuration(
             interval_seconds=interval_seconds,
             order_limit=order_limit,
         )
+
+def test_scheduler_failure_rolls_back_checkpoint_and_allows_retry(
+    scheduler_db, monkeypatch
+):
+    _, factory = scheduler_db
+
+    def fail_batch(*args, **kwargs):
+        raise RuntimeError("maintenance failed")
+
+    monkeypatch.setattr("app.maintenance_scheduler.run_maintenance_in_session", fail_batch)
+    with pytest.raises(RuntimeError):
+        run_scheduler_once(factory, interval_seconds=3600)
+
+    with factory() as db:
+        assert db.query(AuditEvent).filter_by(
+            action="platform.maintenance_completed"
+        ).count() == 0
+
+    monkeypatch.undo()
+    retried = run_scheduler_once(factory, interval_seconds=3600)
+    assert retried["status"] == "completed"
