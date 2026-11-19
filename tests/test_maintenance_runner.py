@@ -83,7 +83,7 @@ def test_maintenance_runner_purges_expired_memory_and_keeps_content_out_of_audit
                 action="ai.memory.expired_purged",
                 entity_id=memory_id,
             ).one()
-            assert event.details == {"scope": "user", "reason": "expired"}
+            assert event.details == {"status": "expired_purged"}
             assert "Expired private content" not in str(event.details)
     finally:
         Base.metadata.drop_all(bind=engine)
