@@ -1282,3 +1282,17 @@ def test_provider_circuit_breaker_allows_only_one_concurrent_half_open_probe():
         assert sum(results) == 1
     finally:
         engine.dispose()
+
+
+def test_postgres_maintenance_scheduler_advisory_lock_serializes_replicas():
+    from app.maintenance_scheduler import _scheduler_lock
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    lock_name = f"hijaz-one-maintenance-test:{uuid4().hex}"
+    try:
+        with _scheduler_lock(engine, lock_name=lock_name) as first:
+            assert first is True
+            with _scheduler_lock(engine, lock_name=lock_name) as second:
+                assert second is False
+    finally:
+        engine.dispose()
