@@ -59,3 +59,21 @@ def test_application_startup_fails_closed_for_production_sqlite(monkeypatch) -> 
     with pytest.raises(RuntimeError, match="PostgreSQL"):
         with TestClient(app):
             pass
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgres://user:pass@db.example.test:5432/app",
+        "postgresql://user:pass@db.example.test:5432/app",
+    ],
+)
+def test_standard_hosted_postgres_urls_select_psycopg3_driver(url: str) -> None:
+    config = Settings(database_url=url)
+    assert config.database_url.startswith("postgresql+psycopg://")
+    assert "db.example.test:5432/app" in config.database_url
+
+
+def test_explicit_postgres_driver_is_preserved() -> None:
+    url = "postgresql+psycopg://user:pass@db.example.test:5432/app"
+    assert Settings(database_url=url).database_url == url
