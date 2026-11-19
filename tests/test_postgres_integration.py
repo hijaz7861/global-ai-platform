@@ -1172,3 +1172,66 @@ def test_concurrent_approval_nonce_consumption_is_single_use():
         assert store.consume_nonce(nonce) is False
     finally:
         engine.dispose()
+
+
+
+def test_postgres_concurrent_expiry_memory_purge_is_bounded_and_audited():
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.ai.memory.service import create_memory, purge_expired_memories
+    from app.models import AIMemoryRecord, AuditEvent, User
+
+    suffix = uuid4().hex
+    engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    now = datetime.now(timezone.utc)
+    try:
+        with factory() as db:
+            user = User(
+                email=f"pg-memory-expiry-{suffix}@example.com",
+                password_hash="test-hash",
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            expired_ids = []
+            for index in range(4):
+                record = create_memory(
+                    db,
+                    actor_user_id=user.id,
+                    scope="user",
+                    organization_id=None,
+                    memory_type="reference",
+                    content=f"PostgreSQL expired memory {index}",
+                    expires_at=now + timedelta(days=1),
+                )
+                record.expires_at = now - timedelta(seconds=index + 1)
+                expired_ids.append(record.id)
+                db.commit()
+
+        def purge_batch() -> int:
+            with factory() as db:
+                deleted = purge_expired_memories(db, limit=2, now=now)
+                db.commit()
+                return deleted
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            counts = list(pool.map(lambda _: purge_batch(), range(2)))
+
+        assert all(0 <= count <= 2 for count in counts)
+        assert sum(counts) == 4
+        with factory() as db:
+            remaining = db.query(AIMemoryRecord).filter(
+                AIMemoryRecord.id.in_(expired_ids)
+            ).count()
+            events = db.query(AuditEvent).filter(
+                AuditEvent.action == "ai.memory.expired_purged",
+                AuditEvent.entity_id.in_(expired_ids),
+            ).all()
+            assert remaining == 0
+            assert len(events) == 4
+            assert all(event.details == {"status": "expired_purged"} for event in events)
+    finally:
+        engine.dispose()
