@@ -768,7 +768,7 @@ This snapshot records GitHub evidence; it is not a production-readiness or Defin
 
 - GitHub compare confirms current default branch master is exactly 5add4c1cb6c54b696620d3f3d28ca8708ca6a4cd, the merge commit for PR #60. The current master Alembic head remains 0034_postgres_approval_nonces; PRs #56–#60 added no migration. The role/vertical chain 0035–0039 remains on unmerged branches.
 - Repository inventory: 18 open PRs and 64 branches. Review and inline-thread APIs returned zero submitted reviews and zero threads for all 18 open PRs, including new PR #61. This is not owner approval.
-- PR #22 remains Draft/open at 57b3e455b35d23624cc8feafff369c27a06a51b5. Compare to master is 23 ahead / 21 behind with merge base 21480c93f105052ad35f343b84a6f7858de5631d. GitHub currently reports mergeable=true, but the branch is still diverged and contains no owner review; do not treat it as release-ready.
+- PR #22 remains Draft/open. At the start of this snapshot refresh its branch was 24 ahead / 21 behind master, with merge base 21480c93f105052ad35f343b84a6f7858de5631d. This documentation-only update adds another commit; re-fetch the branch pointer and divergence from GitHub before integration. GitHub reported mergeable=true, but the branch remains diverged and has no owner review; do not treat it as release-ready.
 - PR #23 remains Draft/open at 63b037cfc13ad2d121ca556934f6d2dbe44e6011, 26 ahead / 20 behind master and mergeable=false. The exact-head workflow lookup returned no run; the historical Run #770 applies only to an earlier SHA.
 - PR #20 remains Draft/open at f63abf1dcd5d5282aa76cfe86fb69471dd21aaf2; Run #611 passed, but authenticated Streamable HTTP POST initialize, tools/list, and tools/call remain unverified.
 - PRs #24–#28 remain a stacked role/supplier/transport/construction dependency chain. Their historical exact-head CI passed, but their base snapshots must be reconciled after the role foundation. PR #43 remains Draft and stale/non-mergeable; PRs #44 and #48–#50 remain stacked governed GitHub/sandbox work. All are unreviewed.
@@ -789,10 +789,10 @@ PR #54 was closed unmerged as superseded by PR #59. This run did not invoke any 
 
 ### Durable maintenance scheduler — Draft PR #61
 
-- New Draft PR #61: feat(runtime): durable database-coordinated maintenance scheduler, branch feat/durable-maintenance-scheduler, current head 8ef025e3a0c257c589065e7d6ffcdbb868e2b452, directly based on current master 5add4c1.
+- New Draft PR #61: feat(runtime): durable database-coordinated maintenance scheduler, branch feat/durable-maintenance-scheduler, final verified head 61ba169515e92bad87e28431b149ca7cb0a11e0d, directly based on current master 5add4c1.
 - It adds a separate Compose scheduler, bounded interval/poll/batch settings, a durable checkpoint using the existing committed platform.maintenance_completed audit event, PostgreSQL advisory-lock coordination, one-run missed-interval recovery, and count-only logs. No migration is introduced, avoiding a collision with the unmerged role migration 0035.
 - SQLite is limited to a single local scheduler process; production configuration requires PostgreSQL.
-- Exact-head Actions Run #896 is pending/in progress at this snapshot. No pass is claimed until all five jobs finish successfully. The local clone/test attempt was blocked because the execution environment could not resolve github.com.
+- Exact-head Actions Run #905 on 61ba169515e92bad87e28431b149ca7cb0a11e0d completed successfully: 5/5 jobs passed. Each Python 3.11/3.12/3.13 job reported 369 passed, 18 skipped and 73 warnings; PostgreSQL integration reported 18 passed and 3 warnings. Ruff, compilation, Alembic upgrade/check, dependency audit and Bandit succeeded. The local clone/test attempt was blocked because the execution environment could not resolve github.com.
 - PR #61 remains Draft, open and unmerged; no reviews or inline threads exist.
 
 ### Hatchable and release boundaries
