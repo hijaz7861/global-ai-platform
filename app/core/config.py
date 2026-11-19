@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     ai_max_response_bytes: int = Field(default=1048576, ge=1024, le=10485760)
     ai_daily_request_limit: int = Field(default=0, ge=0, le=10000)
     ai_daily_token_limit: int = Field(default=0, ge=0, le=10000000)
+    ai_provider_circuit_breaker_enabled: bool = False
+    ai_provider_circuit_breaker_failure_threshold: int = Field(default=3, ge=1, le=20)
+    ai_provider_circuit_breaker_cooldown_seconds: int = Field(default=60, ge=1, le=3600)
+    ai_provider_circuit_breaker_probe_lease_seconds: int = Field(default=30, ge=5, le=300)
 
     @field_validator("database_url", mode="before")
     @classmethod
