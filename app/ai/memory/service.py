@@ -335,7 +335,6 @@ def purge_memory(
         raise MemoryNotFound("Memory record not found")
 
     record_id = record.id
-    record_scope = record.scope
     record_organization_id = record.organization_id
     db.delete(record)
     record_audit_event(
@@ -345,7 +344,7 @@ def purge_memory(
         action="ai.memory.purged",
         entity_type="ai_memory_record",
         entity_id=record_id,
-        details={"scope": record_scope, "reason": "user_requested"},
+        details={"status": "purged"},
     )
     db.commit()
 
@@ -377,7 +376,6 @@ def purge_expired_memories(
 
     for record in records:
         record_id = record.id
-        record_scope = record.scope
         record_organization_id = record.organization_id
         db.delete(record)
         record_audit_event(
@@ -387,7 +385,7 @@ def purge_expired_memories(
             action="ai.memory.expired_purged",
             entity_type="ai_memory_record",
             entity_id=record_id,
-            details={"scope": record_scope, "reason": "expired"},
+            details={"status": "expired_purged"},
         )
     db.flush()
     return len(records)
