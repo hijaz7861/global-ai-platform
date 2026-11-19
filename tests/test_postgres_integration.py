@@ -56,25 +56,17 @@ def test_concurrent_refresh_replay_revokes_session_family():
 
 
 
-def test_concurrent_orders_cannot_oversell_single_inventory_unit():
+def test_concurrent_orders_cannot_oversell_single_inventory_unit(
+    monkeypatch, verified_user_factory, active_supplier_role_factory
+):
     suffix = uuid4().hex
-    password = "correct-horse-battery-12"
     seller_email = f"postgres-seller-{suffix}@example.com"
+    role_admin_email = f"postgres-role-admin-{suffix}@example.com"
     buyer_one_email = f"postgres-buyer-one-{suffix}@example.com"
     buyer_two_email = f"postgres-buyer-two-{suffix}@example.com"
 
     def register_and_login(client, email):
-        registered = client.post(
-            "/api/v1/auth/register",
-            json={"email": email, "password": password},
-        )
-        assert registered.status_code == 201, registered.text
-        logged_in = client.post(
-            "/api/v1/auth/token",
-            json={"email": email, "password": password},
-        )
-        assert logged_in.status_code == 200, logged_in.text
-        return logged_in.json()["access_token"]
+        return verified_user_factory(client, email)
 
     with TestClient(app) as client:
         seller_token = register_and_login(client, seller_email)
@@ -85,6 +77,9 @@ def test_concurrent_orders_cannot_oversell_single_inventory_unit():
         )
         assert organization.status_code == 201, organization.text
         organization_id = organization.json()["id"]
+        active_supplier_role_factory(
+            client, seller_token, organization_id, admin_email=role_admin_email
+        )
         listing = client.post(
             f"/api/v1/organizations/{organization_id}/listings",
             headers={"Authorization": f"Bearer {seller_token}"},
@@ -331,24 +326,16 @@ def test_accounting_period_overlap_is_rejected_by_database_trigger():
         engine.dispose()
 
 
-def test_concurrent_order_cancellation_releases_inventory_exactly_once():
+def test_concurrent_order_cancellation_releases_inventory_exactly_once(
+    monkeypatch, verified_user_factory, active_supplier_role_factory
+):
     suffix = uuid4().hex
-    password = "correct-horse-battery-12"
     seller_email = f"postgres-cancel-seller-{suffix}@example.com"
+    role_admin_email = f"postgres-cancel-role-admin-{suffix}@example.com"
     buyer_email = f"postgres-cancel-buyer-{suffix}@example.com"
 
     def register_and_login(client, email):
-        registered = client.post(
-            "/api/v1/auth/register",
-            json={"email": email, "password": password},
-        )
-        assert registered.status_code == 201, registered.text
-        login = client.post(
-            "/api/v1/auth/token",
-            json={"email": email, "password": password},
-        )
-        assert login.status_code == 200, login.text
-        return login.json()["access_token"]
+        return verified_user_factory(client, email)
 
     with TestClient(app) as client:
         seller_token = register_and_login(client, seller_email)
@@ -359,6 +346,9 @@ def test_concurrent_order_cancellation_releases_inventory_exactly_once():
         )
         assert organization.status_code == 201, organization.text
         organization_id = organization.json()["id"]
+        active_supplier_role_factory(
+            client, seller_token, organization_id, admin_email=role_admin_email
+        )
         listing = client.post(
             f"/api/v1/organizations/{organization_id}/listings",
             headers={"Authorization": f"Bearer {seller_token}"},
@@ -413,30 +403,21 @@ def test_concurrent_order_cancellation_releases_inventory_exactly_once():
     assert inventory["inventory_quantity"] == 1, "Concurrent cancellation must not double-release inventory"
 
 
-def test_concurrent_cancel_and_expiry_release_inventory_exactly_once(monkeypatch):
+def test_concurrent_cancel_and_expiry_release_inventory_exactly_once(
+    monkeypatch, verified_user_factory, active_supplier_role_factory
+):
     from datetime import datetime, timedelta, timezone
 
     from app.core.config import settings
 
     suffix = uuid4().hex
-    password = "correct-horse-battery-12"
     admin_email = f"postgres-expiry-admin-{suffix}@example.com"
     seller_email = f"postgres-expiry-seller-{suffix}@example.com"
     buyer_email = f"postgres-expiry-buyer-{suffix}@example.com"
     monkeypatch.setattr(settings, "platform_admin_emails", admin_email)
 
     def register_and_login(client, email):
-        registered = client.post(
-            "/api/v1/auth/register",
-            json={"email": email, "password": password},
-        )
-        assert registered.status_code == 201, registered.text
-        login = client.post(
-            "/api/v1/auth/token",
-            json={"email": email, "password": password},
-        )
-        assert login.status_code == 200, login.text
-        return login.json()["access_token"]
+        return verified_user_factory(client, email)
 
     with TestClient(app) as client:
         admin_token = register_and_login(client, admin_email)
@@ -448,6 +429,11 @@ def test_concurrent_cancel_and_expiry_release_inventory_exactly_once(monkeypatch
         )
         assert organization.status_code == 201, organization.text
         organization_id = organization.json()["id"]
+        role_admin_email = f"postgres-expiry-role-admin-{suffix}@example.com"
+        active_supplier_role_factory(
+            client, seller_token, organization_id, admin_email=role_admin_email
+        )
+        monkeypatch.setattr(settings, "platform_admin_emails", admin_email)
         listing = client.post(
             f"/api/v1/organizations/{organization_id}/listings",
             headers={"Authorization": f"Bearer {seller_token}"},
