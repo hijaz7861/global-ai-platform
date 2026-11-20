@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.ai.agents.schemas import AgentDecision, AgentTaskInput
 from app.ai.agents.checkpoints import (
     AgentCheckpointError,
+    AgentCheckpointKeyError,
     load_agent_checkpoint,
     save_agent_checkpoint,
 )
@@ -505,9 +506,15 @@ def _checkpoint_save(context: TaskExecutionContext, *, phase: str, turn: int, st
             state=state,
             lease_seconds=context.lease_seconds,
         )
+    except AgentCheckpointKeyError:
+        raise AgentRunError("agent_checkpoint_key_unavailable") from None
     except AgentCheckpointError as exc:
         code = str(exc)
-        if not code.startswith("agent_"):
+        if code == "checkpoint_state_too_large":
+            code = "agent_checkpoint_state_too_large"
+        elif code == "checkpoint_state_invalid":
+            code = "agent_checkpoint_state_invalid"
+        else:
             code = "agent_checkpoint_integrity_failed"
         raise AgentRunError(code) from None
 
@@ -586,6 +593,8 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
         checkpoint = load_agent_checkpoint(
             context.db, task_id=task.id, organization_id=task.organization_id
         )
+    except AgentCheckpointKeyError:
+        raise AgentRunError("agent_checkpoint_key_unavailable") from None
     except AgentCheckpointError:
         raise AgentRunError("agent_checkpoint_integrity_failed") from None
 
