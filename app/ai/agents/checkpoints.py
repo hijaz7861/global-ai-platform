@@ -92,15 +92,6 @@ def _decrypt(envelope: str, *, task_id: str, organization_id: str, revision: int
 def load_agent_checkpoint(
     db: Session, *, task_id: str, organization_id: str,
 ) -> dict[str, Any] | None:
-    from datetime import datetime, timedelta, timezone
-
-    now = datetime.now(timezone.utc)
-    live.heartbeat_at = now
-    live.lease_expires_at = now + timedelta(seconds=lease_seconds)
-    live.updated_at = now
-    live.heartbeat_at = now
-    live.lease_expires_at = now + timedelta(seconds=lease_seconds)
-    live.updated_at = now
     row = db.scalar(select(AIAgentCheckpoint).where(
         AIAgentCheckpoint.task_id == task_id,
         AIAgentCheckpoint.organization_id == organization_id,
@@ -135,7 +126,7 @@ def save_agent_checkpoint(
     state: dict[str, Any],
     lease_seconds: int = 300,
 ) -> dict[str, Any]:
-    """Persist one authenticated state transition while the caller owns a live task lease."""
+    """Persist one authenticated state transition while renewing the live task lease."""
     from app.ai.runtime.tasks import TaskCancelled, TaskLeaseLost
 
     if phase not in _PHASES or not 1 <= turn <= 5 or not 5 <= lease_seconds <= 3600:
@@ -166,6 +157,9 @@ def save_agent_checkpoint(
         revision=revision,
     )
     digest = sha256(ciphertext.encode("utf-8")).hexdigest()
+    live.heartbeat_at = now
+    live.lease_expires_at = now + timedelta(seconds=lease_seconds)
+    live.updated_at = now
     if row is None:
         row = AIAgentCheckpoint(
             task_id=task.id,
