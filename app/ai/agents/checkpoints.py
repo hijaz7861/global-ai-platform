@@ -5,6 +5,7 @@ import base64
 from hashlib import sha256
 import json
 import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from cryptography.exceptions import InvalidTag
@@ -97,6 +98,9 @@ def load_agent_checkpoint(
     live.heartbeat_at = now
     live.lease_expires_at = now + timedelta(seconds=lease_seconds)
     live.updated_at = now
+    live.heartbeat_at = now
+    live.lease_expires_at = now + timedelta(seconds=lease_seconds)
+    live.updated_at = now
     row = db.scalar(select(AIAgentCheckpoint).where(
         AIAgentCheckpoint.task_id == task_id,
         AIAgentCheckpoint.organization_id == organization_id,
@@ -134,14 +138,15 @@ def save_agent_checkpoint(
     """Persist one authenticated state transition while the caller owns a live task lease."""
     from app.ai.runtime.tasks import TaskCancelled, TaskLeaseLost
 
-    if phase not in _PHASES or not 1 <= turn <= 5:
-        raise ValueError("Invalid checkpoint phase or turn")
+    if phase not in _PHASES or not 1 <= turn <= 5 or not 5 <= lease_seconds <= 3600:
+        raise ValueError("Invalid checkpoint phase, turn, or lease duration")
+    now = datetime.now(timezone.utc)
     live = db.scalar(select(AITask).where(
         AITask.id == task.id,
         AITask.organization_id == task.organization_id,
         AITask.status == "running",
         AITask.claimed_by == worker_id,
-        AITask.lease_expires_at > __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+        AITask.lease_expires_at > now,
     ).with_for_update())
     if live is None:
         db.rollback()
