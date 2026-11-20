@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
     true,
     false,
 )
@@ -894,3 +895,89 @@ class ConsumedApprovalNonce(Base):
 
     nonce: Mapped[str] = mapped_column(String(128), primary_key=True)
     consumed_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class RoleDefinition(Base):
+    """Platform-governed role catalogue with independently configurable fees."""
+    __tablename__ = "role_definitions"
+    __table_args__ = (
+        CheckConstraint("min_age >= 0 AND min_age <= 120", name="ck_role_definitions_min_age"),
+        CheckConstraint(
+            "fee_amount_minor IS NULL OR fee_amount_minor >= 0",
+            name="ck_role_definitions_fee_nonnegative",
+        ),
+        CheckConstraint("length(fee_currency) = 3", name="ck_role_definitions_currency"),
+    )
+
+    role_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    min_age: Mapped[int] = mapped_column(Integer, default=18, nullable=False)
+    fee_amount_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    fee_currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    requires_review: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class UserRoleEntitlement(Base):
+    """A user's independent request, payment and approval lifecycle for one platform role."""
+    __tablename__ = "user_role_entitlements"
+    __table_args__ = (
+        Index(
+            "uq_user_role_entitlement_global", "user_id", "role_key", unique=True,
+            postgresql_where=text("organization_id IS NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
+            sqlite_where=text("organization_id IS NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
+        ),
+        Index(
+            "uq_user_role_entitlement_org", "user_id", "role_key", "organization_id", unique=True,
+            postgresql_where=text("organization_id IS NOT NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
+            sqlite_where=text("organization_id IS NOT NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
+        ),
+        CheckConstraint(
+            "status IN ('pending_payment','pending_review','active','rejected','expired','suspended','revoked')",
+            name="ck_user_role_entitlements_status",
+        ),
+        CheckConstraint(
+            "payment_status IN ('not_required','pending','verified','rejected')",
+            name="ck_user_role_entitlements_payment_status",
+        ),
+        CheckConstraint("fee_amount_minor >= 0", name="ck_user_role_entitlements_fee_nonnegative"),
+        Index("ix_user_role_entitlements_user_status", "user_id", "status"),
+        Index("ix_user_role_entitlements_role_status", "role_key", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role_key: Mapped[str] = mapped_column(ForeignKey("role_definitions.role_key", ondelete="RESTRICT"), nullable=False)
+    organization_id: Mapped[str | None] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="pending_review", nullable=False)
+    payment_status: Mapped[str] = mapped_column(String(24), default="not_required", nullable=False)
+    fee_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    fee_currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    payment_reference: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    age_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reviewer_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewer_notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class RoleEntitlementEvent(Base):
+    """Append-only audit trail for role application, payment and review transitions."""
+    __tablename__ = "role_entitlement_events"
+    __table_args__ = (
+        Index("ix_role_entitlement_events_entitlement_created", "entitlement_id", "created_at"),
+        Index("ix_role_entitlement_events_actor_created", "actor_user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    entitlement_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

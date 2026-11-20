@@ -1282,3 +1282,203 @@ def test_provider_circuit_breaker_allows_only_one_concurrent_half_open_probe():
         assert sum(results) == 1
     finally:
         engine.dispose()
+
+
+def test_role_entitlement_events_are_immutable_in_postgresql(monkeypatch):
+    from app.api.routes import identity as identity_routes
+
+    verification_tokens: dict[str, str] = {}
+    monkeypatch.setattr(
+        identity_routes,
+        "send_email_verification",
+        lambda email, token: verification_tokens.__setitem__(email, token),
+    )
+    email = f"postgres-role-audit-{uuid4().hex}@example.com"
+    password = "correct-horse-battery-12"
+    with TestClient(app) as client:
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        verified = client.post(
+            "/api/v1/auth/email-verification/confirm",
+            json={"token": verification_tokens.pop(email)},
+        )
+        assert verified.status_code == 204, verified.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        application = client.post(
+            "/api/v1/me/role-entitlements",
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+            json={"role_key": "student"},
+        )
+        assert application.status_code == 201, application.text
+        entitlement_id = application.json()["id"]
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    try:
+        with engine.connect() as connection:
+            event_id = connection.execute(
+                text(
+                    "SELECT id FROM role_entitlement_events "
+                    "WHERE entitlement_id = :entitlement_id ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"entitlement_id": entitlement_id},
+            ).scalar_one()
+
+        with pytest.raises(DBAPIError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("UPDATE role_entitlement_events SET event_type = 'tampered' WHERE id = :event_id"),
+                    {"event_id": event_id},
+                )
+
+        with pytest.raises(DBAPIError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("DELETE FROM role_entitlement_events WHERE id = :event_id"),
+                    {"event_id": event_id},
+                )
+    finally:
+        engine.dispose()
+
+
+def test_postgres_maintenance_expires_due_role_entitlements_and_is_idempotent():
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.maintenance import run_maintenance_once
+    from app.models import RoleEntitlementEvent, User, UserRoleEntitlement
+
+    suffix = uuid4().hex
+    now = datetime.now(timezone.utc)
+    engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    try:
+        with factory() as db:
+            users = [
+                User(email=f"postgres-role-expiry-{index}-{suffix}@example.com", password_hash="test-hash")
+                for index in range(2)
+            ]
+            db.add_all(users)
+            db.flush()
+            entitlements = [
+                UserRoleEntitlement(
+                    user_id=users[0].id,
+                    role_key="student",
+                    status="active",
+                    payment_status="not_required",
+                    fee_amount_minor=0,
+                    fee_currency="PKR",
+                    activated_at=now - timedelta(days=30),
+                    expires_at=now - timedelta(seconds=1),
+                ),
+                UserRoleEntitlement(
+                    user_id=users[1].id,
+                    role_key="student",
+                    status="suspended",
+                    payment_status="not_required",
+                    fee_amount_minor=0,
+                    fee_currency="PKR",
+                    activated_at=now - timedelta(days=30),
+                    expires_at=now - timedelta(seconds=1),
+                ),
+            ]
+            db.add_all(entitlements)
+            db.commit()
+            entitlement_ids = {item.id for item in entitlements}
+
+        first = run_maintenance_once(factory, role_entitlement_limit=10, now=now)
+        assert first["expired_role_entitlements"] == 2
+        assert set(first["expired_role_entitlement_ids"]) == entitlement_ids
+
+        second = run_maintenance_once(factory, role_entitlement_limit=10, now=now)
+        assert second["expired_role_entitlements"] == 0
+        assert second["expired_role_entitlement_ids"] == []
+
+        with factory() as db:
+            statuses = {
+                item.id: item.status
+                for item in db.query(UserRoleEntitlement).filter(
+                    UserRoleEntitlement.id.in_(entitlement_ids)
+                ).all()
+            }
+            assert statuses == {item_id: "expired" for item_id in entitlement_ids}
+            events = db.query(RoleEntitlementEvent).filter(
+                RoleEntitlementEvent.entitlement_id.in_(entitlement_ids),
+                RoleEntitlementEvent.event_type == "expired",
+            ).all()
+            assert len(events) == 2
+            assert {event.details["previous_status"] for event in events} == {"active", "suspended"}
+    finally:
+        engine.dispose()
+
+
+def test_postgres_role_entitlement_uniqueness_is_isolated_by_global_and_org_scope(monkeypatch):
+    from app.api.routes import identity as identity_routes
+
+    verification_tokens: dict[str, str] = {}
+    monkeypatch.setattr(
+        identity_routes,
+        "send_email_verification",
+        lambda email, token: verification_tokens.__setitem__(email, token),
+    )
+    email = f"postgres-role-unique-{uuid4().hex}@example.com"
+    password = "correct-horse-battery-12"
+    with TestClient(app) as client:
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        verified = client.post(
+            "/api/v1/auth/email-verification/confirm",
+            json={"token": verification_tokens.pop(email)},
+        )
+        assert verified.status_code == 204, verified.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["access_token"]
+        organization = client.post(
+            "/api/v1/organizations",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": f"Role uniqueness {uuid4().hex[:8]}"},
+        )
+        assert organization.status_code == 201, organization.text
+        organization_id = organization.json()["id"]
+
+    def apply(scope: str):
+        payload = {"role_key": "student"}
+        if scope == "organization":
+            payload["organization_id"] = organization_id
+        with TestClient(app) as client:
+            return client.post(
+                "/api/v1/me/role-entitlements",
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+            )
+
+    for scope in ("global", "organization"):
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(lambda _: apply(scope), range(2)))
+        assert sorted(response.status_code for response in responses) == [201, 409], [
+            (response.status_code, response.text) for response in responses
+        ]
+
+    with TestClient(app) as client:
+        rows = client.get(
+            "/api/v1/me/role-entitlements",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert rows.status_code == 200, rows.text
+    assert {
+        row["organization_id"] for row in rows.json() if row["role_key"] == "student"
+    } == {None, organization_id}
