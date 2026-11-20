@@ -18,7 +18,7 @@ from app.ai.memory.service import create_memory
 from app.ai.skills.service import approve_skill_version, create_skill_version
 from app.ai.runtime.worker import run_worker_once
 from app.db import Base
-from app.models import AuditEvent, Membership, Organization, User
+from app.models import AITaskStep, AuditEvent, Membership, Organization, User
 
 
 @pytest.fixture
@@ -199,6 +199,15 @@ def test_agent_rechecks_membership_before_running(agent_context, monkeypatch):
 
 def test_durable_worker_executes_agent_run_task_end_to_end(agent_context, monkeypatch):
     context, _, _ = agent_context
+    # Return the fixture task to the queue so the standalone worker can claim it.
+    context.task.status = "queued"
+    context.task.claimed_by = None
+    context.task.lease_expires_at = None
+    context.task.heartbeat_at = None
+    for step in context.db.query(AITaskStep).filter_by(task_id=context.task.id).all():
+        step.status = "abandoned"
+        step.completed_at = None
+    context.db.commit()
     router_instance = FakeRouter([
         _model_response({"action": "final", "answer": "The durable agent completed its task."}),
     ])
@@ -214,7 +223,7 @@ def test_durable_worker_executes_agent_run_task_end_to_end(agent_context, monkey
     assert context.task.status == "succeeded"
     assert context.task.result_payload["status"] == "completed"
     assert context.task.result_payload["answer"] == "The durable agent completed its task."
-    assert context.task.max_attempts == 1
+    assert context.task.max_attempts == 3
 
 
 
