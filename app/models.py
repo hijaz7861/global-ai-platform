@@ -274,6 +274,7 @@ class JournalEntry(Base):
     __tablename__ = "journal_entries"
     __table_args__ = (
         UniqueConstraint("organization_id", "idempotency_key", name="uq_journal_org_idempotency"),
+        Index("uq_journal_entries_id_org", "id", "organization_id", unique=True),
         CheckConstraint("total_minor > 0", name="ck_journal_total_positive"),
         CheckConstraint("status = 'posted'", name="ck_journal_posted_only"),
         UniqueConstraint("reversal_of_id", name="uq_journal_reversal_source"),
@@ -1166,3 +1167,131 @@ class ConstructionBoqItem(Base):
     unit_rate_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     line_total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class ConstructionQuote(Base):
+    """BOQ-based quote snapshot with a separately mutable lifecycle."""
+    __tablename__ = "construction_quotes"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_construction_quotes_id_org"),
+        UniqueConstraint("organization_id", "quote_no", name="uq_construction_quotes_org_quote_no"),
+        ForeignKeyConstraint(["project_id", "organization_id"],
+            ["construction_projects.id", "construction_projects.organization_id"],
+            ondelete="RESTRICT", name="fk_construction_quotes_project_org"),
+        CheckConstraint("status IN ('draft','sent','accepted','rejected','expired')",
+                        name="ck_construction_quotes_status"),
+        CheckConstraint("currency = 'PKR'", name="ck_construction_quotes_currency_pkr"),
+        CheckConstraint("validity_days BETWEEN 1 AND 365", name="ck_construction_quotes_validity"),
+        CheckConstraint("overhead_pct BETWEEN 0 AND 100", name="ck_construction_quotes_overhead_pct"),
+        CheckConstraint("profit_pct BETWEEN 0 AND 100", name="ck_construction_quotes_profit_pct"),
+        CheckConstraint("discount_pct BETWEEN 0 AND 100", name="ck_construction_quotes_discount_pct"),
+        CheckConstraint("tax_pct BETWEEN 0 AND 100", name="ck_construction_quotes_tax_pct"),
+        CheckConstraint("boq_subtotal_minor >= 0 AND overhead_amount_minor >= 0 AND profit_amount_minor >= 0",
+                        name="ck_construction_quotes_base_amounts_nonnegative"),
+        CheckConstraint("discount_amount_minor >= 0 AND tax_amount_minor >= 0 AND total_minor >= 0",
+                        name="ck_construction_quotes_adjustments_nonnegative"),
+        Index("ix_construction_quotes_org_project_created", "organization_id", "project_id", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    project_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    decision_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    quote_no: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    boq_subtotal_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    overhead_pct: Mapped[Decimal] = mapped_column(Numeric(7, 2), default=Decimal("0"), nullable=False)
+    overhead_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    profit_pct: Mapped[Decimal] = mapped_column(Numeric(7, 2), default=Decimal("0"), nullable=False)
+    profit_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    discount_pct: Mapped[Decimal] = mapped_column(Numeric(7, 2), default=Decimal("0"), nullable=False)
+    discount_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    tax_pct: Mapped[Decimal] = mapped_column(Numeric(7, 2), default=Decimal("0"), nullable=False)
+    tax_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    validity_days: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    valid_until: Mapped[date] = mapped_column(Date, nullable=False)
+    terms: Mapped[str | None] = mapped_column(String(3000), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class ConstructionQuoteLine(Base):
+    """Snapshot line copied from a tenant-owned BOQ; no live BOQ dependency."""
+    __tablename__ = "construction_quote_lines"
+    __table_args__ = (
+        ForeignKeyConstraint(["quote_id", "organization_id"],
+            ["construction_quotes.id", "construction_quotes.organization_id"],
+            ondelete="RESTRICT", name="fk_construction_quote_lines_quote_org"),
+        UniqueConstraint("quote_id", "line_number", name="uq_construction_quote_lines_quote_line"),
+        CheckConstraint("line_number BETWEEN 1 AND 10000", name="ck_construction_quote_lines_line_number"),
+        CheckConstraint("source_boq_line_number IS NULL OR source_boq_line_number BETWEEN 1 AND 10000",
+                        name="ck_construction_quote_lines_source_line"),
+        CheckConstraint("quantity > 0", name="ck_construction_quote_lines_quantity_positive"),
+        CheckConstraint("unit_rate_minor >= 0 AND line_total_minor >= 0",
+                        name="ck_construction_quote_lines_amounts_nonnegative"),
+        Index("ix_construction_quote_lines_org_quote", "organization_id", "quote_id", "line_number"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    quote_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_boq_line_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    item_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    unit: Mapped[str] = mapped_column(String(30), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    unit_rate_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    line_total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class ConstructionCashbookEntry(Base):
+    """Immutable project cashbook event linked to one balanced journal entry."""
+    __tablename__ = "construction_cashbook_entries"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "organization_id"],
+            ["construction_projects.id", "construction_projects.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_construction_cashbook_project_org",
+        ),
+        ForeignKeyConstraint(
+            ["journal_entry_id", "organization_id"],
+            ["journal_entries.id", "journal_entries.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_construction_cashbook_journal_org",
+        ),
+        UniqueConstraint("journal_entry_id", name="uq_construction_cashbook_journal_entry"),
+        CheckConstraint("direction IN ('income','expense')", name="ck_construction_cashbook_direction"),
+        CheckConstraint(
+            "amount_minor > 0 AND amount_minor <= 9000000000000000",
+            name="ck_construction_cashbook_amount",
+        ),
+        CheckConstraint("currency = 'PKR'", name="ck_construction_cashbook_currency_pkr"),
+        Index(
+            "ix_construction_cashbook_org_project_created",
+            "organization_id", "project_id", "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    project_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    journal_entry_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )

@@ -1077,3 +1077,111 @@ class ConstructionProjectDetailResponse(BaseModel):
     project: ConstructionProjectResponse
     boq_items: list[ConstructionBoqItemResponse]
     boq_total_minor: int
+
+
+class ConstructionQuoteCreate(BaseModel):
+    overhead_pct: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=5, decimal_places=2)
+    profit_pct: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=5, decimal_places=2)
+    discount_pct: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=5, decimal_places=2)
+    tax_pct: Decimal = Field(default=Decimal("0"), ge=0, le=100, max_digits=5, decimal_places=2)
+    validity_days: int = Field(default=15, ge=1, le=365)
+    terms: str | None = Field(default=None, max_length=3000)
+
+    @field_validator("terms")
+    @classmethod
+    def normalize_quote_terms(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value is not None else None
+        return normalized or None
+
+
+class ConstructionQuoteDecision(BaseModel):
+    decision: Literal["accept", "reject"]
+
+
+class ConstructionQuoteResponse(BaseModel):
+    id: str
+    organization_id: str
+    project_id: str
+    created_by_user_id: str
+    decision_by_user_id: str | None
+    quote_no: str
+    status: str
+    currency: str
+    boq_subtotal_minor: int
+    overhead_pct: Decimal
+    overhead_amount_minor: int
+    profit_pct: Decimal
+    profit_amount_minor: int
+    discount_pct: Decimal
+    discount_amount_minor: int
+    tax_pct: Decimal
+    tax_amount_minor: int
+    total_minor: int
+    validity_days: int
+    valid_until: date
+    terms: str | None
+    sent_at: datetime | None
+    decided_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConstructionQuoteLineResponse(BaseModel):
+    id: str
+    organization_id: str
+    quote_id: str
+    line_number: int
+    source_boq_line_number: int | None
+    category: str | None
+    item_name: str
+    unit: str
+    quantity: Decimal
+    unit_rate_minor: int
+    line_total_minor: int
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConstructionQuoteDetailResponse(BaseModel):
+    quote: ConstructionQuoteResponse
+    lines: list[ConstructionQuoteLineResponse]
+
+
+
+class ConstructionCashbookCreate(BaseModel):
+    direction: Literal["income", "expense"]
+    cash_account_id: str = Field(min_length=1, max_length=36)
+    category_account_id: str = Field(min_length=1, max_length=36)
+    category: str = Field(min_length=1, max_length=80)
+    amount_minor: int = Field(gt=0, le=9_000_000_000_000_000, strict=True)
+    description: str | None = Field(default=None, max_length=500)
+
+    @field_validator("category", "description")
+    @classmethod
+    def normalize_cashbook_text(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value is not None else None
+        if value is not None and not normalized:
+            raise ValueError("Cashbook text fields must not be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def require_distinct_accounts(self):
+        if self.cash_account_id == self.category_account_id:
+            raise ValueError("Cash and category accounts must be different")
+        return self
+
+
+class ConstructionCashbookResponse(BaseModel):
+    id: str
+    organization_id: str
+    project_id: str
+    journal_entry_id: str
+    created_by_user_id: str
+    direction: str
+    category: str
+    description: str | None
+    amount_minor: int
+    currency: str
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
