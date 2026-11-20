@@ -91,6 +91,12 @@ def _decrypt(envelope: str, *, task_id: str, organization_id: str, revision: int
 def load_agent_checkpoint(
     db: Session, *, task_id: str, organization_id: str,
 ) -> dict[str, Any] | None:
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    live.heartbeat_at = now
+    live.lease_expires_at = now + timedelta(seconds=lease_seconds)
+    live.updated_at = now
     row = db.scalar(select(AIAgentCheckpoint).where(
         AIAgentCheckpoint.task_id == task_id,
         AIAgentCheckpoint.organization_id == organization_id,
@@ -123,6 +129,7 @@ def save_agent_checkpoint(
     phase: str,
     turn: int,
     state: dict[str, Any],
+    lease_seconds: int = 300,
 ) -> dict[str, Any]:
     """Persist one authenticated state transition while the caller owns a live task lease."""
     from app.ai.runtime.tasks import TaskCancelled, TaskLeaseLost
@@ -134,7 +141,7 @@ def save_agent_checkpoint(
         AITask.organization_id == task.organization_id,
         AITask.status == "running",
         AITask.claimed_by == worker_id,
-        AITask.lease_expires_at.is_not(None),
+        AITask.lease_expires_at > __import__("datetime").datetime.now(__import__("datetime").timezone.utc),
     ).with_for_update())
     if live is None:
         db.rollback()
