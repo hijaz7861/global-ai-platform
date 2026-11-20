@@ -11,7 +11,8 @@ from sqlalchemy.pool import StaticPool
 from app import models  # noqa: F401
 from app.ai.agents import runner
 from app.ai.agents.runner import AgentRunError, run_agent_task
-from app.ai.runtime.tasks import create_task
+from app.ai.runtime.tasks import claim_next_task, create_task, start_task_step
+from app.ai.agents.checkpoints import save_agent_checkpoint
 from app.ai.providers import ProviderError
 from app.ai.memory.service import create_memory
 from app.ai.skills.service import approve_skill_version, create_skill_version
@@ -21,7 +22,7 @@ from app.models import AuditEvent, Membership, Organization, User
 
 
 @pytest.fixture
-def agent_context():
+def agent_context(monkeypatch):
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -29,6 +30,7 @@ def agent_context():
     )
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
     Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr(runner.settings, "secret_key", "agent-checkpoint-test-secret-key-0001")
     db = factory()
     user = User(email="agent-owner@example.com", password_hash="test-hash")
     organization = Organization(name="Agent Organization")
@@ -53,12 +55,16 @@ def agent_context():
             "max_output_tokens": 64,
         },
         idempotency_key="agent-run-key-001",
-        max_attempts=1,
+        max_attempts=3,
     )
+    worker_id = "agent-test-worker"
+    task = claim_next_task(db, worker_id=worker_id, lease_seconds=300)
+    assert task is not None
+    start_task_step(db, task=task, worker_id=worker_id, step_name="agent.run")
     context = SimpleNamespace(
         db=db,
         task=task,
-        worker_id="agent-test-worker",
+        worker_id=worker_id,
         lease_seconds=300,
         heartbeat=lambda: None,
     )
@@ -626,3 +632,74 @@ def test_agent_does_not_forward_secret_returned_by_read_only_tool(agent_context,
     assert exc.value.error_code == "sensitive_data_detected"
     assert len(router_instance.calls) == 1
     assert secret not in router_instance.calls[0]["prompt"]
+
+
+
+def test_agent_resumes_saved_decision_without_repeating_provider_call(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    memories, skills = runner._load_approved_context(
+        context,
+        goal="Read the organization profile and summarize it",
+        data_class="internal",
+    )
+    state = runner._new_checkpoint_state()
+    state["context_sha256"] = runner._approved_context_digest(memories, skills)
+    state["decision"] = {
+        "action": "final",
+        "tool": None,
+        "arguments": {},
+        "answer": "Recovered from the durable checkpoint.",
+    }
+    state["total_model_calls"] = 1
+    state["provider"] = "stub"
+    state["model"] = "stub-model"
+    save_agent_checkpoint(
+        context.db,
+        task=context.task,
+        worker_id=context.worker_id,
+        phase="decision_saved",
+        turn=1,
+        state=state,
+        lease_seconds=context.lease_seconds,
+    )
+    router_instance = FakeRouter([])
+    _patch_runner(monkeypatch, router_instance)
+
+    result = asyncio.run(run_agent_task(context))
+
+    assert result["status"] == "completed"
+    assert result["answer"] == "Recovered from the durable checkpoint."
+    assert result["usage"]["model_calls"] == 1
+    assert router_instance.calls == []
+
+
+def test_agent_rejects_checkpoint_when_approved_context_changes(agent_context, monkeypatch):
+    context, _, _ = agent_context
+    memories, skills = runner._load_approved_context(
+        context,
+        goal="Read the organization profile and summarize it",
+        data_class="internal",
+    )
+    state = runner._new_checkpoint_state()
+    state["context_sha256"] = "0" * 64
+    state["decision"] = {
+        "action": "final",
+        "tool": None,
+        "arguments": {},
+        "answer": "Must not be returned.",
+    }
+    save_agent_checkpoint(
+        context.db,
+        task=context.task,
+        worker_id=context.worker_id,
+        phase="decision_saved",
+        turn=1,
+        state=state,
+        lease_seconds=context.lease_seconds,
+    )
+    _patch_runner(monkeypatch, FakeRouter([]))
+
+    with pytest.raises(AgentRunError) as exc:
+        asyncio.run(run_agent_task(context))
+
+    assert exc.value.error_code == "agent_checkpoint_context_changed"
