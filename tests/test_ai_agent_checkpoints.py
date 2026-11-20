@@ -38,7 +38,7 @@ def checkpoint_context(monkeypatch):
     db.commit()
     db.refresh(user)
     db.refresh(organization)
-    task, _ = create_task(
+    create_task(
         db,
         organization_id=organization.id,
         actor_user_id=user.id,
