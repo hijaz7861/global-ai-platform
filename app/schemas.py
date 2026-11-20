@@ -1,5 +1,6 @@
 """Request and response schemas for identity, commerce, AI, and accounting."""
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -943,3 +944,136 @@ class TransportVehicleReviewRequest(BaseModel):
         if len(self.notes) < 3:
             raise ValueError("Review notes must contain at least three characters")
         return self
+
+
+class ConstructionClientCreate(BaseModel):
+    display_name: str = Field(min_length=2, max_length=160)
+    city: str | None = Field(default=None, max_length=100)
+
+    @field_validator("display_name")
+    @classmethod
+    def normalize_client_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Client name must contain at least two non-space characters")
+        return normalized
+
+    @field_validator("city")
+    @classmethod
+    def normalize_client_city(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value is not None else None
+        return normalized or None
+
+
+class ConstructionClientResponse(BaseModel):
+    id: str
+    organization_id: str
+    created_by_user_id: str
+    display_name: str
+    city: str | None
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConstructionProjectCreate(BaseModel):
+    client_id: str = Field(min_length=1, max_length=36)
+    title: str = Field(min_length=2, max_length=180)
+    work_type: Literal["grey_structure", "superstructure", "complete_construction", "renovation", "other"]
+    contract_type: Literal["labour_only", "labour_material"]
+    contract_amount_minor: int = Field(default=0, ge=0, le=9_000_000_000_000_000)
+    currency: Literal["PKR"] = "PKR"
+    location_label: str | None = Field(default=None, max_length=200)
+    start_date: date | None = None
+    target_date: date | None = None
+    notes: str | None = Field(default=None, max_length=1500)
+
+    @field_validator("title")
+    @classmethod
+    def normalize_project_title(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Project title must contain at least two non-space characters")
+        return normalized
+
+    @field_validator("location_label", "notes")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value is not None else None
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_project_dates(self):
+        if self.start_date is not None and self.target_date is not None and self.target_date < self.start_date:
+            raise ValueError("Project target date must not precede its start date")
+        return self
+
+
+class ConstructionProjectUpdate(BaseModel):
+    status: Literal["lead", "quoted", "approved", "in_progress", "on_hold", "completed", "cancelled"] | None = None
+    progress_percent: int | None = Field(default=None, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def require_change(self):
+        if self.status is None and self.progress_percent is None:
+            raise ValueError("At least one project field must be supplied")
+        return self
+
+
+class ConstructionProjectResponse(BaseModel):
+    id: str
+    organization_id: str
+    client_id: str
+    created_by_user_id: str
+    title: str
+    work_type: str
+    contract_type: str
+    contract_amount_minor: int
+    currency: str
+    location_label: str | None
+    start_date: date | None
+    target_date: date | None
+    status: str
+    progress_percent: int
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConstructionBoqItemCreate(BaseModel):
+    line_number: int = Field(ge=1, le=10000)
+    category: str | None = Field(default=None, max_length=80)
+    item_name: str = Field(min_length=1, max_length=160)
+    unit: str = Field(min_length=1, max_length=30)
+    quantity: Decimal = Field(gt=0, max_digits=12, decimal_places=3)
+    unit_rate_minor: int = Field(ge=0, le=9_000_000_000_000_000)
+
+    @field_validator("category", "item_name", "unit")
+    @classmethod
+    def normalize_boq_text(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value is not None else None
+        if value is not None and not normalized:
+            raise ValueError("BOQ text fields must not be blank")
+        return normalized
+
+
+class ConstructionBoqItemResponse(BaseModel):
+    id: str
+    organization_id: str
+    project_id: str
+    created_by_user_id: str
+    line_number: int
+    category: str | None
+    item_name: str
+    unit: str
+    quantity: Decimal
+    unit_rate_minor: int
+    line_total_minor: int
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConstructionProjectDetailResponse(BaseModel):
+    project: ConstructionProjectResponse
+    boq_items: list[ConstructionBoqItemResponse]
+    boq_total_minor: int
