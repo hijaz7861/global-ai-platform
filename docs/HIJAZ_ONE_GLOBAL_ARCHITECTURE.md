@@ -930,3 +930,30 @@ This snapshot records verified source and CI evidence only; it is not a release 
 - No production deployment, secret change, external payment/communication/provider activation, paid service, domain purchase or repository rename occurred.
 
 The HIJAZ ONE Definition of Done remains **not satisfied**. The next safe work is to verify PR #64's exact-head workflow and then continue the dependent vertical role-gate matrix, followed by complete staged export/import and reconciliation design. This evidence update is documentation-only and is not an owner approval, merge-readiness or release-completion claim.
+
+## 28. Transport vertical integration — 2026-11-20 (late run)
+
+### Read-only Hatchable Version 40 source inventory
+
+- The connected project was re-identified as HIJAZ ONE, project `proj_BZBdOQbhPXPi`, slug `hijaz-construction`, Version 40, at `https://hijaz-construction.hatchable.site`.
+- Current project metadata reports 46 database tables and 25 active API functions. The transport vertical consists of four tables: `transport_profiles`, `transport_vehicles`, `transport_bookings`, and `transport_registration_fee_settings`.
+- Two active source API functions were confirmed: `/api/transport-action` and `/api/transport-marketplace`. Source migrations `0013_transport_and_machinery_rental.sql` and `0014_transport_verification_reference.sql` were read. The two UI files `public/transport.html` and `public/transport-admin.html` were found in the file inventory.
+- The source contains phone/OTP proof, age and identity status/references, registration numbers, operator contact details, GPS coordinates, document references, booking/client PII and booking/payment state. The portable slice intentionally does not copy those fields or claim the booking workflow is ported. No source rows, object bytes, credentials or files were exported; the live project was not modified.
+
+### Portable transport implementation
+
+- Draft PR #65 is the current-master transport integration candidate. Branch `integration/transport-marketplace-master-refresh-20261120`, exact head `cca4a08cfe6e9cd0654f1d4c8e7e21f2d60fdc55`, first parent PR #64's current-master supplier/role integration and second parent original PR #25. The common ancestor is the original PR #24 supplier role-gate head `7bfd25636403b017d470ab8eee9b221e7f00f077`.
+- PR #65 adds `0036_transport_marketplace` after `0035_role_entitlements`, organization-owned transporter profiles, organization-scoped vehicle listings, moderated admin queues, and public discovery that checks active role/payment/age/email/account/membership, approved profile and verified/available vehicle.
+- Tenant transport endpoints require membership and an active `transporter` entitlement for the exact organization. The provider-profile and vehicle review statements use PostgreSQL row locks; vehicle review also locks the owning profile scoped by organization. A PostgreSQL-dialect regression test covers the lock clauses. Existing role/supplier code and history remain first-parent content; PR #25 history is retained as a second parent.
+- Exact-head GitHub Actions Run #44797472324 completed **SUCCESS, 5/5 jobs** on `cca4a08cfe6e9cd0654f1d4c8e7e21f2d60fdc55`. Python 3.11/3.12/3.13 each reported 388 passed / 20 skipped / 73 warnings; PostgreSQL integration reported 20 passed / 3 warnings. SQLite and PostgreSQL Alembic upgrade/check passed through migration head `0036_transport_marketplace`; `pip-audit` found no known vulnerabilities and Bandit reported no issues.
+- PR #65 is Draft/open/unmerged, with zero owner reviews and zero inline threads at the last check. The CI verifies the portable implementation and migration path from an empty test database; it does not verify real OTP/identity/payment providers, booking, source-data import, or an existing-database upgrade rehearsal.
+
+### Explicit transport exclusions and remaining release gates
+
+- Booking lifecycle, phone OTP, booking fees, payment intents/webhooks, settlement, external messaging, GPS/road routing, identity/registration evidence, uploaded media, object storage and Hatchable data import remain unimplemented.
+- Country/currency checks are syntax-level only; ISO registry membership and currency exponent metadata remain release gates. Straight-line distance is not road ETA.
+- Property, workforce/hiring, education and construction verticals still need source inventory, portable models/routes, exact role and tenant gates, negative tests and workflow preservation.
+- The staged Hatchable export/import remains incomplete: the earlier read-only inventory found 46 tables but only 17 table datasets in the admin backup and no import endpoint. Full object-byte export, checksums, idempotent import, referential reconciliation, rollback and dry-run comparison remain required.
+- PR #64 and PR #65 remain Draft and unmerged. No owner approval, production deployment, live Hatchable mutation, data transfer, provider activation, paid service, domain purchase or repository rename occurred.
+
+The HIJAZ ONE Definition of Done remains **not satisfied**. The next safe engineering work is to continue the property/workforce/education/construction vertical inventory and role-gated portable slices in dependency order, while separately designing a complete staged export/import and reconciliation rehearsal. This snapshot is evidence tracking, not a release approval or completion claim.
