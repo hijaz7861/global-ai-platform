@@ -33,9 +33,28 @@ def _can_manage_project(membership: Membership, project: ConstructionProject) ->
     return membership.role in {"owner", "admin"} or project.created_by_user_id == membership.user_id
 
 
-def _get_project(db: Session, organization_id: str, project_id: str) -> ConstructionProject:
-    project = db.scalar(select(ConstructionProject).where(
-        ConstructionProject.id == project_id, ConstructionProject.organization_id == organization_id))
+def _construction_project_statement(
+    organization_id: str, project_id: str, *, for_update: bool = False
+):
+    """Build an organization-scoped project query, optionally locking its row.
+
+    PostgreSQL writers use the same parent-row lock for BOQ mutations and
+    lifecycle transitions. This serializes project closure against concurrent
+    BOQ inserts without adding locks to read-only detail requests.
+    """
+    statement = select(ConstructionProject).where(
+        ConstructionProject.id == project_id,
+        ConstructionProject.organization_id == organization_id,
+    )
+    return statement.with_for_update() if for_update else statement
+
+
+def _get_project(
+    db: Session, organization_id: str, project_id: str, *, for_update: bool = False
+) -> ConstructionProject:
+    project = db.scalar(
+        _construction_project_statement(organization_id, project_id, for_update=for_update)
+    )
     if project is None:
         raise HTTPException(status_code=404, detail="Construction project not found")
     return project
@@ -151,7 +170,7 @@ def add_construction_boq_item(
     entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("construction_provider", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> ConstructionBoqItemResponse:
-    project = _get_project(db, membership.organization_id, project_id)
+    project = _get_project(db, membership.organization_id, project_id, for_update=True)
     if not _can_manage_project(membership, project):
         raise HTTPException(status_code=403, detail="Project creator or organization owner/admin required")
     if project.status in {"completed", "cancelled"}:
