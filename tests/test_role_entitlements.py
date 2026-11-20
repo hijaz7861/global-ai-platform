@@ -180,6 +180,43 @@ def test_paid_role_requires_admin_payment_and_age_verification(client):
     assert response.json()["age_verified"] is True
 
 
+def test_platform_admin_can_list_bounded_role_review_queue_without_exposing_email(client):
+    applicant_token = register(client, "queue-applicant@example.com")
+    admin_token = register(client, "platform@example.com")
+    application = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {applicant_token}"},
+        json={"role_key": "student"},
+    )
+    assert application.status_code == 201, application.text
+
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    queue = client.get(
+        "/api/v1/platform/role-entitlements?status=pending_review&role_key=student&limit=10",
+        headers=admin_headers,
+    )
+    assert queue.status_code == 200, queue.text
+    rows = queue.json()
+    match = next(row for row in rows if row["id"] == application.json()["id"])
+    assert match["status"] == "pending_review"
+    assert match["applicant_user_id"]
+    assert "email" not in match
+    assert "identity_document" not in match
+
+    active_only = client.get(
+        "/api/v1/platform/role-entitlements?status=active",
+        headers=admin_headers,
+    )
+    assert active_only.status_code == 200
+    assert all(row["status"] == "active" for row in active_only.json())
+
+    denied = client.get(
+        "/api/v1/platform/role-entitlements",
+        headers={"Authorization": f"Bearer {applicant_token}"},
+    )
+    assert denied.status_code == 403
+
+
 def test_non_admin_cannot_review_role_applications(client):
     user_token = register(client, "ordinary@example.com")
     application = client.post(

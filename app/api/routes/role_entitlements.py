@@ -2,7 +2,7 @@
 from datetime import timedelta, timezone
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -267,6 +267,44 @@ def update_role_definition(
     db.commit()
     db.refresh(role)
     return _role_payload(role)
+
+
+@router.get("/platform/role-entitlements")
+def list_platform_role_entitlements(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    status_filter: Literal[
+        "pending_payment", "pending_review", "active", "rejected",
+        "expired", "suspended", "revoked",
+    ] | None = Query(default=None, alias="status"),
+    role_key: str | None = Query(default=None, min_length=2, max_length=64),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
+    """Return a bounded review queue to verified platform administrators only."""
+    if not user.email_verified or not _is_platform_admin(user.email):
+        raise HTTPException(status_code=403, detail="Verified platform administrator required")
+    statement = (
+        select(UserRoleEntitlement, RoleDefinition)
+        .join(RoleDefinition, RoleDefinition.role_key == UserRoleEntitlement.role_key)
+    )
+    if status_filter is not None:
+        statement = statement.where(UserRoleEntitlement.status == status_filter)
+    if role_key is not None:
+        statement = statement.where(UserRoleEntitlement.role_key == role_key)
+    rows = db.execute(
+        statement.order_by(
+            UserRoleEntitlement.requested_at.desc(),
+            UserRoleEntitlement.id,
+        ).limit(limit).offset(offset)
+    ).all()
+    result = []
+    for entitlement, role in rows:
+        item = _entitlement_payload(entitlement, role)
+        # Give the reviewer a stable internal applicant reference without exposing email or documents.
+        item["applicant_user_id"] = entitlement.user_id
+        result.append(item)
+    return result
 
 
 @router.post("/platform/role-entitlements/{entitlement_id}/review")
