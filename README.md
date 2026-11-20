@@ -19,7 +19,7 @@ A public, modular project for building a global business platform incrementally.
 - Owner/admin chart of accounts, balanced idempotent journal posting, immutable reversals, accounting period controls, period trial balance, paginated account ledger, income statement, balance sheet, and a manual bank reconciliation workflow.
 - Transaction-bound allowlisted audit events for organization, catalog, order, and ledger operations.
 - Guarded AI chat and capability-aware multi-provider routing; tenant-scoped durable AI tasks, a bounded single-agent runner with static read-only tools, encrypted per-turn checkpoints, safe-phase resumption, provenance-aware memory, approved versioned skills, and cooperative task cancellation. Ambiguous in-flight provider calls fail closed rather than being replayed. Live model calls remain disabled by default.
-- Integrated tenant-scoped AI operating layer: durable idempotent tasks, lease recovery and cooperative cancellation; provenance-aware user/organization memory; owner-approved versioned skills; a static audited read-only tool gateway; explicit multi-provider text routing; a bounded single-agent loop executed by the durable worker; and a transactional task-event outbox. Shared PostgreSQL nonce persistence for signed-approval replay protection is included in migration `0034_postgres_approval_nonces`, and `0035_ai_agent_checkpoints`. No model-generated code or write tools are enabled. External calls are disabled by default and require explicit opt-in, a positive request limit, and PostgreSQL.
+- Integrated tenant-scoped AI operating layer: durable idempotent tasks, lease recovery and cooperative cancellation; provenance-aware user/organization memory; owner-approved versioned skills; a static audited read-only tool gateway; explicit multi-provider text routing; a bounded single-agent loop executed by the durable worker; and a transactional task-event outbox. Shared PostgreSQL nonce persistence and encrypted agent checkpoints are defined in migrations `0034_postgres_approval_nonces` and `0035_ai_agent_checkpoints`, respectively. No model-generated code or write tools are enabled. External calls are disabled by default and require explicit opt-in, a positive request limit, and PostgreSQL.
 - Orders remain `pending_payment`; no payment is charged or processed.
 - SQLAlchemy models and Alembic migrations for identity, rotating refresh-token families, tenants, catalog, inventory adjustment history, orders, audit, accounting periods, journal entries and reversals, token revocation, password reset, and supplier profiles.
 - GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks. The test requirements include `httpx2` for the current Starlette `TestClient` and `httpx` for the AI adapter's async provider client.
@@ -109,7 +109,7 @@ Never point integration tests at a real or production database. The PostgreSQL s
 | `tests/test_security_maintenance.py` | Expired security-record cleanup |
 | `tests/test_production_config.py` | Fail-closed production configuration |
 | `tests/test_privacy_export.py` | Authenticated user data export, tenant privacy, and credential exclusion |
-| `tests/test_postgres_integration.py` | PostgreSQL-only concurrency and database enforcement |
+| `tests/test_ai_agent_checkpoints.py` | Encrypted checkpoint integrity, key rotation, lease-bound persistence, and safe/ambiguous worker recovery |\n| `tests/test_ai_agent_runner.py` | Constrained agent decisions, static tool use, and checkpoint resumption |\n| `tests/test_postgres_integration.py` | PostgreSQL-only concurrency and database enforcement |
 
 The GitHub Actions workflow additionally checks Ruff lint rules, Python compilation, Alembic migration consistency, declared dependency vulnerabilities, and Bandit findings. The PostgreSQL job runs migrations and the PostgreSQL-specific integration suite.
 
@@ -119,7 +119,7 @@ The GitHub Actions workflow additionally checks Ruff lint rules, Python compilat
 - The three Python matrix jobs also passed Ruff lint, Python compilation, and Alembic migration consistency checks. The 15 skips in each ordinary matrix job are PostgreSQL-only cases, exercised in the dedicated PostgreSQL job.
 - The CI logs include non-fatal Starlette/httpx and SQLAlchemy `Session.flush(objects=...)` deprecation warnings. These remain maintenance items; the successful workflow is not warning-free.
 - Run [#737](https://github.com/hijaz7861/global-ai-platform/actions/runs/42742352589) also passed on the pre-merge feature head, including the new shared PostgreSQL nonce migration and concurrency test.
-- CI verifies only the commit tested by that run. CI success is not a production-readiness certification. No live deployment, live payment processing, or paid AI-provider call has been performed.
+- CI verifies only the commit tested by that run. CI success is not a production-readiness certification. No live deployment, live payment processing, or paid AI-provider call has been performed.\n- The encrypted-checkpoint changes in PR #68 are a separate, not-yet-verified change; the successful #737/#738 runs do not cover that PR head.
 
 ## Core product requirements
 
