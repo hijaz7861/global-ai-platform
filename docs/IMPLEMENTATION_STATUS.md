@@ -21,17 +21,12 @@ This public `master` branch is the reviewable foundation for the **Global AI Pla
 
 ## Verification evidence and limitations
 
-- CI Run #606 completed successfully on PR head `8768d42b3906476ede940e61d97bbbb55370b33f`. All five jobs passed: Python 3.11, 3.12, and 3.13 each reported **186 passed, 11 skipped, 1 warning**; the dedicated PostgreSQL integration job reported **11 passed, 1 warning**; dependency audit and Bandit passed.
-- Ruff lint, Python compilation, and Alembic migration checks passed in each Python test job. The 11 skipped cases are PostgreSQL-only tests excluded from the ordinary Python matrix; they ran successfully in the dedicated PostgreSQL job.
-- Run #606 verifies the action-binding, nonce-ordering, regression-test, and documentation changes present on the recorded head. CI success is not a production-readiness certification.
-- Earlier foundation evidence: [CI Run #549](https://github.com/hijaz7861/global-ai-platform/actions/runs/40616367566) completed successfully on commit `8a54bf52b177b243eb106507687fe25e060f9789`.
-- The earlier recorded Python jobs reported **98 passed, 11 skipped, 1 warning** per Python version. The skips were PostgreSQL-only integration cases run in the dedicated database job.
-- The earlier dedicated PostgreSQL 16 integration job applied and checked migrations, then reported **11 passed, 1 warning**.
-- Ruff linting, Python compilation, Alembic migration consistency, dependency audit (`No known vulnerabilities found`), and Bandit checks passed in the recorded successful runs.
-- A Starlette deprecation warning related to using `httpx` with `starlette.testclient` was non-fatal and should be reviewed during dependency maintenance.
-- CI verifies only the commit tested by that run. Later code changes require a new successful run. CI success is not a production-readiness certification.
-- No live deployment, live payment processing, or paid AI-provider call has been performed. Hosting remains out of scope for the current engineering pass.
-
+- GitHub Actions run [#738](https://github.com/hijaz7861/global-ai-platform/actions/runs/43386822453) passed on merged `master` commit `21480c93f105052ad35f343b84a6f7858de5631d`. All five jobs passed: Python 3.11, 3.12, and 3.13 each reported **246 passed, 15 skipped, 58 warnings**; the dedicated PostgreSQL 16 integration job reported **15 passed, 3 warnings**; dependency audit and Bandit passed.
+- The Python matrix jobs also passed Ruff lint, Python compilation, and Alembic migration consistency checks. The 15 skipped cases per Python job are PostgreSQL-only tests and ran in the dedicated PostgreSQL job.
+- The PostgreSQL job applied migration `0034_postgres_approval_nonces` and completed the full PostgreSQL integration suite successfully. Run [#737](https://github.com/hijaz7861/global-ai-platform/actions/runs/42742352589) had already passed on the pre-merge feature head; #738 confirms the merged commit.
+- Non-fatal warnings remain: Starlette/httpx TestClient deprecation, SQLAlchemy `Session.flush(objects=...)` deprecation, and test warnings. CI is successful but not warning-free and is not a production-readiness certification.
+- Dependency audit reported **No known vulnerabilities found**; Bandit completed successfully. The workflow does not replace an independent security review.
+- No live deployment, live payment processing, paid AI-provider call, or real-host Docker isolation test has been performed. Hosting remains deferred.
 ## Remaining implementation work
 
 ### Highest-priority coding and tests
