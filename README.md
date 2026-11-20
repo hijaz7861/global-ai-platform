@@ -19,7 +19,7 @@ A public, modular project for building a global business platform incrementally.
 - Owner/admin chart of accounts, balanced idempotent journal posting, immutable reversals, accounting period controls, period trial balance, paginated account ledger, income statement, balance sheet, and a manual bank reconciliation workflow.
 - Transaction-bound allowlisted audit events for organization, catalog, order, and ledger operations.
 - Guarded AI chat and capability-aware multi-provider routing; tenant-scoped durable AI tasks, a bounded single-agent runner with read-only tools, provenance-aware memory, approved versioned skills, and cooperative task cancellation. Live model calls remain disabled by default.
-- Initial tenant-scoped AI operating-layer foundations on the feature branch: durable idempotent tasks, lease recovery and cooperative cancellation; provenance-aware user/organization memory; owner-approved versioned skills; a static audited read-only tool gateway; explicit multi-provider text routing; and a bounded single-agent loop executed by the durable worker. No model-generated code or write tools are enabled. External calls are disabled by default and require explicit opt-in, a positive request limit, and PostgreSQL.
+- Integrated tenant-scoped AI operating layer: durable idempotent tasks, lease recovery and cooperative cancellation; provenance-aware user/organization memory; owner-approved versioned skills; a static audited read-only tool gateway; explicit multi-provider text routing; a bounded single-agent loop executed by the durable worker; and a transactional task-event outbox. Shared PostgreSQL nonce persistence for signed-approval replay protection is included in migration `0034_postgres_approval_nonces`. No model-generated code or write tools are enabled. External calls are disabled by default and require explicit opt-in, a positive request limit, and PostgreSQL.
 - Orders remain `pending_payment`; no payment is charged or processed.
 - SQLAlchemy models and Alembic migrations for identity, rotating refresh-token families, tenants, catalog, inventory adjustment history, orders, audit, accounting periods, journal entries and reversals, token revocation, password reset, and supplier profiles.
 - GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks. The test requirements include `httpx2` for the current Starlette `TestClient` and `httpx` for the AI adapter's async provider client.
@@ -115,11 +115,11 @@ The GitHub Actions workflow additionally checks Ruff lint rules, Python compilat
 
 ### Verification status — read before relying on the code
 
-- A historical CI run on commit `bf816cd7a872d67b5b774b85302ec8e6d41093fc` reported 85 passed / 11 environment-dependent skips for each Python 3.11, 3.12, and 3.13 job, and 11 PostgreSQL integration tests passed, along with lint, compilation, migration, dependency-audit, and Bandit checks. This is historical evidence and does **not** validate newer commits.
-- Six production-configuration/startup tests passed in an isolated local slice. That was not a full repository test run.
-- Four privacy-export tests are committed, including buyer-order inclusion/exclusion coverage. Their fixture explicitly disables email verification for token-based test setup; they have not yet been verified by a full suite.
-- Recent current-branch Actions runs have failed before any runner steps started (`runner_id: 0`, no runner name, zero steps). The cause is not confirmed; do not interpret those runs as application test failures or as passing tests.
-- No claim is made that every test currently passes. Check the latest [Pull Request checks](https://github.com/hijaz7861/global-ai-platform/pull/1) and run the commands above before merging.
+- GitHub Actions run [#738](https://github.com/hijaz7861/global-ai-platform/actions/runs/43386822453) passed on the merged `master` commit `21480c93f105052ad35f343b84a6f7858de5631d`. All five jobs passed: Python 3.11, 3.12, and 3.13 each reported **246 passed, 15 skipped, 58 warnings**; the dedicated PostgreSQL 16 integration job reported **15 passed, 3 warnings**; dependency audit and Bandit passed.
+- The three Python matrix jobs also passed Ruff lint, Python compilation, and Alembic migration consistency checks. The 15 skips in each ordinary matrix job are PostgreSQL-only cases, exercised in the dedicated PostgreSQL job.
+- The CI logs include non-fatal Starlette/httpx and SQLAlchemy `Session.flush(objects=...)` deprecation warnings. These remain maintenance items; the successful workflow is not warning-free.
+- Run [#737](https://github.com/hijaz7861/global-ai-platform/actions/runs/42742352589) also passed on the pre-merge feature head, including the new shared PostgreSQL nonce migration and concurrency test.
+- CI verifies only the commit tested by that run. CI success is not a production-readiness certification. No live deployment, live payment processing, or paid AI-provider call has been performed.
 
 ## Core product requirements
 
