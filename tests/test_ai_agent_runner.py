@@ -684,7 +684,7 @@ def test_agent_resumes_saved_decision_without_repeating_provider_call(agent_cont
 
 def test_agent_rejects_checkpoint_when_approved_context_changes(agent_context, monkeypatch):
     context, _, _ = agent_context
-    memories, skills = runner._load_approved_context(
+    runner._load_approved_context(
         context,
         goal="Read the organization profile and summarize it",
         data_class="internal",
