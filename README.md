@@ -109,7 +109,9 @@ Never point integration tests at a real or production database. The PostgreSQL s
 | `tests/test_security_maintenance.py` | Expired security-record cleanup |
 | `tests/test_production_config.py` | Fail-closed production configuration |
 | `tests/test_privacy_export.py` | Authenticated user data export, tenant privacy, and credential exclusion |
-| `tests/test_ai_agent_checkpoints.py` | Encrypted checkpoint integrity, key rotation, lease-bound persistence, and safe/ambiguous worker recovery |\n| `tests/test_ai_agent_runner.py` | Constrained agent decisions, static tool use, and checkpoint resumption |\n| `tests/test_postgres_integration.py` | PostgreSQL-only concurrency and database enforcement |
+| `tests/test_ai_agent_checkpoints.py` | Encrypted checkpoint integrity, key rotation, lease-bound persistence, and safe/ambiguous worker recovery |
+| `tests/test_ai_agent_runner.py` | Constrained agent decisions, static tool use, and checkpoint resumption |
+| `tests/test_postgres_integration.py` | PostgreSQL-only concurrency and database enforcement |
 
 The GitHub Actions workflow additionally checks Ruff lint rules, Python compilation, Alembic migration consistency, declared dependency vulnerabilities, and Bandit findings. The PostgreSQL job runs migrations and the PostgreSQL-specific integration suite.
 
@@ -119,7 +121,8 @@ The GitHub Actions workflow additionally checks Ruff lint rules, Python compilat
 - The three Python matrix jobs also passed Ruff lint, Python compilation, and Alembic migration consistency checks. The 15 skips in each ordinary matrix job are PostgreSQL-only cases, exercised in the dedicated PostgreSQL job.
 - The CI logs include non-fatal Starlette/httpx and SQLAlchemy `Session.flush(objects=...)` deprecation warnings. These remain maintenance items; the successful workflow is not warning-free.
 - Run [#737](https://github.com/hijaz7861/global-ai-platform/actions/runs/42742352589) also passed on the pre-merge feature head, including the new shared PostgreSQL nonce migration and concurrency test.
-- CI verifies only the commit tested by that run. CI success is not a production-readiness certification. No live deployment, live payment processing, or paid AI-provider call has been performed.\n- The encrypted-checkpoint changes in PR #68 are a separate, not-yet-verified change; the successful #737/#738 runs do not cover that PR head.
+- CI verifies only the commit tested by that run. CI success is not a production-readiness certification. No live deployment, live payment processing, or paid AI-provider call has been performed.
+- The encrypted-checkpoint changes in PR #68 are a separate, not-yet-verified change; the successful #737/#738 runs do not cover that PR head.
 
 ## Core product requirements
 
