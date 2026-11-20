@@ -10,6 +10,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.agents.schemas import AgentDecision, AgentTaskInput
+from app.ai.agents.checkpoints import (
+    AgentCheckpointError,
+    load_agent_checkpoint,
+    save_agent_checkpoint,
+)
 from app.ai.dlp import detect_sensitive_data_types
 from app.ai.model_router import ModelRouteError, create_model_router
 from app.ai.memory.service import MemoryConflict, create_memory, search_memories
@@ -31,7 +36,7 @@ from app.ai.tools.gateway import (
 )
 from app.audit import record_audit_event
 from app.core.config import settings
-from app.models import AuditEvent, Membership, Organization
+from app.models import AIMemoryRecord, AuditEvent, Membership, Organization
 
 _MAX_HISTORY_BYTES = 12_000
 _MAX_PROMPT_BYTES = 24_000
@@ -464,8 +469,87 @@ def _build_prompt(
     return prompt
 
 
+def _new_checkpoint_state() -> dict:
+    return {
+        "history": [],
+        "trace": [],
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_model_calls": 0,
+        "provider": "",
+        "model": "",
+        "decision": None,
+        "answer": None,
+        "status": "running",
+        "memory_saved": False,
+    }
+
+
+def _checkpoint_save(context: TaskExecutionContext, *, phase: str, turn: int, state: dict) -> None:
+    try:
+        save_agent_checkpoint(
+            context.db,
+            task=context.task,
+            worker_id=context.worker_id,
+            phase=phase,
+            turn=turn,
+            state=state,
+            lease_seconds=context.lease_seconds,
+        )
+    except AgentCheckpointError as exc:
+        code = str(exc)
+        if not code.startswith("agent_"):
+            code = "agent_checkpoint_integrity_failed"
+        raise AgentRunError(code) from None
+
+
+def _agent_result(state: dict) -> dict:
+    return {
+        "status": state["status"],
+        "answer": state.get("answer"),
+        "memory_saved": bool(state.get("memory_saved", False)),
+        "steps": state.get("trace", []),
+        "provider": state.get("provider", ""),
+        "model": state.get("model", ""),
+        "usage": {
+            "model_calls": int(state.get("total_model_calls", 0)),
+            "input_tokens": int(state.get("total_input_tokens", 0)),
+            "output_tokens": int(state.get("total_output_tokens", 0)),
+        },
+    }
+
+
+def _save_final_memory(context: TaskExecutionContext, state: dict, *, remember_result: bool) -> None:
+    if not remember_result or state.get("status") != "completed" or state.get("memory_saved"):
+        return
+    task = context.task
+    existing = context.db.scalar(select(AIMemoryRecord.id).where(
+        AIMemoryRecord.scope == "user",
+        AIMemoryRecord.owner_user_id == task.created_by_user_id,
+        AIMemoryRecord.organization_id.is_(None),
+        AIMemoryRecord.memory_type == "session_summary",
+        AIMemoryRecord.source_type == "task",
+        AIMemoryRecord.source_ref == task.id,
+    ).limit(1))
+    if existing is None:
+        create_memory(
+            context.db,
+            actor_user_id=task.created_by_user_id,
+            scope="user",
+            organization_id=None,
+            memory_type="session_summary",
+            content=state["answer"][:5_000],
+            source_type="task",
+            source_ref=task.id,
+            confidence_percent=50,
+            sensitivity="sensitive",
+            expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+        )
+    state["memory_saved"] = True
+
+
 async def run_agent_task(context: TaskExecutionContext) -> dict:
-    """Run one bounded model/tool loop from a durable agent.run task."""
+    """Run a bounded agent loop, resuming only from authenticated safe checkpoints."""
     task = context.task
     try:
         payload = AgentTaskInput.model_validate(task.input_payload)
@@ -489,134 +573,173 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
     memories, skills = _load_approved_context(
         context, goal=payload.goal, data_class=payload.data_class
     )
-    history: list[dict] = []
-    trace: list[dict] = []
-    total_input_tokens = 0
-    total_output_tokens = 0
-    total_model_calls = 0
-    selected_provider = ""
-    selected_model = ""
-
-    for turn in range(1, payload.max_steps + 1):
-        _current_authorized_membership(context)
-        context.heartbeat()
-        prompt = _build_prompt(payload.goal, tools, history, memories, skills)
-        if detect_sensitive_data_types(prompt):
-            raise AgentRunError("sensitive_data_detected")
-        estimated_tokens = len(prompt.encode("utf-8")) + payload.max_output_tokens
-        call_counter = [0]
-        try:
-            result, request_id, model_call_count = await _complete_model_call(
-                context,
-                model_router=model_router,
-                payload=payload,
-                prompt=prompt,
-                estimated_tokens=estimated_tokens,
-                call_counter=call_counter,
-            )
-        except AgentRunError as exc:
-            total_model_calls += call_counter[0]
-            if exc.error_code in {"ai_quota_exceeded", "ai_token_quota_exceeded"}:
-                return {
-                    "status": "quota_exhausted",
-                    "answer": "Stopped before another model call because the organization's rolling 24-hour request/token budget was reached.",
-                    "steps": trace,
-                    "usage": {
-                        "model_calls": total_model_calls,
-                        "input_tokens": total_input_tokens,
-                        "output_tokens": total_output_tokens,
-                    },
-                }
-            raise
-        total_model_calls += model_call_count
-
-        _finish_model_call(
-            context.db,
-            request_id=request_id,
-            organization_id=task.organization_id,
-            actor_user_id=task.created_by_user_id,
-            result=result,
+    try:
+        checkpoint = load_agent_checkpoint(
+            context.db, task_id=task.id, organization_id=task.organization_id
         )
-        context.heartbeat()
-        total_input_tokens += int(result.get("input_tokens", 0))
-        total_output_tokens += int(result.get("output_tokens", 0))
-        selected_provider = str(result.get("provider", ""))
-        selected_model = str(result.get("model", ""))
+    except AgentCheckpointError:
+        raise AgentRunError("agent_checkpoint_integrity_failed") from None
 
-        try:
-            decision = AgentDecision.model_validate_json(result["content"])
-        except (ValidationError, KeyError, TypeError, ValueError):
-            raise AgentRunError("invalid_agent_decision") from None
+    if checkpoint is None:
+        state = _new_checkpoint_state()
+        turn = 1
+        phase = "ready"
+        _checkpoint_save(context, phase=phase, turn=turn, state=state)
+    else:
+        state = checkpoint["state"]
+        turn = int(checkpoint["turn"])
+        phase = checkpoint["phase"]
+        required = {
+            "history", "trace", "total_input_tokens", "total_output_tokens",
+            "total_model_calls", "provider", "model", "decision", "answer",
+            "status", "memory_saved",
+        }
+        if not required.issubset(state) or not isinstance(state["history"], list) or not isinstance(state["trace"], list):
+            raise AgentRunError("agent_checkpoint_integrity_failed")
+        if phase == "model_call_started":
+            # Normally converted to a terminal task error by lease recovery.
+            # This guard prevents a manually re-queued task from replaying a paid call.
+            raise AgentRunError("agent_call_outcome_unknown")
+        if phase == "final_saved":
+            _save_final_memory(context, state, remember_result=payload.remember_result)
+            if state.get("memory_saved"):
+                _checkpoint_save(context, phase=phase, turn=turn, state=state)
+            return _agent_result(state)
 
-        if decision.action == "final":
-            trace.append({"turn": turn, "action": "final"})
-            memory_saved = False
-            if payload.remember_result:
-                create_memory(
+    while turn <= payload.max_steps:
+        _current_authorized_membership(context)
+
+        if phase == "ready":
+            context.heartbeat()
+            prompt = _build_prompt(payload.goal, tools, state["history"], memories, skills)
+            if detect_sensitive_data_types(prompt):
+                raise AgentRunError("sensitive_data_detected")
+            estimated_tokens = len(prompt.encode("utf-8")) + payload.max_output_tokens
+            # Persist the ambiguity boundary before contacting a provider. If a
+            # worker dies here, automatic recovery must not issue the call again.
+            _checkpoint_save(context, phase="model_call_started", turn=turn, state=state)
+            call_counter = [0]
+            try:
+                result, request_id, model_call_count = await _complete_model_call(
+                    context,
+                    model_router=model_router,
+                    payload=payload,
+                    prompt=prompt,
+                    estimated_tokens=estimated_tokens,
+                    call_counter=call_counter,
+                )
+            except AgentRunError as exc:
+                if exc.error_code in {"ai_quota_exceeded", "ai_token_quota_exceeded"}:
+                    state["status"] = "quota_exhausted"
+                    state["answer"] = (
+                        "Stopped before another model call because the organization's "
+                        "rolling 24-hour request/token budget was reached."
+                    )
+                    _checkpoint_save(context, phase="final_saved", turn=turn, state=state)
+                    return _agent_result(state)
+                raise
+            _finish_model_call(
+                context.db,
+                request_id=request_id,
+                organization_id=task.organization_id,
+                actor_user_id=task.created_by_user_id,
+                result=result,
+            )
+            try:
+                decision = AgentDecision.model_validate_json(result["content"])
+            except (ValidationError, KeyError, TypeError, ValueError):
+                raise AgentRunError("invalid_agent_decision") from None
+            state["total_model_calls"] += model_call_count
+            state["total_input_tokens"] += int(result.get("input_tokens", 0))
+            state["total_output_tokens"] += int(result.get("output_tokens", 0))
+            state["provider"] = str(result.get("provider", ""))
+            state["model"] = str(result.get("model", ""))
+            state["decision"] = decision.model_dump(mode="json")
+            _checkpoint_save(context, phase="decision_saved", turn=turn, state=state)
+            phase = "decision_saved"
+
+        if phase == "decision_saved":
+            try:
+                decision = AgentDecision.model_validate(state["decision"])
+            except (ValidationError, TypeError, ValueError):
+                raise AgentRunError("agent_checkpoint_integrity_failed") from None
+            if decision.action == "final":
+                state["trace"].append({"turn": turn, "action": "final"})
+                state["answer"] = decision.answer[:5_000]
+                state["status"] = "completed"
+                state["decision"] = None
+                _checkpoint_save(context, phase="final_saved", turn=turn, state=state)
+                phase = "final_saved"
+                _save_final_memory(context, state, remember_result=payload.remember_result)
+                if state.get("memory_saved"):
+                    _checkpoint_save(context, phase="final_saved", turn=turn, state=state)
+                return _agent_result(state)
+            if decision.tool not in {tool["name"] for tool in tools}:
+                raise AgentRunError("unregistered_tool_call")
+            # Tool calls are restricted to the static read-only registry. A crash
+            # during one may repeat its read/audit event, but cannot repeat a write.
+            state["decision"] = decision.model_dump(mode="json")
+            _checkpoint_save(context, phase="tool_started", turn=turn, state=state)
+            phase = "tool_started"
+
+        if phase == "tool_started":
+            try:
+                decision = AgentDecision.model_validate(state["decision"])
+            except (ValidationError, TypeError, ValueError):
+                raise AgentRunError("agent_checkpoint_integrity_failed") from None
+            if decision.action != "tool" or decision.tool not in {tool["name"] for tool in tools}:
+                raise AgentRunError("agent_checkpoint_integrity_failed")
+            current_membership = _current_authorized_membership(context)
+            try:
+                tool_result = execute_tool(
                     context.db,
                     actor_user_id=task.created_by_user_id,
-                    scope="user",
-                    organization_id=None,
-                    memory_type="session_summary",
-                    content=decision.answer[:5_000],
-                    source_type="task",
-                    source_ref=task.id,
-                    confidence_percent=50,
-                    sensitivity="sensitive",
-                    expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+                    organization_id=task.organization_id,
+                    role=current_membership.role,
+                    tool_name=decision.tool,
+                    arguments=decision.arguments,
                 )
-                memory_saved = True
-            return {
-                "status": "completed",
-                "answer": decision.answer[:5_000],
-                "memory_saved": memory_saved,
-                "steps": trace,
-                "provider": selected_provider,
-                "model": selected_model,
-                "usage": {
-                    "model_calls": total_model_calls,
-                    "input_tokens": total_input_tokens,
-                    "output_tokens": total_output_tokens,
-                },
-            }
+            except (ToolNotFound, ToolInputError):
+                raise AgentRunError("tool_policy_rejected") from None
+            except ToolExecutionFailed:
+                raise AgentRunError("tool_execution_failed") from None
 
-        if decision.tool not in {tool["name"] for tool in tools}:
-            raise AgentRunError("unregistered_tool_call")
-        current_membership = _current_authorized_membership(context)
-        try:
-            tool_result = execute_tool(
-                context.db,
-                actor_user_id=task.created_by_user_id,
-                organization_id=task.organization_id,
-                role=current_membership.role,
-                tool_name=decision.tool,
-                arguments=decision.arguments,
-            )
-        except (ToolNotFound, ToolInputError):
-            raise AgentRunError("tool_policy_rejected") from None
-        except ToolExecutionFailed:
-            raise AgentRunError("tool_execution_failed") from None
+            state["trace"].append({
+                "turn": turn, "action": "tool", "tool": decision.tool, "status": "completed"
+            })
+            state["history"].append({
+                "tool": decision.tool,
+                "arguments": decision.arguments,
+                "result": tool_result,
+            })
+            history_bytes = len(json.dumps(
+                state["history"], ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8"))
+            if history_bytes > _MAX_HISTORY_BYTES:
+                raise AgentRunError("agent_history_limit")
+            state["decision"] = None
+            if turn >= payload.max_steps:
+                state["status"] = "step_limit"
+                state["answer"] = (
+                    "The configured agent step limit was reached before a final answer was produced."
+                )
+                _checkpoint_save(context, phase="final_saved", turn=turn, state=state)
+                return _agent_result(state)
+            turn += 1
+            _checkpoint_save(context, phase="ready", turn=turn, state=state)
+            phase = "ready"
+            continue
 
-        trace.append({"turn": turn, "action": "tool", "tool": decision.tool, "status": "completed"})
-        history.append({
-            "tool": decision.tool,
-            "arguments": decision.arguments,
-            "result": tool_result,
-        })
-        history_bytes = len(json.dumps(history, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
-        if history_bytes > _MAX_HISTORY_BYTES:
-            raise AgentRunError("agent_history_limit")
-        context.heartbeat()
+        if phase == "final_saved":
+            _save_final_memory(context, state, remember_result=payload.remember_result)
+            if state.get("memory_saved"):
+                _checkpoint_save(context, phase="final_saved", turn=turn, state=state)
+            return _agent_result(state)
 
-    return {
-        "status": "step_limit",
-        "answer": "The configured agent step limit was reached before a final answer was produced.",
-        "steps": trace,
-        "provider": selected_provider,
-        "model": selected_model,
-        "usage": {
-            "model_calls": total_model_calls,
-            "input_tokens": total_input_tokens,
-            "output_tokens": total_output_tokens,
-        },
-    }
+        if phase not in {"ready", "decision_saved", "tool_started"}:
+            raise AgentRunError("agent_checkpoint_integrity_failed")
+
+    state["status"] = "step_limit"
+    state["answer"] = "The configured agent step limit was reached before a final answer was produced."
+    _checkpoint_save(context, phase="final_saved", turn=payload.max_steps, state=state)
+    return _agent_result(state)
