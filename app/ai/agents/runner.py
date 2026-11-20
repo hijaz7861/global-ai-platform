@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 import json
 from uuid import uuid4
 
@@ -469,6 +470,14 @@ def _build_prompt(
     return prompt
 
 
+def _approved_context_digest(memories: list[dict], skills: list[dict]) -> str:
+    encoded = json.dumps(
+        {"memories": memories, "skills": skills},
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False,
+    ).encode("utf-8")
+    return sha256(encoded).hexdigest()
+
+
 def _new_checkpoint_state() -> dict:
     return {
         "history": [],
@@ -580,8 +589,10 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
     except AgentCheckpointError:
         raise AgentRunError("agent_checkpoint_integrity_failed") from None
 
+    context_digest = _approved_context_digest(memories, skills)
     if checkpoint is None:
         state = _new_checkpoint_state()
+        state["context_sha256"] = context_digest
         turn = 1
         phase = "ready"
         _checkpoint_save(context, phase=phase, turn=turn, state=state)
@@ -592,10 +603,12 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
         required = {
             "history", "trace", "total_input_tokens", "total_output_tokens",
             "total_model_calls", "provider", "model", "decision", "answer",
-            "status", "memory_saved",
+            "status", "memory_saved", "context_sha256",
         }
         if not required.issubset(state) or not isinstance(state["history"], list) or not isinstance(state["trace"], list):
             raise AgentRunError("agent_checkpoint_integrity_failed")
+        if state["context_sha256"] != context_digest:
+            raise AgentRunError("agent_checkpoint_context_changed")
         if phase == "model_call_started":
             # Normally converted to a terminal task error by lease recovery.
             # This guard prevents a manually re-queued task from replaying a paid call.
