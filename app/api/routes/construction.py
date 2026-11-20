@@ -208,7 +208,7 @@ def update_construction_project(
     entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("construction_provider", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> ConstructionProjectResponse:
-    project = _get_project(db, membership.organization_id, project_id)
+    project = _get_project(db, membership.organization_id, project_id, for_update=True)
     if not _can_manage_project(membership, project):
         raise HTTPException(status_code=403, detail="Project creator or organization owner/admin required")
     if project.status in {"completed", "cancelled"}:
