@@ -899,3 +899,34 @@ No PR was merged. No production deployment, live Hatchable mutation, export/impo
 5. Continue portable runtime, commerce/payment reconciliation, AI checkpoints/approval/DLP and release-rehearsal work. Do not rename the repository or treat the current product as production-ready.
 
 This snapshot records verified source and CI evidence only; it is not a release approval or a Definition-of-Done completion claim.
+
+## 27. Verified engineering continuation — 2026-11-20 (supplier role integration)
+
+### Canonical branch and migration state
+
+- Canonical repository remains `hijaz7861/global-ai-platform`; default branch remains `master` at `5add4c1cb6c54b696620d3f3d28ca8708ca6a4cd`. Exact master push workflow Run #44590158414 completed successfully.
+- Master Alembic head is `0034_postgres_approval_nonces` (revision `0034` follows `0033_ai_task_outbox`). Migration `0035_role_entitlements` follows `0034` on Draft integration branches only; it is not on master.
+- No repository rename, default-branch change, or production deployment was performed.
+
+### Role foundation and supplier integration
+
+- PR #63 remains Draft/open/unmerged at `4899ca85a3662a0283847f39723a708b0e449b07`, based on current master and preserving original PR #23 history as its second parent. Exact-head Run #912 completed SUCCESS across all five jobs: Python 3.11/3.12/3.13, PostgreSQL integration, and dependency/security audit. PostgreSQL integration reported 20 passed. Review and inline-thread APIs returned zero entries.
+- PR #64 is a new Draft/open integration candidate at `66bec3f50ea92ddfb06b11cd47919fda1a1f5ac7`. Its first parent is PR #63's current-master integration; its second parent is the original supplier role-gate branch from PR #24. The common ancestor is `13de2075119b4863d54e7c561bbb316ee210c9c2`. The compare to master is 34 commits ahead / 0 behind with a 22-file content diff.
+- PR #64 reconciles supplier role gates onto the refreshed role foundation: organization listing creation/reads, inventory adjustment/history, listing publication, and seller-order views require an active supplier entitlement for the exact organization scope. Public marketplace browsing and pre-activation supplier profile onboarding remain available. Existing membership, tenant and resource filters remain in place.
+- PR #64 adds negative coverage for missing, wrong-organization and suspended supplier entitlements and updates PostgreSQL concurrency fixtures to obtain supplier approval through the real admin review API. The PostgreSQL integration file retains the role-uniqueness and AI memory/circuit-breaker tests from PR #63; the role documentation preserves the fee-audit, administrator-queue and concurrency notes.
+- Exact-head Run #44796217209 for PR #64 is **in progress** at this snapshot. Dependency/security audit has completed successfully; Python 3.11/3.12/3.13 and PostgreSQL integration jobs were still running. No exact-head CI pass is claimed. PR #64 has zero submitted reviews and zero inline review threads.
+- Original PR #23, original PR #24, and PR #63 remain open Drafts; no PR was merged. Historical successful runs on older heads do not verify the current integration head.
+
+### Remaining role and vertical gaps
+
+- Supplier catalog/seller gates are now represented in PR #64, but transport, property, workforce/hiring, education and construction routes still require a full endpoint-by-endpoint role, tenant, ownership and moderation review with negative tests.
+- Professional age and paid-role payment checks remain explicit authorized-administrator attestations. No payment gateway, identity-document provider or webhook is enabled. Student-minor guardian consent remains a separate unimplemented control.
+- Existing-database upgrade rehearsal from a real `0034` snapshot is not yet verified. Empty-database SQLite/PostgreSQL migration checks in CI do not replace an upgrade rehearsal, backup/restore test or production privilege review.
+
+### Hatchable and release boundary
+
+- The last verified read-only Hatchable Version 40 inventory remains 75 files, 25 active API functions, 46 tables and 14 SQL migrations. The inspected admin-only backup endpoint exports 17 of 46 table datasets and media metadata/keys, not object bytes; no import endpoint was found. This is not a complete migration artifact.
+- No Hatchable rows or object bytes were exported or copied during this engineering run. The live app at `https://hijaz-construction.hatchable.site` was not modified.
+- No production deployment, secret change, external payment/communication/provider activation, paid service, domain purchase or repository rename occurred.
+
+The HIJAZ ONE Definition of Done remains **not satisfied**. The next safe work is to verify PR #64's exact-head workflow and then continue the dependent vertical role-gate matrix, followed by complete staged export/import and reconciliation design. This evidence update is documentation-only and is not an owner approval, merge-readiness or release-completion claim.
