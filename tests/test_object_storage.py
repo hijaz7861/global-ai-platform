@@ -93,8 +93,8 @@ def test_s3_adapter_round_trip_uses_only_explicit_bucket_and_key():
 def test_s3_adapter_bounds_download_size_and_closes_body():
     client = FakeS3Client()
     storage = S3CompatibleObjectStorage(client, "test-bucket", max_object_bytes=4)
-    storage.put("large.bin", b"12345")
-    # Simulate a remote object that exceeds the configured limit.
+    # Simulate a remote object uploaded outside this adapter's configured cap.
+    client.put_object(Bucket="test-bucket", Key="large.bin", Body=b"12345")
     with pytest.raises(ValueError, match="size limit"):
         storage.get("large.bin")
 
