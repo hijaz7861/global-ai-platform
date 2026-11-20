@@ -809,3 +809,39 @@ The Definition of Done remains open: role/tenant reconciliation, authenticated M
 4. Continue property, workforce, education, commerce and full backup/import/reconciliation implementation.
 
 This snapshot is evidence tracking, not production approval or a Definition-of-Done claim.
+
+
+## 25. Verified engineering continuation — 2026-11-20
+
+### Repository and dependency snapshot
+
+- GitHub repository metadata confirms `hijaz7861/global-ai-platform`, default branch `master`, public visibility, and connected integration push/admin permissions. The latest verified master base SHA used by the current independent PRs is `5add4c1cb6c54b696620d3f3d28ca8708ca6a4cd`.
+- Current inventory: 18 open PRs and 64 branches. PR #22 remains Draft/open/unmerged at `be0c1395e1207278cf188d648f3e8a55e3a52dde`; compare against master is 26 ahead / 21 behind with merge base `21480c93f105052ad35f343b84a6f7858de5631d`. GitHub reports mergeable=true, but this branch is materially diverged and has no owner review; do not treat it as ready to merge.
+- PR #23 remains Draft/open/unmerged at `63b037cfc13ad2d121ca556934f6d2dbe44e6011`; compare is 26 ahead / 21 behind and GitHub reports mergeable=false. The old Run #770 applies only to its historical earlier head; no exact-head CI has been confirmed for the concurrency-hardening head.
+- PR #61 remains Draft/open/unmerged at `61ba169515e92bad87e28431b149ca7cb0a11e0d`, based directly on master. Exact-head Run #905 completed SUCCESS (5/5 jobs): 369 passed/18 skipped on each Python 3.11–3.13 job; PostgreSQL integration 18 passed; lint, compilation, Alembic, dependency audit and Bandit passed. Review APIs returned zero reviews and zero inline threads. The PR is mergeable but remains unreviewed and not approved.
+- The master Alembic head remains `0034_postgres_approval_nonces`; the role/vertical migration chain `0035`–`0039` remains on unmerged branches.
+
+### Portable object-storage adapter — Draft PR #62
+
+- Draft PR #62 adds `app/storage.py` with a provider-neutral `ObjectStorage` protocol, atomic local filesystem adapter, and injected-client S3-compatible adapter; it adds `requirements-storage.txt`, `docs/OBJECT_STORAGE.md`, and `tests/test_object_storage.py`.
+- The adapter enforces relative POSIX keys, rejects traversal/dot/empty/backslash/NUL segments, bounds keys to 1,024 UTF-8 bytes and object sizes to a configurable ceiling, validates content-type header characters, rejects resolved local symlink escapes, and propagates non-404 provider errors.
+- S3 client creation is explicit and lazy. No provider endpoint, bucket, credentials, account, or external network service was configured or contacted.
+- The adapter is not yet wired to business upload routes. Tenant/object authorization, malware scanning, signed URLs, encryption, retention, audit integration, media migration, backups and restore remain open release gates.
+- Branch `feat/s3-compatible-object-storage-adapter` is exactly 5 commits ahead / 0 behind master, based on `5add4c1cb6c54b696620d3f3d28ca8708ca6a4cd`. PR #62 is Draft/open/unmerged and GitHub reports mergeable=true. Exact-head `743ef9942ebfa6369b232f7825ce5684f9063b7f` triggered Actions Run #906, which was still in progress at snapshot time; no CI pass is claimed. Review and inline-thread APIs returned zero entries.
+- The full diff was inspected across four files. Local tests could not be run in this environment; GitHub Actions is the required verification path.
+
+### Hatchable and safety boundary
+
+The last verified Hatchable Version 40 inventory remains the 2026-11-18 read-only snapshot (46 tables, 25 active API functions, 75 files, 14 SQL migrations). Its inspected admin-only backup exports 17 table datasets and media metadata, not object bytes; no import endpoint was found. No backup/export/import or live Hatchable mutation was performed.
+
+No PR was merged, no production deployment or secret/provider activation occurred, no data was deleted or migrated, and no domain or paid service was purchased. HIJAZ ONE Definition of Done remains open.
+
+### Next safe work
+
+1. Inspect Run #906 and all five jobs on the exact PR #62 head; correct any test/lint/security findings before further work.
+2. Reconcile PR #23's role changes onto current master in a new integration branch without force-pushing or rewriting history; inspect every conflicting file and refresh PRs #24–#28 in dependency order.
+3. Keep PR #61 Draft until an owner review and staging operational rehearsal verify scheduler behavior.
+4. Continue storage service integration only after tenant-scoped upload/download authorization, content scanning, signed access, retention and backup/restore contracts are implemented.
+5. Obtain an authorized authenticated Streamable HTTP POST test path for PR #20 and continue property/workforce/education/commerce and data reconciliation work.
+
+This snapshot is evidence tracking, not owner approval, release readiness, production deployment, or a Definition-of-Done completion claim.
