@@ -27,7 +27,15 @@ This public `master` branch is the reviewable foundation for the **Global AI Pla
 - Non-fatal warnings remain: Starlette/httpx TestClient deprecation, SQLAlchemy `Session.flush(objects=...)` deprecation, and test warnings. CI is successful but not warning-free and is not a production-readiness certification.
 - Dependency audit reported **No known vulnerabilities found**; Bandit completed successfully. The workflow does not replace an independent security review.
 - No live deployment, live payment processing, paid AI-provider call, or real-host Docker isolation test has been performed. Hosting remains deferred.
-## Current checkpointing change under review\n\n- Branch `feat/durable-agent-checkpoints` adds migration `0035_ai_agent_checkpoints`, AES-GCM encrypted checkpoint state bound to task/organization/revision, `SECRET_KEY` plus `PREVIOUS_SECRET_KEYS` decryption support, and lease-validated checkpoint writes.\n- Agent progress is persisted before and after each model turn. Recovery resumes only from `ready`, `decision_saved`, `tool_started`, or `final_saved` phases. If a worker lease expires while the checkpoint is `model_call_started`, the task is failed with `agent_call_outcome_unknown`; the provider call is not replayed because the provider may already have charged it.\n- Tool execution remains limited to the static read-only registry. A crash after a read-only tool executes but before its result checkpoint may repeat the read and its audit event; it cannot repeat a write.\n- Checkpoint state is encrypted at rest and authenticated with AES-GCM; its context digest binds the resumed run to the same currently approved memory/skill context. A key rotation must retain the previous signing key until all checkpoints encrypted with it are no longer needed.\n- This change is not merged or CI-verified yet.\n\n## Remaining implementation work
+## Current checkpointing change under review
+
+- Branch `feat/durable-agent-checkpoints` adds migration `0035_ai_agent_checkpoints`, AES-GCM encrypted checkpoint state bound to task/organization/revision, `SECRET_KEY` plus `PREVIOUS_SECRET_KEYS` decryption support, and lease-validated checkpoint writes.
+- Agent progress is persisted before and after each model turn. Recovery resumes only from `ready`, `decision_saved`, `tool_started`, or `final_saved` phases. If a worker lease expires while the checkpoint is `model_call_started`, the task is failed with `agent_call_outcome_unknown`; the provider call is not replayed because the provider may already have charged it.
+- Tool execution remains limited to the static read-only registry. A crash after a read-only tool executes but before its result checkpoint may repeat the read and its audit event; it cannot repeat a write.
+- Checkpoint state is encrypted at rest and authenticated with AES-GCM; its context digest binds the resumed run to the same currently approved memory/skill context. A key rotation must retain the previous signing key until all checkpoints encrypted with it are no longer needed.
+- This change is not merged or CI-verified yet.
+
+## Remaining implementation work
 
 ### Highest-priority coding and tests
 1. Run the complete test suite and resolve any current-head failures; validate Alembic upgrades and downgrade assumptions against disposable databases.
