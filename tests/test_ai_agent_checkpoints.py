@@ -127,7 +127,7 @@ def test_expired_agent_with_ambiguous_provider_call_is_not_replayed(checkpoint_c
 
 
 def test_expired_agent_with_saved_decision_can_resume(checkpoint_context):
-    db, _, task, organization, _, worker_id = checkpoint_context
+    db, _, task, _, organization, worker_id = checkpoint_context
     state = {
         "history": [],
         "decision": {"action": "final", "tool": None, "arguments": {}, "answer": "saved"},
