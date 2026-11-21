@@ -1,7 +1,8 @@
 """Property vertical API, ownership, payment and moderation regression tests."""
 
 from datetime import timedelta
-from uuid import uuid4
+
+import pytest
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
