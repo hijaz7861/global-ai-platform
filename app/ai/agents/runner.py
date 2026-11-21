@@ -651,6 +651,9 @@ async def run_agent_task(context: TaskExecutionContext) -> dict:
                     call_counter=call_counter,
                 )
             except AgentRunError as exc:
+                # The primary provider attempt is billable even when fallback
+                # reservation fails before a second provider call can start.
+                state["total_model_calls"] += call_counter[0]
                 if exc.error_code in {"ai_quota_exceeded", "ai_token_quota_exceeded"}:
                     state["status"] = "quota_exhausted"
                     state["answer"] = (
