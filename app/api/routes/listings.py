@@ -5,10 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_membership
+from app.api.deps import require_active_role, require_membership
 from app.audit import record_audit_event
 from app.db import get_db
-from app.models import InventoryAdjustmentHistory, Listing, Membership
+from app.models import InventoryAdjustmentHistory, Listing, Membership, UserRoleEntitlement
 from app.schemas import InventoryAdjustmentRequest, InventoryAdjustmentResponse, ListingCreate, ListingResponse
 
 router = APIRouter(tags=["catalog"])
@@ -22,6 +22,7 @@ router = APIRouter(tags=["catalog"])
 def create_listing(
     payload: ListingCreate,
     membership: Annotated[Membership, Depends(require_membership)],
+    supplier_entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("supplier", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> ListingResponse:
     listing = Listing(
@@ -57,6 +58,7 @@ def create_listing(
 @router.get("/organizations/{organization_id}/listings", response_model=list[ListingResponse])
 def list_organization_listings(
     membership: Annotated[Membership, Depends(require_membership)],
+    supplier_entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("supplier", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[ListingResponse]:
     listings = db.scalars(
@@ -75,6 +77,7 @@ def adjust_inventory(
     listing_id: str,
     payload: InventoryAdjustmentRequest,
     membership: Annotated[Membership, Depends(require_membership)],
+    supplier_entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("supplier", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> ListingResponse:
     if membership.role not in {"owner", "admin"}:
@@ -140,6 +143,7 @@ def adjust_inventory(
 def list_inventory_adjustments(
     listing_id: str,
     membership: Annotated[Membership, Depends(require_membership)],
+    supplier_entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("supplier", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[InventoryAdjustmentResponse]:
     if membership.role not in {"owner", "admin"}:
@@ -170,6 +174,7 @@ def list_inventory_adjustments(
 def publish_listing(
     listing_id: str,
     membership: Annotated[Membership, Depends(require_membership)],
+    supplier_entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("supplier", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> ListingResponse:
     if membership.role not in {"owner", "admin"}:

@@ -30,3 +30,14 @@ The manual reconciliation workflow is documented in [Bank Reconciliation](RECONC
 This is not a complete accounting system. Financial reconciliation is a manual one-statement-line-to-one-journal-line MVP; it has no bank API/CSV parser, automatic matching suggestions, split/combined matching, bank fees automation, payment reconciliation, cash-flow statement, tax, foreign exchange, supplier settlement, closing workflow, or independent accounting validation. The balance sheet reports accumulated net income as current earnings until a closing workflow exists. No payment provider is connected and no external money is moved.
 
 Audit events have database-level UPDATE/DELETE protection in PostgreSQL and SQLite, but this is not a cryptographic hash chain and does not protect against a privileged operator disabling triggers. Before production, obtain financial-domain review, reconciliation validation, tamper-evident external audit export, and staging evidence.
+
+
+## Construction project cashbook
+
+The construction cashbook is exposed at:
+- `POST /api/v1/organizations/{organization_id}/construction/projects/{project_id}/cashbook` with an `Idempotency-Key` header.
+- `GET /api/v1/organizations/{organization_id}/construction/projects/{project_id}/cashbook`.
+
+Each cashbook event links one-to-one to a journal entry; the journal remains the sole source of financial balances. Income debits an active asset account and credits revenue; expense debits expense and credits an active asset account. Both accounts must be active, belong to the same organization and match the project's currency. Posting is limited to an approved/in-progress/on-hold project, an active construction-provider entitlement, a project creator or owner/admin, and an open accounting period when periods are configured. The cashbook row, journal lines and audit events commit atomically. Reuse of an idempotency key with different request content is rejected.
+
+The cashbook does not import Hatchable transactions, connect to a bank, collect payments, calculate tax/FX, or settle suppliers. Corrections use the immutable journal reversal endpoint; the original cashbook event is not edited or deleted.
