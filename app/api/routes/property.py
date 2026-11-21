@@ -474,6 +474,7 @@ def review_property_payment(
     payment.reviewer_user_id = user.id
     payment.reviewer_notes = payload.notes
     payment.verified_at = utc_now() if verified else None
+    db.flush()
     if payment.payment_type == "listing_fee":
         listing = db.scalar(
             select(PropertyListing).where(PropertyListing.id == payment.listing_id).with_for_update()

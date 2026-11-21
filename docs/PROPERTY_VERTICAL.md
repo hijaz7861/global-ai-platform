@@ -39,7 +39,7 @@ The portable schema uses UUIDs, PKR integer minor units, explicit state constrai
 
 - SQLite API tests cover phone-verification freshness/future timestamps, email gating, payment-reference non-activation, admin-only review, moderation evidence, private-field redaction, title-status non-assertion, buyer/seller ownership, price mismatch, commission creation, and completion after both manual payment reviews.
 - SQLite migration coverage asserts revision `0040_property_marketplace`, all four tables, and the partial unique payment indexes.
-- A PostgreSQL-only integration test exercises listing fee review, publication, bilateral confirmation, and commission calculation after the full Alembic upgrade.
+- A PostgreSQL-only integration test exercises listing fee review, publication, bilateral confirmation, both commission payments, and completion after the full Alembic upgrade.
 
 ## Explicit remaining gaps
 

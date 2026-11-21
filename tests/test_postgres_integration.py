@@ -1653,7 +1653,7 @@ def test_postgres_property_listing_and_bilateral_sale_workflow(
 
     from app.core.config import settings
     from app.db import SessionLocal
-    from app.models import PropertyTransaction, User, UserPhoneVerification, utc_now
+    from app.models import PropertyPayment, PropertyTransaction, User, UserPhoneVerification, utc_now
 
     suffix = uuid4().hex[:10]
     seller_email = f"property-seller-{suffix}@example.com"
@@ -1728,3 +1728,32 @@ def test_postgres_property_listing_and_bilateral_sale_workflow(
             assert transaction.status == "sale_confirmed"
             assert transaction.buyer_commission_minor == 50000
             assert transaction.seller_commission_minor == 50000
+            commission_payments = db.scalars(
+                select(PropertyPayment).where(PropertyPayment.transaction_id == transaction_id)
+            ).all()
+            assert len(commission_payments) == 2
+
+        for payment in commission_payments:
+            payer_headers = buyer_headers if payment.payer_role == "buyer" else seller_headers
+            submitted = client.post(
+                f"/api/v1/me/property-payments/{payment.id}/submit",
+                headers=payer_headers,
+                json={
+                    "payment_method": "bank_transfer",
+                    "payment_reference": f"PG-{payment.payment_type}-01",
+                },
+            )
+            assert submitted.status_code == 200, submitted.text
+            reviewed = client.post(
+                f"/api/v1/platform/property-payments/{payment.id}/review",
+                headers=admin_headers,
+                json={
+                    "decision": "verify", "evidence_checked": True,
+                    "notes": f"PostgreSQL {payment.payment_type} evidence checked",
+                },
+            )
+            assert reviewed.status_code == 200, reviewed.text
+
+        with SessionLocal() as db:
+            transaction = db.get(PropertyTransaction, transaction_id)
+            assert transaction is not None and transaction.status == "completed"
