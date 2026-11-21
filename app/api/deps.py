@@ -15,6 +15,13 @@ from app.models import Membership, RefreshToken, TokenRevocation, User
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
+# Professional marketplace/service roles must never be configured below adulthood.
+PROFESSIONAL_ROLE_KEYS = frozenset({
+    "teacher", "contractor", "mason", "labour", "supplier",
+    "transporter", "property_agent", "construction_provider",
+})
+
+
 def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     db: Annotated[Session, Depends(get_db)],
@@ -75,3 +82,49 @@ def require_membership(
         # Do not reveal whether an organization exists to a non-member.
         raise HTTPException(status_code=404, detail="Organization not found")
     return membership
+
+
+def require_active_role(role_key: str, *, organization_scoped: bool = False):
+    """Require a verified, paid/fee-exempt, age-cleared, active role in the exact scope."""
+    from app.models import RoleDefinition, UserRoleEntitlement
+
+    def dependency(
+        user: Annotated[User, Depends(get_current_user)],
+        db: Annotated[Session, Depends(get_db)],
+        organization_id: str | None = None,
+    ) -> UserRoleEntitlement:
+        detail = f"Active verified {role_key} role entitlement required"
+        if not user.email_verified:
+            raise HTTPException(status_code=403, detail="Verified email required for platform role access")
+        if organization_scoped and not organization_id:
+            raise HTTPException(status_code=403, detail=detail)
+
+        statement = select(UserRoleEntitlement).where(
+            UserRoleEntitlement.user_id == user.id,
+            UserRoleEntitlement.role_key == role_key,
+            UserRoleEntitlement.status == "active",
+        )
+        if organization_scoped:
+            statement = statement.where(UserRoleEntitlement.organization_id == organization_id)
+        else:
+            statement = statement.where(UserRoleEntitlement.organization_id.is_(None))
+        entitlement = db.scalar(statement.order_by(UserRoleEntitlement.activated_at.desc()))
+        role = db.get(RoleDefinition, role_key)
+        if entitlement is None or role is None or not role.is_active:
+            raise HTTPException(status_code=403, detail=detail)
+        if entitlement.fee_amount_minor > 0 and entitlement.payment_status != "verified":
+            raise HTTPException(status_code=403, detail=detail)
+        if entitlement.fee_amount_minor == 0 and entitlement.payment_status not in {"not_required", "verified"}:
+            raise HTTPException(status_code=403, detail=detail)
+        required_age = max(role.min_age, 18 if role_key in PROFESSIONAL_ROLE_KEYS else 0)
+        if required_age > 0 and not entitlement.age_verified:
+            raise HTTPException(status_code=403, detail=detail)
+        expiry = entitlement.expires_at
+        if expiry is not None:
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if expiry <= datetime.now(timezone.utc):
+                raise HTTPException(status_code=403, detail=detail)
+        return entitlement
+
+    return dependency
