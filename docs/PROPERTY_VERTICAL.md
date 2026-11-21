@@ -32,7 +32,7 @@ The portable schema uses UUIDs, PKR integer minor units, explicit state constrai
 - Public search returns published listings only and excludes private address, seller phone, payment reference, internal user IDs, and document keys. The owner can read their own private address.
 - Buyer interest is unique per listing and buyer. The seller cannot express buyer interest in their own listing.
 - Buyer and seller must confirm the same positive final sale price. Only after both confirmations are 1% buyer and 1% seller commissions calculated using integer PKR minor units and the existing half-up commission service.
-- Commission payments remain pending until separately submitted and manually verified. A transaction becomes completed only after both commission payments are verified.
+- Commission payments remain pending until separately submitted and manually verified. A transaction moves to `commission_settled` only after both commission payments are verified; this does not certify the underlying property transfer or legal title.
 - Audit events record allowlisted state and amount metadata only; payment references and private fields are not copied to audit details.
 
 ## Verification added

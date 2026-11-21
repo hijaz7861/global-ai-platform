@@ -329,7 +329,7 @@ def confirm_property_sale(
     )
     if item is None:
         raise HTTPException(status_code=404, detail="Property transaction not found")
-    if item.status in {"cancelled", "disputed", "completed"}:
+    if item.status in {"cancelled", "disputed", "commission_settled"}:
         raise HTTPException(status_code=409, detail="This property transaction is closed")
     if item.status == "sale_confirmed":
         return _transaction_payload(item)
@@ -503,7 +503,7 @@ def review_property_payment(
                 .with_for_update()
             )
             if transaction is not None and transaction.status == "sale_confirmed":
-                transaction.status = "completed"
+                transaction.status = "commission_settled"
                 transaction.updated_at = utc_now()
     record_audit_event(
         db, actor_user_id=user.id, organization_id=None,

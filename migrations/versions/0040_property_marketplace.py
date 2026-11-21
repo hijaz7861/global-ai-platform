@@ -142,7 +142,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("listing_id", "buyer_user_id", name="uq_property_transactions_listing_buyer"),
         sa.CheckConstraint("buyer_user_id <> seller_user_id", name="ck_property_transactions_distinct_parties"),
         sa.CheckConstraint(
-            "status IN ('interest','awaiting_confirmation','sale_confirmed','completed','cancelled','disputed')",
+            "status IN ('interest','awaiting_confirmation','sale_confirmed','commission_settled','cancelled','disputed')",
             name="ck_property_transactions_status",
         ),
         sa.CheckConstraint(

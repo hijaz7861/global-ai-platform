@@ -301,7 +301,7 @@ def test_bilateral_sale_creates_separate_commissions_and_requires_both_manual_re
     assert verified_seller.status_code == 200
     with sessions() as db:
         transaction = db.get(PropertyTransaction, transaction_id)
-        assert transaction.status == "completed"
+        assert transaction.status == "commission_settled"
 
 
 def test_foreign_user_cannot_confirm_and_sale_prices_must_match(

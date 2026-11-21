@@ -1756,4 +1756,4 @@ def test_postgres_property_listing_and_bilateral_sale_workflow(
 
         with SessionLocal() as db:
             transaction = db.get(PropertyTransaction, transaction_id)
-            assert transaction is not None and transaction.status == "completed"
+            assert transaction is not None and transaction.status == "commission_settled"
