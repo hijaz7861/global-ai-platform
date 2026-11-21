@@ -17,6 +17,8 @@ _ALLOWED_DETAIL_KEYS = {
     "fee_configured_before", "fee_configured_after",
     "scope", "reason", "provider_state", "consecutive_failures",
     "open_until_epoch", "probe_until_epoch", "error_code",
+    "amount_minor", "listing_status", "payment_status", "payment_type",
+    "property_type", "commission_minor", "buyer_confirmed", "seller_confirmed",
 }
 
 

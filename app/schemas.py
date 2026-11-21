@@ -1185,3 +1185,165 @@ class ConstructionCashbookResponse(BaseModel):
     currency: str
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class PropertyListingCreate(BaseModel):
+    property_type: Literal[
+        "plot", "house", "apartment", "commercial", "agricultural", "other"
+    ]
+    title: str = Field(min_length=2, max_length=140)
+    description: str = Field(default="", max_length=3000)
+    city: str = Field(min_length=1, max_length=100)
+    state_region: str | None = Field(default=None, max_length=100)
+    country: str = Field(default="Pakistan", min_length=2, max_length=100)
+    locality: str | None = Field(default=None, max_length=160)
+    address_private: str | None = Field(default=None, max_length=500)
+    latitude: Decimal | None = Field(default=None, ge=-90, le=90, max_digits=10, decimal_places=7)
+    longitude: Decimal | None = Field(default=None, ge=-180, le=180, max_digits=10, decimal_places=7)
+    area_value: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    area_unit: str = Field(min_length=2, max_length=24)
+    asking_price_minor: int = Field(gt=0, le=9_000_000_000_000_000)
+    dispute_status: Literal["seller_declared_non_disputed", "disputed", "unknown"]
+
+    @field_validator("title", "city", "country", "area_unit")
+    @classmethod
+    def normalize_property_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("This field must not be blank")
+        return normalized
+
+    @field_validator("description", "state_region", "locality", "address_private")
+    @classmethod
+    def normalize_property_optional_text(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+    @model_validator(mode="after")
+    def validate_property_coordinates(self):
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("Latitude and longitude must be supplied together")
+        return self
+
+
+class PropertyListingResponse(BaseModel):
+    id: str
+    listing_code: str
+    property_type: str
+    title: str
+    description: str
+    city: str
+    state_region: str | None
+    country: str
+    locality: str | None
+    latitude: Decimal | None
+    longitude: Decimal | None
+    area_value: Decimal
+    area_unit: str
+    asking_price_minor: int
+    currency: str
+    dispute_status: str
+    seller_declaration: str
+    title_verification_status: str
+    listing_fee_minor: int
+    listing_fee_status: str
+    listing_status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PropertyListingOwnerResponse(PropertyListingResponse):
+    address_private: str | None = None
+
+
+class PropertyPaymentResponse(BaseModel):
+    id: str
+    listing_id: str
+    transaction_id: str | None
+    payer_role: str
+    payment_type: str
+    amount_minor: int
+    currency: str
+    status: str
+    payment_method: str | None
+    created_at: datetime
+    verified_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PropertyPaymentAdminResponse(PropertyPaymentResponse):
+    payment_reference: str | None = None
+
+
+class PropertyTransactionResponse(BaseModel):
+    id: str
+    transaction_code: str
+    listing_id: str
+    final_sale_price_minor: int | None
+    buyer_confirmed: bool
+    seller_confirmed: bool
+    buyer_commission_minor: int | None
+    seller_commission_minor: int | None
+    currency: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PropertyPaymentSubmitRequest(BaseModel):
+    payment_method: Literal["cash", "bank_transfer", "jazzcash", "easypaisa"]
+    payment_reference: str = Field(min_length=3, max_length=160)
+
+    @field_validator("payment_reference")
+    @classmethod
+    def normalize_property_payment_reference(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 3:
+            raise ValueError("Payment reference must contain at least three non-space characters")
+        return normalized
+
+
+class PropertyPaymentReviewRequest(BaseModel):
+    decision: Literal["verify", "reject"]
+    evidence_checked: bool = False
+    notes: str = Field(min_length=3, max_length=1000)
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_property_payment_notes(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def require_payment_evidence(self):
+        if self.decision == "verify" and not self.evidence_checked:
+            raise ValueError("Manual payment evidence review is required")
+        if len(self.notes) < 3:
+            raise ValueError("Review notes must contain at least three non-space characters")
+        return self
+
+
+class PropertyListingReviewRequest(BaseModel):
+    decision: Literal["publish", "reject"]
+    evidence_checked: bool = False
+    notes: str = Field(min_length=3, max_length=1000)
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_property_listing_notes(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def require_moderation_evidence(self):
+        if self.decision == "publish" and not self.evidence_checked:
+            raise ValueError("Manual listing moderation evidence is required")
+        if len(self.notes) < 3:
+            raise ValueError("Review notes must contain at least three non-space characters")
+        return self
+
+
+class PropertySaleConfirmRequest(BaseModel):
+    final_sale_price_minor: int = Field(gt=0, le=9_000_000_000_000_000)
