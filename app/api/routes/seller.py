@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_membership
+from app.api.deps import require_active_role, require_membership
 from app.db import get_db
-from app.models import Membership, Order, OrderItem
+from app.models import Membership, Order, OrderItem, UserRoleEntitlement
 from app.schemas import SellerOrderItemResponse, SellerOrderResponse
 
 router = APIRouter(tags=["seller-orders"])
@@ -19,6 +19,7 @@ router = APIRouter(tags=["seller-orders"])
 )
 def list_organization_orders(
     membership: Annotated[Membership, Depends(require_membership)],
+    supplier_entitlement: Annotated[UserRoleEntitlement, Depends(require_active_role("supplier", organization_scoped=True))],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[SellerOrderResponse]:
     """Return only this seller's line items, with no buyer identity or cross-seller totals."""
