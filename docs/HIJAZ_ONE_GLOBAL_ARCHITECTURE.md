@@ -1062,3 +1062,21 @@ The property source mapping is now recorded in `docs/PROPERTY_VERTICAL.md` on th
 - The service uses integer PKR minor units and basis points with half-up rounding. The PR adds positive and negative tests for defaults, rounding boundaries, configurable rates, invalid prices and invalid rates.
 - Exact-head Actions [Run #929](https://github.com/hijaz7861/global-ai-platform/actions/runs/44921828945) completed successfully on `12786917b11ee8f0e5a080aecb6bf7e9ef72fb46`: all five jobs passed; Python 3.11/3.12/3.13 each reported **421 passed, 22 skipped** (74 warnings), and PostgreSQL integration reported **22 passed** (3 warnings). Ruff, compilation, Alembic checks, dependency audit and Bandit succeeded. PR #69 remains Draft, unreviewed and unmerged.
 - Property persistence/API, OTP adapter, private media controls, listing moderation, manual payment review and buyer/seller transaction endpoints remain unimplemented. The live app and its data remain untouched.
+
+## 25. Definition-of-Done gate matrix — 2026-11-21
+
+| Documented gate | Current status | Evidence and remaining work |
+|---|---|---|
+| Empty-PostgreSQL migration and supported upgrade path | **Partial** | PR #69 exact-head PostgreSQL/Alembic checks pass for migrations through 0039; production upgrade/rollback, restore and independent-host rehearsal are not complete. |
+| Full Python matrix and PostgreSQL integration | **Pass on candidate branches only** | PR #63 Run #926: 383 passed / 20 skipped per Python version and 20 PostgreSQL tests passed. PR #69 Run #929: 421 passed / 22 skipped per Python version and 22 PostgreSQL tests passed. Master itself does not yet contain these changes. |
+| No unresolved high/critical security issues | **Not verified** | No independent security review or owner approval is recorded. |
+| Positive and negative role/tenant/ownership tests for every boundary | **Partial** | Role, supplier, transport and construction slices have focused negative tests. Property APIs, workforce/hiring, education and all remaining business operations are incomplete. |
+| Payment-state integrity, webhook replay and duplicate safety | **Partial** | Role activation requires authorized manual payment review; property commission calculation is isolated from payment state. Signed/idempotent provider webhooks, refunds, disputes, settlement and full reconciliation are not implemented. |
+| API, ownership, moderation, audit and operations coverage for every vertical | **Not met** | Supplier, transport and construction slices exist on Draft branches. Property has a calculation foundation only; workforce and education portable APIs are not implemented. |
+| Bounded AI cost, approvals, cancellation, resumability and observability | **Partial** | The merged operating layer supplies part of the foundation. PR #68 checkpoint work fails an exact-head Python test and has a competing 0035 migration; full approval, DLP, evaluation and observability remain open. |
+| Backup/restore and complete export/import rehearsal | **Not met** | Hatchable's available backup covers 17/46 tables and omits object bytes; no approved staging export/import or reconciliation rehearsal has run. |
+| Docker Compose plus independent container host | **Not met** | Compose artifacts exist, but a complete portable-host rehearsal has not passed. |
+| Production secrets and external integrations configured and end-to-end tested | **Not met** | No owner-supplied provider credentials or explicit production setup is available/authorized. No real provider is enabled. |
+| Evidence discipline and protected live-system boundary | **Met for this run** | No merge, deployment, Hatchable write, data export/import, secret change, provider activation, domain purchase or paid service occurred. Claims are limited to inspected GitHub/Hatchable evidence. |
+
+**Overall result: NOT SATISFIED.** Candidate-branch CI success does not equal owner approval, master integration, full vertical completion or production readiness. Keep the repository name and live Hatchable application unchanged until every gate above is demonstrably passed and the owner approves the release plan.
