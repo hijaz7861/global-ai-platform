@@ -990,3 +990,56 @@ The existing Hatchable project still reports product name HIJAZ ONE, slug `hijaz
 - PR #20 remains blocked on authenticated Streamable HTTP POST verification of `initialize`, `tools/list` and `tools/call`; GET health alone is insufficient.
 - The HIJAZ ONE Definition of Done remains **not satisfied**. Property, workforce/hiring and education portable implementations; staged full export/import and object-byte reconciliation; complete runtime/worker/scheduler portability; global commerce/webhooks; remaining AI approval/checkpoint/DLP controls; independent-host and backup/restore rehearsal; security review; owner review and branch-protection verification remain outstanding.
 - Next safe work: verify PR #67's exact-head jobs and logs; then continue property/workforce/education as separate tenant- and role-gated vertical slices, with property-title disclaimers and a real guardian-consent proof workflow. Keep all changes in Draft PRs and keep the live Hatchable system untouched.
+
+## 23. Verified engineering snapshot — 2026-11-21
+
+This snapshot supersedes older branch/head and CI statements above where they conflict. It is based on GitHub repository, PR, compare, migration-tree, workflow-run and review APIs inspected on 2026-11-21.
+
+### Canonical repository and migration state
+
+- Repository remains `hijaz7861/global-ai-platform`; default branch is `master` at `11ad7da84e73126a450cb0d194e4859b90263a4a`.
+- Master migration head remains `0034_postgres_approval_nonces`, following `0033_ai_task_outbox`. The master migration tree contains revisions `0001`–`0034`; no role or business-vertical migration is merged.
+- PR #22 remains Draft/open/unmerged on `integration/hijaz-one-platform-v2`; this architecture document is still branch-only. No repository rename or production release is authorized.
+
+### Multi-role entitlement integration
+
+- Original PR #23 remains Draft/open/unmerged at `63b037cfc13ad2d121ca556934f6d2dbe44e6011`. No workflow run or combined status is recorded for that exact head; historical Run #770 on its older `7e2cbda` head must not be reused as current evidence.
+- Current-master integration PR #63 remains Draft/open/unmerged at `fe01c3bebd8b6dfc383ad0754de4b379da8abec9`. Its compare to current master is **32 commits ahead / 0 behind**. The refresh preserves both master and role-branch ancestry.
+- PR #63 adds regression coverage for global versus organization-scoped uniqueness: the same user can hold the same role globally and in distinct organizations, duplicates within each exact scope are denied, and a non-member cannot apply using another tenant's ID.
+- Exact-head GitHub Actions [Run #926](https://github.com/hijaz7861/global-ai-platform/actions/runs/44920981420) passed on `fe01c3b`: all five jobs succeeded; Python 3.11/3.12/3.13 each reported **383 passed, 20 skipped**; PostgreSQL integration reported **20 passed**. Ruff, compilation, Alembic checks, dependency audit and Bandit succeeded. Non-fatal warnings remain (73 per Python matrix job; 3 in PostgreSQL).
+- Migration `0035_role_entitlements` follows master `0034_postgres_approval_nonces`. The migration has separate SQLite/PostgreSQL partial unique indexes for global and organization scopes, and append-only event protection for both supported dialects.
+- PR #63 has no submitted reviews or inline review threads. Keep it Draft pending owner review; exact-head CI is not approval or production-readiness evidence.
+
+### Supplier, transport and construction branches
+
+- PR #64 supplier role guards: exact head `66bec3f50ea92ddfb06b11cd47919fda1a1f5ac7`, Actions run `44796217209` succeeded.
+- PR #65 transport marketplace: exact head `cca4a08cfe6e9cd0654f1d4c8e7e21f2d60fdc55`, Actions run `44797472324` succeeded.
+- PR #66 construction clients/projects/BOQ: exact head `a6e208e438e7c90ddd5d5a2fc2d80448247e457b`, Actions run `44800389282` succeeded.
+- PR #67 construction quotes/project cashbook: exact head `79a73be6b9950c409718095b00996dcceaf4a8a1`, Actions run `44802573778` succeeded; it is stacked on PR #66.
+- PRs #64–#66 are Draft/unmerged and their integration branches still compare as two commits behind current master (the current-master drift is limited to `README.md` and `docs/IMPLEMENTATION_STATUS.md`). PR #67 inherits the older PR #66 base. Their exact-head historical successes do not prove a refreshed head or merge readiness.
+- Verified construction migration chain on the PR #67 branch: `0035_role_entitlements` → `0036_transport_marketplace` → `0037_construction_operations` → `0038_construction_quotes` → `0039_construction_cashbook`. This chain is not on master.
+- Original PRs #24–#28 remain open Draft dependencies on older branch snapshots; their recorded exact-head CI successes are historical for those original SHAs. They are not substitutes for the newer integration branches or current-head CI.
+
+### AI checkpoint conflict and runtime branches
+
+- PR #68 is now Draft/open/unmerged at `8b3b615ddfdeed81253d40b6c81f0f3e2109fbc0`. Exact-head Run [#44812151995](https://github.com/hijaz7861/global-ai-platform/actions/runs/44812151995) failed in all three Python matrix jobs on `test_agent_counts_primary_attempt_when_fallback_quota_is_exhausted` (expected one model call, observed zero). PostgreSQL integration and dependency/security audit succeeded.
+- PR #68 introduces `0035_ai_agent_checkpoints` with down-revision `0034_postgres_approval_nonces`, which conflicts with the role branch's distinct `0035_role_entitlements`. It must be reconciled and renumbered after the role migration is accepted; do not merge either migration branch independently.
+- PR #61 durable maintenance scheduler exact head `61ba169515e92bad87e28431b149ca7cb0a11e0d`, Run #905 succeeded; PR #62 object-storage adapter exact head `743ef9942ebfa6369b232f7825ce5684f9063b7f`, Run #906 succeeded. Both remain Draft/unmerged on the older `5add4c1` base and require current-master reconciliation and owner review.
+
+### MCP, AI governance and review state
+
+- PR #20 read-only MCP bridge exact head `f63abf1dcd5d5282aa76cfe86fb69471dd21aaf2` has successful exact-head Actions (five jobs). Authenticated Streamable HTTP POST `initialize`, `tools/list`, and `tools/call` are still unverified; GET health is insufficient.
+- PRs #43–#50 (governed GitHub runtime, approvals, sandbox validation/proposals and repository-bound attestation) have successful recorded exact-head workflow conclusions, but remain Draft and form an older dependency chain that has not been reconciled onto current master.
+- No submitted review or inline review thread was returned for PRs #20, #22–#28, #43–#50, or #61–#68. Owner review remains outstanding.
+- The open-PR search returned 25 PRs, including stale Dependabot/docs/early AI branches. Their existence does not imply readiness; exact-head evidence is SHA-specific.
+
+### Hatchable Version 40 and release blockers
+
+- Last verified read-only Hatchable inventory (2026-11-18): Version 40, 46 tables, 25 deployed functions, 75 files and 14 SQL migrations. The admin-only backup covers only 17/46 tables and media metadata/storage keys; object bytes are not included and no import endpoint was found.
+- No Hatchable rows/files were exported or copied; no schema, live configuration, deployment or workflow was changed. The live application remains untouched.
+- Complete table/API/object mapping, approved redacted staging export, idempotent import, checksums and financial/consent/audit reconciliation remain unperformed.
+- Property, workforce/hiring and education verticals (including student-minor guardian consent), full construction labour/material registers, and the remaining business-domain moderation/ownership/audit tests are still incomplete.
+- Portable runtime, provider-neutral integrations, global currency/FX/tax/payments, full AI approval/checkpoint/cost/DLP/observability, backup/restore, independent-host rehearsal and release security gates remain incomplete.
+- No production deployment, live payment/communication provider activation, secret change, paid service, domain purchase, or repository rename was performed. Ownership of `hijaz1.com` remains unconfirmed. Branch protection/required-review settings remain unverified through the connected API.
+
+This snapshot is an engineering status record only. The Definition of Done in Section 11 remains **not satisfied**.
