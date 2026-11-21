@@ -1,5 +1,6 @@
 """Identity, commerce, audit, accounting, and security data models."""
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
@@ -11,11 +12,14 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
+    text,
     true,
     false,
 )
@@ -484,6 +488,106 @@ class SupplierProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
 
+
+class TransportProviderProfile(Base):
+    """Organization-owned transport provider profile with explicit moderation state."""
+    __tablename__ = "transport_provider_profiles"
+    __table_args__ = (
+        UniqueConstraint("organization_id", name="uq_transport_provider_profiles_org"),
+        UniqueConstraint("id", "organization_id", name="uq_transport_provider_profiles_id_org"),
+        CheckConstraint("status IN ('draft','submitted','approved','rejected','suspended')",
+                        name="ck_transport_provider_profiles_status"),
+        CheckConstraint("length(country_code) = 2 AND country_code = upper(country_code)",
+                        name="ck_transport_provider_profiles_country"),
+        Index("ix_transport_provider_profiles_status_city", "status", "country_code", "city"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    business_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    city: Mapped[str] = mapped_column(String(100), nullable=False)
+    state_region: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country_code: Mapped[str] = mapped_column(String(2), default="PK", nullable=False)
+    service_description: Mapped[str] = mapped_column(String(1000), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    review_notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class TransportVehicle(Base):
+    """Tenant-scoped vehicle or machinery listing; private evidence is not stored here."""
+    __tablename__ = "transport_vehicles"
+    __table_args__ = (
+        CheckConstraint(
+            "vehicle_type IN ('loader_rickshaw','qingqi','tractor_trolley','tractor_bucket',"
+            "'dumper','truck','mazda','pickup','crane','jcb','excavator','backhoe_loader',"
+            "'forklift','water_tanker','concrete_mixer','other')",
+            name="ck_transport_vehicles_type"),
+        CheckConstraint("pricing_basis IN ('per_trip','per_hour','per_day','per_km','fixed_job')",
+                        name="ck_transport_vehicles_pricing_basis"),
+        CheckConstraint("rate_minor >= 0", name="ck_transport_vehicles_rate_nonnegative"),
+        CheckConstraint("minimum_charge_minor IS NULL OR minimum_charge_minor >= 0",
+                        name="ck_transport_vehicles_minimum_nonnegative"),
+        CheckConstraint("length(currency) = 3 AND currency = upper(currency)",
+                        name="ck_transport_vehicles_currency"),
+        CheckConstraint("length(country_code) = 2 AND country_code = upper(country_code)",
+                        name="ck_transport_vehicles_country"),
+        CheckConstraint("service_radius_km BETWEEN 1 AND 2000",
+                        name="ck_transport_vehicles_service_radius"),
+        CheckConstraint("availability IN ('available','busy','offline')",
+                        name="ck_transport_vehicles_availability"),
+        CheckConstraint("verification_status IN ('pending','verified','rejected','suspended')",
+                        name="ck_transport_vehicles_verification"),
+        Index("ix_transport_vehicles_discovery", "verification_status", "availability",
+              "vehicle_type", "country_code", "city"),
+        Index("ix_transport_vehicles_org_created", "organization_id", "created_at"),
+        Index("ix_transport_vehicles_profile", "provider_profile_id"),
+        ForeignKeyConstraint(
+            ["provider_profile_id", "organization_id"],
+            ["transport_provider_profiles.id", "transport_provider_profiles.organization_id"],
+            ondelete="RESTRICT", name="fk_transport_vehicles_profile_org",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    provider_profile_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    vehicle_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    make_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    capacity_description: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    operator_included: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    city: Mapped[str] = mapped_column(String(100), nullable=False)
+    state_region: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country_code: Mapped[str] = mapped_column(String(2), default="PK", nullable=False)
+    pricing_basis: Mapped[str] = mapped_column(String(16), nullable=False)
+    rate_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    minimum_charge_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    service_radius_km: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    description: Mapped[str] = mapped_column(String(1500), default="", nullable=False)
+    availability: Mapped[str] = mapped_column(String(16), default="available", nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    review_notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
 class ProcurementRequestRecord(Base):
     """A buyer organization's bounded request for supplier quotations."""
     __tablename__ = "procurement_requests"
@@ -894,3 +998,171 @@ class ConsumedApprovalNonce(Base):
 
     nonce: Mapped[str] = mapped_column(String(128), primary_key=True)
     consumed_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class RoleDefinition(Base):
+    """Platform-governed role catalogue with independently configurable fees."""
+    __tablename__ = "role_definitions"
+    __table_args__ = (
+        CheckConstraint("min_age >= 0 AND min_age <= 120", name="ck_role_definitions_min_age"),
+        CheckConstraint(
+            "fee_amount_minor IS NULL OR fee_amount_minor >= 0",
+            name="ck_role_definitions_fee_nonnegative",
+        ),
+        CheckConstraint("length(fee_currency) = 3", name="ck_role_definitions_currency"),
+    )
+
+    role_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    min_age: Mapped[int] = mapped_column(Integer, default=18, nullable=False)
+    fee_amount_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    fee_currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    requires_review: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class UserRoleEntitlement(Base):
+    """A user's independent request, payment and approval lifecycle for one platform role."""
+    __tablename__ = "user_role_entitlements"
+    __table_args__ = (
+        Index(
+            "uq_user_role_entitlement_global", "user_id", "role_key", unique=True,
+            postgresql_where=text("organization_id IS NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
+            sqlite_where=text("organization_id IS NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
+        ),
+        Index(
+            "uq_user_role_entitlement_org", "user_id", "role_key", "organization_id", unique=True,
+            postgresql_where=text("organization_id IS NOT NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
+            sqlite_where=text("organization_id IS NOT NULL AND status IN ('pending_payment', 'pending_review', 'active', 'suspended')"),
+        ),
+        CheckConstraint(
+            "status IN ('pending_payment','pending_review','active','rejected','expired','suspended','revoked')",
+            name="ck_user_role_entitlements_status",
+        ),
+        CheckConstraint(
+            "payment_status IN ('not_required','pending','verified','rejected')",
+            name="ck_user_role_entitlements_payment_status",
+        ),
+        CheckConstraint("fee_amount_minor >= 0", name="ck_user_role_entitlements_fee_nonnegative"),
+        Index("ix_user_role_entitlements_user_status", "user_id", "status"),
+        Index("ix_user_role_entitlements_role_status", "role_key", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role_key: Mapped[str] = mapped_column(ForeignKey("role_definitions.role_key", ondelete="RESTRICT"), nullable=False)
+    organization_id: Mapped[str | None] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="pending_review", nullable=False)
+    payment_status: Mapped[str] = mapped_column(String(24), default="not_required", nullable=False)
+    fee_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    fee_currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    payment_reference: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    age_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reviewer_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewer_notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class RoleEntitlementEvent(Base):
+    """Append-only audit trail for role application, payment and review transitions."""
+    __tablename__ = "role_entitlement_events"
+    __table_args__ = (
+        Index("ix_role_entitlement_events_entitlement_created", "entitlement_id", "created_at"),
+        Index("ix_role_entitlement_events_actor_created", "actor_user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    entitlement_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class ConstructionClient(Base):
+    """Tenant-owned construction client; contact PII is excluded from this first slice."""
+    __tablename__ = "construction_clients"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_construction_clients_id_org"),
+        Index("ix_construction_clients_org_name", "organization_id", "display_name"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class ConstructionProject(Base):
+    """Organization-scoped construction project with bounded lifecycle and PKR minor-unit contract value."""
+    __tablename__ = "construction_projects"
+    __table_args__ = (
+        UniqueConstraint("id", "organization_id", name="uq_construction_projects_id_org"),
+        ForeignKeyConstraint(["client_id", "organization_id"],
+            ["construction_clients.id", "construction_clients.organization_id"],
+            ondelete="RESTRICT", name="fk_construction_projects_client_org"),
+        CheckConstraint("work_type IN ('grey_structure','superstructure','complete_construction','renovation','other')",
+                        name="ck_construction_projects_work_type"),
+        CheckConstraint("contract_type IN ('labour_only','labour_material')",
+                        name="ck_construction_projects_contract_type"),
+        CheckConstraint("contract_amount_minor >= 0", name="ck_construction_projects_amount_nonnegative"),
+        CheckConstraint("currency = 'PKR'", name="ck_construction_projects_currency_pkr"),
+        CheckConstraint("status IN ('lead','quoted','approved','in_progress','on_hold','completed','cancelled')",
+                        name="ck_construction_projects_status"),
+        CheckConstraint("progress_percent BETWEEN 0 AND 100", name="ck_construction_projects_progress"),
+        Index("ix_construction_projects_org_status_created", "organization_id", "status", "created_at"),
+        Index("ix_construction_projects_client", "client_id"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    client_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    work_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    contract_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    contract_amount_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    location_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="lead", nullable=False)
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(1500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class ConstructionBoqItem(Base):
+    """Tenant-scoped BOQ line using Decimal quantity and integer PKR minor units."""
+    __tablename__ = "construction_boq_items"
+    __table_args__ = (
+        ForeignKeyConstraint(["project_id", "organization_id"],
+            ["construction_projects.id", "construction_projects.organization_id"],
+            ondelete="RESTRICT", name="fk_construction_boq_project_org"),
+        UniqueConstraint("project_id", "line_number", name="uq_construction_boq_project_line"),
+        CheckConstraint("line_number BETWEEN 1 AND 10000", name="ck_construction_boq_line_number"),
+        CheckConstraint("quantity > 0", name="ck_construction_boq_quantity_positive"),
+        CheckConstraint("unit_rate_minor >= 0", name="ck_construction_boq_rate_nonnegative"),
+        CheckConstraint("line_total_minor >= 0", name="ck_construction_boq_total_nonnegative"),
+        Index("ix_construction_boq_org_project", "organization_id", "project_id", "line_number"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False)
+    project_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    item_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    unit: Mapped[str] = mapped_column(String(30), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    unit_rate_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    line_total_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
