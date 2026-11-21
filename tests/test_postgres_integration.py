@@ -1651,6 +1651,7 @@ def test_postgres_property_listing_and_bilateral_sale_workflow(
     """Exercise property migrations and row-lock state transitions on PostgreSQL."""
     from sqlalchemy import select
 
+    from app.core.config import settings
     from app.db import SessionLocal
     from app.models import PropertyTransaction, User, UserPhoneVerification, utc_now
 
