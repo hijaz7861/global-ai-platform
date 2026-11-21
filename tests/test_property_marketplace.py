@@ -3,7 +3,6 @@
 from datetime import timedelta
 from uuid import uuid4
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
@@ -45,13 +44,13 @@ def property_client(monkeypatch):
     engine.dispose()
 
 
-def seed_verified_phone(sessions, email: str, *, verified_at=None) -> None:
+def seed_verified_phone(sessions, email: str, *, verified_at=None, phone="+923001234567") -> None:
     with sessions() as db:
         user = db.scalar(select(User).where(User.email == email))
         assert user is not None
         db.add(UserPhoneVerification(
             user_id=user.id,
-            phone_e164="+923001234567",
+            phone_e164=phone,
             verified_at=verified_at or utc_now(),
         ))
         db.commit()
@@ -130,7 +129,14 @@ def test_listing_requires_fresh_verified_phone_and_verified_email(
     }
     assert client.post("/api/v1/me/property-listings", headers=headers, json=payload).status_code == 403
 
-    seed_verified_phone(sessions, email, verified_at=utc_now() - timedelta(days=31))
+    seed_verified_phone(sessions, email, phone="not-e164")
+    assert client.post("/api/v1/me/property-listings", headers=headers, json=payload).status_code == 403
+
+    with sessions() as db:
+        phone = db.get(UserPhoneVerification, db.scalar(select(User.id).where(User.email == email)))
+        phone.phone_e164 = "+923001234567"
+        phone.verified_at = utc_now() - timedelta(days=31)
+        db.commit()
     assert client.post("/api/v1/me/property-listings", headers=headers, json=payload).status_code == 403
 
     with sessions() as db:
@@ -179,6 +185,12 @@ def test_payment_reference_never_activates_listing_and_public_payload_is_redacte
     assert denied.status_code == 403
 
     admin_headers = make_admin(client, verified_user_factory, monkeypatch)
+    before_fee = client.post(
+        f"/api/v1/platform/property-listings/{listing_id}/review",
+        headers=admin_headers,
+        json={"decision": "publish", "evidence_checked": True, "notes": "Fee not verified"},
+    )
+    assert before_fee.status_code == 409
     no_evidence = client.post(
         f"/api/v1/platform/property-payments/{payment_id}/review",
         headers=admin_headers,
@@ -233,6 +245,9 @@ def test_bilateral_sale_creates_separate_commissions_and_requires_both_manual_re
     interest = client.post(f"/api/v1/properties/{listing_id}/interest", headers=buyer_headers)
     assert interest.status_code == 201, interest.text
     transaction_id = interest.json()["id"]
+    duplicate_interest = client.post(f"/api/v1/properties/{listing_id}/interest", headers=buyer_headers)
+    assert duplicate_interest.status_code == 200
+    assert duplicate_interest.json()["id"] == transaction_id
     self_interest = client.post(f"/api/v1/properties/{listing_id}/interest", headers=seller_headers)
     assert self_interest.status_code == 400
     first = client.post(

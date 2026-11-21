@@ -29,8 +29,7 @@ from app.services.property_commissions import (
 
 router = APIRouter(tags=["property"])
 PHONE_VERIFICATION_MAX_AGE = timedelta(days=30)
-MAX_PROPERTY_AMOUNT_MINOR = 9_000_000_000_000_000
-_PROPERTY_PHONE_PATTERN = re.compile(r"\\+[1-9][0-9]{7,14}\\Z")
+_PROPERTY_PHONE_PATTERN = re.compile(r"\+[1-9][0-9]{7,14}\Z")
 
 
 def _require_verified_email(user: User) -> None:
