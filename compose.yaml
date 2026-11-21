@@ -115,6 +115,35 @@ services:
     networks:
       - platform_internal
 
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      - python
+      - -m
+      - app.maintenance_scheduler
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      APP_NAME: Global AI Platform
+      APP_VERSION: 0.2.0
+      ENVIRONMENT: production
+      SECRET_KEY: ${SECRET_KEY:?Set a random SECRET_KEY of at least 32 characters}
+      DATABASE_URL: postgresql+psycopg://platform:${POSTGRES_PASSWORD}@db:5432/platform
+      MAINTENANCE_INTERVAL_SECONDS: ${MAINTENANCE_INTERVAL_SECONDS:-3600}
+      MAINTENANCE_POLL_SECONDS: ${MAINTENANCE_POLL_SECONDS:-30}
+      MAINTENANCE_ORDER_LIMIT: ${MAINTENANCE_ORDER_LIMIT:-100}
+    networks:
+      - platform_internal
+
 volumes:
   platform_postgres_data:
 

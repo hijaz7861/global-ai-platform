@@ -14,7 +14,7 @@ A public, modular project for building a global business platform incrementally.
 - Procurement requests and supplier quotes: approved suppliers quote once per request, buyers compare offers and award one quote; purchase orders can be issued idempotently, cancelled by the buyer, and fulfilled by the supplier.
 - Owner/admin inventory adjustments with nonnegative stock checks, append-only before/after history, optional reason, and transaction-bound audit events.
 - Order creation with conditional stock reservation, per-buyer idempotency, legacy single-line and multi-item carts (up to 50 unique listings), one-currency enforcement, bounded totals, and a configurable unpaid-order expiry timestamp.
-- Platform-admin-only expiry sweep that marks overdue unpaid orders expired, restores stock once, and records an audit event; external scheduler setup is required for automatic recurring runs.
+- Platform-admin-only expiry sweep plus a separate bounded Compose maintenance scheduler for unpaid-order expiry, expired security-record cleanup, and explicitly expired AI-memory purge. PostgreSQL advisory locking prevents concurrent scheduler replicas; the last successful audit event is the durable checkpoint.
 - Buyer-only order reads, seller-scoped order summaries, and unpaid-order cancellation with one-time stock release.
 - Owner/admin chart of accounts, balanced idempotent journal posting, immutable reversals, accounting period controls, period trial balance, paginated account ledger, income statement, balance sheet, and a manual bank reconciliation workflow.
 - Transaction-bound allowlisted audit events for organization, catalog, order, and ledger operations.
@@ -23,7 +23,7 @@ A public, modular project for building a global business platform incrementally.
 - Orders remain `pending_payment`; no payment is charged or processed.
 - SQLAlchemy models and Alembic migrations for identity, rotating refresh-token families, tenants, catalog, inventory adjustment history, orders, audit, accounting periods, journal entries and reversals, token revocation, password reset, and supplier profiles.
 - GitHub Actions CI on Python 3.11, 3.12, and 3.13, including migration checks. The test requirements include `httpx2` for the current Starlette `TestClient` and `httpx` for the AI adapter's async provider client.
-- Platform-admin security cleanup endpoint for expired credentials and stale throttle records; schedule it through a trusted external scheduler.
+- Platform-admin security cleanup endpoint for expired credentials and stale throttle records; the separate Compose scheduler runs the bounded cleanup automatically.
 - Optional Docker packaging that applies migrations before starting the API.
 
 ## Current delivery focus
@@ -51,7 +51,7 @@ Open `http://127.0.0.1:8000/docs` or request `http://127.0.0.1:8000/api/v1/healt
 
 ## Docker Compose deployment
 
-A private-host Docker Compose setup for the API and PostgreSQL 16 is documented in [Local Deployment](docs/LOCAL_DEPLOYMENT.md). It requires a generated signing key and database password; it binds to loopback by default and keeps PostgreSQL unpublished. This is a deployment baseline, not proof of a live deployment or production readiness.
+A private-host Docker Compose setup for the API, durable AI worker, database-coordinated maintenance scheduler, and PostgreSQL 16 is documented in [Local Deployment](docs/LOCAL_DEPLOYMENT.md). It requires a generated signing key and database password; it binds to loopback by default and keeps PostgreSQL unpublished. This is a deployment baseline, not proof of a live deployment or production readiness.
 
 
 ## Test and verification inventory
@@ -105,7 +105,8 @@ Never point integration tests at a real or production database. The PostgreSQL s
 | `tests/test_audit.py` | Audit-event authorization and safe detail filtering |
 | `tests/test_ai_provider.py` | OpenAI-compatible provider adapter behavior |
 | `tests/test_ai_routes.py` | AI API authorization, limits, and provider selection |
-| `tests/test_maintenance_runner.py` | Bounded maintenance runner behavior |
+| `tests/test_maintenance_runner.py` | Bounded one-shot maintenance runner behavior |
+| `tests/test_maintenance_scheduler.py` | Durable scheduler checkpoint, missed-run recovery, and local lock behavior |
 | `tests/test_security_maintenance.py` | Expired security-record cleanup |
 | `tests/test_production_config.py` | Fail-closed production configuration |
 | `tests/test_privacy_export.py` | Authenticated user data export, tenant privacy, and credential exclusion |
@@ -149,7 +150,7 @@ The GitHub Actions workflow additionally checks Ruff lint rules, Python compilat
 
 ## Production readiness
 
-A bounded one-shot maintenance batch is available via `python -m app.maintenance`; schedule it with the platform's cron/CronJob runner (for example, every minute) and monitor its exit status/output. It expires due unpaid orders, restores inventory transactionally, and cleans expired authentication records. The runner is not an always-on in-process scheduler.
+A separate database-coordinated scheduler runs the bounded maintenance batch from the Compose `scheduler` service. PostgreSQL advisory locking permits only one active scheduler replica; the last committed maintenance audit event is the durable checkpoint. Missed intervals coalesce into one bounded recovery run. The one-shot `python -m app.maintenance` command remains available for controlled operator use. See [Maintenance Scheduler](docs/MAINTENANCE_SCHEDULER.md).
 
 
 See [Production Readiness Gate](docs/PRODUCTION_READINESS.md) for the evidence-based staging and release checklist. CI success does not mean deployment, SMTP, scheduler, backups, security review, or payment processing are configured.

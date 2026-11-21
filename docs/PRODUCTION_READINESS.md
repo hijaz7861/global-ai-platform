@@ -27,7 +27,7 @@ This checklist is deliberately not marked complete merely because CI passes. Com
 - [ ] Set DATABASE_URL to managed PostgreSQL; confirm TLS, least-privilege DB role, connection limits, and migration permissions.
 - [ ] Keep AI_LIVE_CALLS_ENABLED=false and AI_DAILY_REQUEST_LIMIT=0 until a provider, budget, permissions, and approval path are deliberately configured.
 - [ ] Configure HTTPS, request size limits, rate limits, and log redaction at the actual ingress. If behind a reverse proxy, set `TRUSTED_PROXY_IPS` to exact trusted proxy IPs/CIDRs; forwarded client-IP headers are ignored unless the direct peer is trusted. Leave it empty for direct connections and never trust broad or user-controlled networks.
-- [ ] Schedule the one-shot runner (python -m app.maintenance) with a durable cron/CronJob runner for unpaid-order expiry and security-record cleanup; verify retries, alerting, and idempotency.
+- [ ] Deploy the separate Compose maintenance scheduler against PostgreSQL; verify advisory-lock exclusion, last-success audit checkpoint, missed-run recovery, retry behavior, bounded batches, scheduler logs/alerts, and restore behavior. SQLite locking is process-local and is not suitable for multiple production replicas.
 - [ ] Configure monitoring for error rate, latency, authentication failures, failed email delivery, database saturation, scheduler lag, and quota rejection.
 
 ## Backup and recovery evidence

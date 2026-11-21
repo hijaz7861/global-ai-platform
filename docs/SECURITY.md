@@ -13,7 +13,7 @@
 - Journal entries are balanced, idempotent and immutable; corrections use one-time reversing entries. Period overlap is blocked by application checks and PostgreSQL/SQLite triggers.
 - Audit events are allowlisted and transaction-bound for selected sensitive operations. Migration 0024 adds database triggers rejecting UPDATE/DELETE of audit rows on PostgreSQL and SQLite.
 - AI calls are disabled by default, restricted to organization owners/admins, require explicit configuration and PostgreSQL quota serialization, cap response sizes, reject redirects, and avoid logging prompts, credentials or provider response bodies.
-- Security maintenance and unpaid-order expiry are available through the bounded one-shot `python -m app.maintenance` runner. Recurring scheduling and alerting are operator-owned.
+- Security maintenance and unpaid-order expiry are available through the bounded one-shot runner and the separate Compose scheduler. PostgreSQL advisory locking coordinates replicas; deployment, monitoring, and alerting remain operator-owned.
 - CI runs Ruff, compilation, Alembic consistency, pytest on Python 3.11–3.13, PostgreSQL 16 integration tests, dependency auditing, and Bandit.
 
 ## Verification evidence
@@ -26,7 +26,7 @@
 - Audit triggers do not protect against a privileged database operator disabling them. Cryptographic hash chaining, external log export and retention policy remain open.
 - PostgreSQL concurrency coverage is improving but does not cover every order, inventory, accounting and procurement race.
 - Signing-key rotation and MFA secret re-encryption need staging validation.
-- SMTP, trusted proxy CIDRs, production secrets, scheduler, monitoring, backups and incident response are not configured by CI.
+- SMTP, trusted proxy CIDRs, production secrets, scheduler deployment, monitoring, backups and incident response are not configured by CI.
 - Tenant isolation must be reviewed for every newly added endpoint and connector.
 
 ## Required before production
@@ -36,7 +36,7 @@
 - Configure SMTP and verify email, password-reset and invitation delivery/failure behavior with real test mailboxes.
 - Keep live AI disabled until provider budget, permissions and approval controls are reviewed.
 - Configure HTTPS, ingress limits, log redaction, trusted proxy IPs/CIDRs, monitoring and alerting.
-- Schedule and monitor `python -m app.maintenance`; verify retry behavior and idempotency.
+- Deploy and monitor the Compose `scheduler` service; verify advisory-lock exclusion, missed-run recovery, retry behavior, bounded batches and idempotency. The one-shot `python -m app.maintenance` command remains for controlled operator use.
 - Configure encrypted backups, retention, isolated restore drills, RPO/RTO, rollback and incident procedures.
 - Review accounting semantics, reconciliation, payment/refund/tax scope and audit export/retention.
 - Run production-like PostgreSQL load/concurrency tests and verify privacy, terms, retention/deletion, support and incident ownership.
