@@ -12,7 +12,7 @@ from app import models  # noqa: F401
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import PropertyPayment, PropertyTransaction, User, UserPhoneVerification, utc_now
+from app.models import PropertyTransaction, User, UserPhoneVerification, utc_now
 
 
 @pytest.fixture
