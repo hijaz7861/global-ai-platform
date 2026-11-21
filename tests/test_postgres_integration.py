@@ -1757,3 +1757,120 @@ def test_postgres_property_listing_and_bilateral_sale_workflow(
         with SessionLocal() as db:
             transaction = db.get(PropertyTransaction, transaction_id)
             assert transaction is not None and transaction.status == "commission_settled"
+
+
+def test_postgres_concurrent_property_commission_reviews_serialize_settlement():
+    """Two simultaneous evidence reviews must not miss the final settlement transition."""
+    from threading import Barrier
+
+    from sqlalchemy import select
+
+    from app.api.routes.property import _settle_property_commissions_if_complete
+    from app.db import SessionLocal
+    from app.models import PropertyListing, PropertyPayment, PropertyTransaction, User, utc_now
+
+    suffix = uuid4().hex[:10]
+    with SessionLocal() as db:
+        seller = User(email=f"property-race-seller-{suffix}@example.com", password_hash="test-hash")
+        buyer = User(email=f"property-race-buyer-{suffix}@example.com", password_hash="test-hash")
+        db.add_all([seller, buyer])
+        db.flush()
+        listing = PropertyListing(
+            listing_code=f"HJZ-RACE-{suffix.upper()}",
+            seller_user_id=seller.id,
+            seller_phone="+923001234567",
+            property_type="plot",
+            title="Concurrent commission settlement test",
+            description="",
+            city="Lahore",
+            country="Pakistan",
+            area_value=5,
+            area_unit="marla",
+            asking_price_minor=1_000_000,
+            currency="PKR",
+            dispute_status="unknown",
+            seller_declaration="Seller has not confirmed dispute status.",
+            title_verification_status="not_verified",
+            listing_fee_minor=50_000,
+            listing_fee_status="paid",
+            listing_status="sold",
+        )
+        db.add(listing)
+        db.flush()
+        transaction = PropertyTransaction(
+            transaction_code=f"HJZ-PT-RACE-{suffix.upper()}",
+            listing_id=listing.id,
+            buyer_user_id=buyer.id,
+            seller_user_id=seller.id,
+            final_sale_price_minor=1_000_000,
+            buyer_confirmed=True,
+            seller_confirmed=True,
+            buyer_commission_minor=10_000,
+            seller_commission_minor=10_000,
+            currency="PKR",
+            status="sale_confirmed",
+        )
+        db.add(transaction)
+        db.flush()
+        payments = [
+            PropertyPayment(
+                listing_id=listing.id,
+                transaction_id=transaction.id,
+                payer_user_id=buyer.id,
+                payer_role="buyer",
+                payment_type="buyer_commission",
+                amount_minor=10_000,
+                currency="PKR",
+                status="submitted",
+                payment_method="bank_transfer",
+                payment_reference=f"RACE-{suffix}-BUYER",
+            ),
+            PropertyPayment(
+                listing_id=listing.id,
+                transaction_id=transaction.id,
+                payer_user_id=seller.id,
+                payer_role="seller",
+                payment_type="seller_commission",
+                amount_minor=10_000,
+                currency="PKR",
+                status="submitted",
+                payment_method="bank_transfer",
+                payment_reference=f"RACE-{suffix}-SELLER",
+            ),
+        ]
+        db.add_all(payments)
+        db.commit()
+        payment_ids = [item.id for item in payments]
+        transaction_id = transaction.id
+
+    barrier = Barrier(2)
+
+    def verify_payment(payment_id: str) -> None:
+        with SessionLocal() as db:
+            payment = db.scalar(
+                select(PropertyPayment)
+                .where(PropertyPayment.id == payment_id)
+                .with_for_update()
+            )
+            assert payment is not None and payment.status == "submitted"
+            payment.status = "verified"
+            payment.verified_at = utc_now()
+            db.flush()
+            # Both payment updates are uncommitted before either settlement check starts.
+            barrier.wait(timeout=10)
+            _settle_property_commissions_if_complete(db, transaction_id)
+            db.commit()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(verify_payment, payment_ids))
+
+    with SessionLocal() as db:
+        transaction = db.get(PropertyTransaction, transaction_id)
+        assert transaction is not None and transaction.status == "commission_settled"
+        verified_count = db.scalar(
+            select(__import__("sqlalchemy").func.count(PropertyPayment.id)).where(
+                PropertyPayment.transaction_id == transaction_id,
+                PropertyPayment.status == "verified",
+            )
+        )
+        assert verified_count == 2

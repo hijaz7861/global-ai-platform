@@ -32,14 +32,14 @@ The portable schema uses UUIDs, PKR integer minor units, explicit state constrai
 - Public search returns published listings only and excludes private address, seller phone, payment reference, internal user IDs, and document keys. The owner can read their own private address.
 - Buyer interest is unique per listing and buyer. The seller cannot express buyer interest in their own listing.
 - Buyer and seller must confirm the same positive final sale price. Only after both confirmations are 1% buyer and 1% seller commissions calculated using integer PKR minor units and the existing half-up commission service.
-- Commission payments remain pending until separately submitted and manually verified. A transaction moves to `commission_settled` only after both commission payments are verified; this does not certify the underlying property transfer or legal title.
+- Commission payments remain pending until separately submitted and manually verified. A transaction moves to `commission_settled` only after both commission payments are verified; this does not certify the underlying property transfer or legal title. Concurrent reviews serialize on the transaction row before counting outstanding payments, preventing a missed settlement transition under PostgreSQL READ COMMITTED.
 - Audit events record allowlisted state and amount metadata only; payment references and private fields are not copied to audit details.
 
 ## Verification added
 
 - SQLite API tests cover phone-verification freshness/future timestamps, email gating, payment-reference non-activation, admin-only review, moderation evidence, private-field redaction, title-status non-assertion, buyer/seller ownership, price mismatch, commission creation, and completion after both manual payment reviews.
 - SQLite migration coverage asserts revision `0040_property_marketplace`, all four tables, and the partial unique payment indexes.
-- A PostgreSQL-only integration test exercises listing fee review, publication, bilateral confirmation, both commission payments, and completion after the full Alembic upgrade.
+- PostgreSQL integration tests exercise listing fee review, publication, bilateral confirmation, both commission payments, and a barrier-synchronized concurrent commission-review race after the full Alembic upgrade.
 
 ## Explicit remaining gaps
 

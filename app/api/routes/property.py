@@ -451,6 +451,27 @@ def list_platform_property_payments(
     return [PropertyPaymentAdminResponse.model_validate(item) for item in rows]
 
 
+def _settle_property_commissions_if_complete(db: Session, transaction_id: str) -> None:
+    """Serialize concurrent commission reviews before counting outstanding payments."""
+    transaction = db.scalar(
+        select(PropertyTransaction)
+        .where(PropertyTransaction.id == transaction_id)
+        .with_for_update()
+    )
+    if transaction is None or transaction.status != "sale_confirmed":
+        return
+    outstanding = db.scalar(
+        select(func.count(PropertyPayment.id)).where(
+            PropertyPayment.transaction_id == transaction_id,
+            PropertyPayment.payment_type.in_(["buyer_commission", "seller_commission"]),
+            PropertyPayment.status != "verified",
+        )
+    )
+    if outstanding == 0:
+        transaction.status = "commission_settled"
+        transaction.updated_at = utc_now()
+
+
 @router.post(
     "/platform/property-payments/{payment_id}/review",
     response_model=PropertyPaymentResponse,
@@ -489,22 +510,7 @@ def review_property_payment(
             listing.listing_status = "pending_fee"
         listing.updated_at = utc_now()
     elif verified and payment.transaction_id is not None:
-        outstanding = db.scalar(
-            select(func.count(PropertyPayment.id)).where(
-                PropertyPayment.transaction_id == payment.transaction_id,
-                PropertyPayment.payment_type.in_(["buyer_commission", "seller_commission"]),
-                PropertyPayment.status != "verified",
-            )
-        )
-        if outstanding == 0:
-            transaction = db.scalar(
-                select(PropertyTransaction)
-                .where(PropertyTransaction.id == payment.transaction_id)
-                .with_for_update()
-            )
-            if transaction is not None and transaction.status == "sale_confirmed":
-                transaction.status = "commission_settled"
-                transaction.updated_at = utc_now()
+        _settle_property_commissions_if_complete(db, payment.transaction_id)
     record_audit_event(
         db, actor_user_id=user.id, organization_id=None,
         action="property_payment.reviewed", entity_type="property_payment", entity_id=payment.id,
