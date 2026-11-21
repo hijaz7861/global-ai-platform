@@ -332,7 +332,7 @@ class BankReconciliationSession(Base):
     """A manually imported bank statement window for one tenant-owned asset account."""
     __tablename__ = "bank_reconciliation_sessions"
     __table_args__ = (
-        CheckConstraint("status IN ('open','commission_settled')", name="ck_bank_reconciliation_status"),
+        CheckConstraint("status IN ('open','completed')", name="ck_bank_reconciliation_status"),
         CheckConstraint("statement_end_date >= statement_start_date", name="ck_bank_reconciliation_dates"),
         UniqueConstraint(
             "organization_id", "account_id", "statement_start_date", "statement_end_date",
@@ -825,7 +825,7 @@ class AITaskEvent(Base):
     __tablename__ = "ai_task_events"
     __table_args__ = (
         CheckConstraint(
-            "event_type IN ('created','claimed','heartbeat','commission_settled','retry_scheduled','failed','cancel_requested','cancelled','lease_expired')",
+            "event_type IN ('created','claimed','heartbeat','completed','retry_scheduled','failed','cancel_requested','cancelled','lease_expired')",
             name="ck_ai_task_events_type",
         ),
         Index("ix_ai_task_events_org_created", "organization_id", "created_at"),
@@ -1116,7 +1116,7 @@ class ConstructionProject(Base):
                         name="ck_construction_projects_contract_type"),
         CheckConstraint("contract_amount_minor >= 0", name="ck_construction_projects_amount_nonnegative"),
         CheckConstraint("currency = 'PKR'", name="ck_construction_projects_currency_pkr"),
-        CheckConstraint("status IN ('lead','quoted','approved','in_progress','on_hold','commission_settled','cancelled')",
+        CheckConstraint("status IN ('lead','quoted','approved','in_progress','on_hold','completed','cancelled')",
                         name="ck_construction_projects_status"),
         CheckConstraint("progress_percent BETWEEN 0 AND 100", name="ck_construction_projects_progress"),
         Index("ix_construction_projects_org_status_created", "organization_id", "status", "created_at"),
