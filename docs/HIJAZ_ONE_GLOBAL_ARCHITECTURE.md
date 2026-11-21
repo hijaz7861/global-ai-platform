@@ -1043,3 +1043,22 @@ This snapshot supersedes older branch/head and CI statements above where they co
 - No production deployment, live payment/communication provider activation, secret change, paid service, domain purchase, or repository rename was performed. Ownership of `hijaz1.com` remains unconfirmed. Branch protection/required-review settings remain unverified through the connected API.
 
 This snapshot is an engineering status record only. The Definition of Done in Section 11 remains **not satisfied**.
+
+## 24. Hatchable Version 40 live inventory and property source mapping — 2026-11-21
+
+A fresh read-only Hatchable connector inspection reconfirmed the live application is Version 40, active, at `https://hijaz-construction.hatchable.site`. It returned **46 database tables**, **25 active API functions**, **75 project files**, **14 SQL migrations**, and one active hourly follow-up schedule. The scheduler reported 168 runs and 0 errors over seven days, 201 total attempts, and a last-fired timestamp of 2026-11-21 15:05:05 UTC. Version 40 is the latest listed deployment (2026-11-13 07:25:10 UTC). This is inventory evidence only; no project write/deploy action was invoked.
+
+The property source mapping is now recorded in `docs/PROPERTY_VERTICAL.md` on the Draft integration branch. Read-only inspection confirmed:
+- `property_listings`, `property_transactions`, `property_payments`, and `user_phone_verifications` tables.
+- `api/property-submit.js`, `api/property-marketplace.js`, `api/property-action.js`, and `api/property-admin.js`.
+- Seller phone OTP must be verified within 30 days before submission.
+- The deployed source confirms a PKR 500 listing fee and 1% buyer plus 1% seller commission after both parties confirm the same final sale price.
+- Source title status `verified_by_admin` is set on publication without a separate title-evidence workflow. Portable moderation must not claim title/deed verification. Seller dispute status is only a declaration.
+- Private addresses and document keys must not be exposed. Payment references are review evidence only; no JazzCash or other external provider is enabled.
+
+### Property implementation candidate
+
+- Draft PR #69 now targets current `master` at `12786917b11ee8f0e5a080aecb6bf7e9ef72fb46`, compares **58 ahead / 0 behind**, and consolidates the role/supplier/transport/construction migrations `0035`–`0039` with the property commission service.
+- The service uses integer PKR minor units and basis points with half-up rounding. The PR adds positive and negative tests for defaults, rounding boundaries, configurable rates, invalid prices and invalid rates.
+- Exact-head Actions Run #929 is still in progress at the time of this snapshot; no test success is claimed yet. PR #69 remains Draft, unreviewed and unmerged.
+- Property persistence/API, OTP adapter, private media controls, listing moderation, manual payment review and buyer/seller transaction endpoints remain unimplemented. The live app and its data remain untouched.
