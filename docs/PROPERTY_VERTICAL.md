@@ -1,51 +1,50 @@
-# HIJAZ ONE Property Vertical — Source Mapping and First Portable Slice
+# HIJAZ ONE Property Vertical — Source Mapping and Portable Implementation
 
-## Source evidence
+## Verified Hatchable Version 40 source
 
-Read-only inspection of the live Hatchable HIJAZ ONE Version 40 project on 2026-11-21 confirmed these property tables and API functions:
+Read-only inspection of the live project on 2026-11-21 confirmed:
 
 - Tables: `property_listings`, `property_transactions`, `property_payments`, and `user_phone_verifications`.
-- API functions: `api/property-submit.js`, `api/property-marketplace.js`, `api/property-action.js`, and `api/property-admin.js`.
-- The project schema contains no separate property-title registry or legal-verification evidence table.
+- Functions: `api/property-submit.js`, `api/property-marketplace.js`, `api/property-action.js`, and `api/property-admin.js`.
+- The listing flow requires a phone number matching a user verification no older than 30 days.
+- The deployed source confirms a PKR 500 listing fee and 1% buyer plus 1% seller commission.
+- Source property rows include private addresses, seller phone, document keys, seller-declared dispute state, and title-verification state.
 
-No Hatchable rows, documents, photos, or storage objects were exported or copied.
+No Hatchable rows, identity documents, deeds, photos, credentials, or object bytes were exported or copied. The live Version 40 application remains unchanged.
 
-## Confirmed source workflow
+## Source-to-port mapping
 
-1. An authenticated seller submits a listing. The source checks that the submitted phone matches the user's phone verification and that the OTP verification is no older than 30 days.
-2. The source snapshots a **PKR 500.00 listing fee**, creates a pending listing-fee payment record, and leaves the listing in `pending_fee`.
-3. An administrator manually verifies or rejects the listing-fee payment. A verified listing fee moves the listing to `pending_review`; only then can an administrator publish or reject the listing.
-4. Public search returns published listings only. Private address and document-storage keys must never be included in public responses.
-5. A buyer can record interest. Buyer and seller independently confirm the same final sale price. Once both have confirmed, the source calculates **1% buyer commission and 1% seller commission**, creates two pending commission-payment records, and marks the listing sold.
-6. An administrator manually verifies both commission payments. The transaction becomes completed only when both are verified.
-
-The fee values above are confirmed by the deployed source code and public/admin API policy payloads; they are not inferred from UI labels.
-
-## Required portable data mapping
-
-| Hatchable source | Portable target concept | Required controls |
+| Hatchable source | Portable target | Current status |
 |---|---|---|
-| `property_listings` | PropertyListing | seller ownership, tenant scope, moderation state, private-address separation, bounded media references |
-| `property_transactions` | PropertyTransaction | buyer/seller identity, exact listing ownership, mutually confirmed sale price, idempotent state transitions |
-| `property_payments` | PropertyPayment | role/type-specific amount snapshot, manual verification audit, no client-controlled verified state |
-| `user_phone_verifications` | UserPhoneVerification | E.164 normalization, provider-issued OTP evidence, 30-day freshness, replay/rate limits |
+| `property_listings` | `PropertyListing` | Draft API and migration in this PR |
+| `property_transactions` | `PropertyTransaction` | Draft bilateral interest/confirmation API |
+| `property_payments` | `PropertyPayment` | Draft manual-review lifecycle |
+| `user_phone_verifications` | `UserPhoneVerification` | Read-only verification gate; trusted writer/provider not yet implemented |
 
-## Important source caveat: moderation is not title verification
+The portable schema uses UUIDs, PKR integer minor units, explicit state constraints, user ownership, bounded query results, and PostgreSQL/SQLite-compatible indexes. It does not import or transform source records.
 
-The Hatchable admin publication function sets `title_verification_status='verified_by_admin'` when an administrator publishes a listing after fee verification. The inspected workflow does not demonstrate an independent title/deed verification process. The portable model must therefore separate **listing moderation** from **legal-title verification** and must never translate seller declarations or ordinary publication into a claim that title has been verified.
+## Implemented in this Draft slice
 
-The seller's `dispute_status` is a declaration (`seller_declared_non_disputed`, `disputed`, or `unknown`), not legal clearance. Optional latitude/longitude is a point location, not a road route or ETA.
+- Authenticated listing creation requires verified email and a provider-issued E.164 phone verification no older than 30 days. The phone number is taken from the verification record; the client cannot submit a different number or self-assert verification.
+- Listing creation snapshots the confirmed PKR 500 fee as 50,000 minor units and creates a pending payment. A submitted payment reference remains `submitted`; it cannot mark the fee paid.
+- Only a verified platform administrator can manually review submitted payment evidence. Publishing additionally requires a paid listing fee and explicit moderation evidence.
+- Publication is deliberately separate from legal-title verification. A published listing remains `title_verification_status=not_verified`; seller dispute status is labelled as a seller declaration, not legal clearance.
+- Public search returns published listings only and excludes private address, seller phone, payment reference, internal user IDs, and document keys. The owner can read their own private address.
+- Buyer interest is unique per listing and buyer. The seller cannot express buyer interest in their own listing.
+- Buyer and seller must confirm the same positive final sale price. Only after both confirmations are 1% buyer and 1% seller commissions calculated using integer PKR minor units and the existing half-up commission service.
+- Commission payments remain pending until separately submitted and manually verified. A transaction becomes completed only after both commission payments are verified.
+- Audit events record allowlisted state and amount metadata only; payment references and private fields are not copied to audit details.
 
-## First portable implementation slice
+## Verification added
 
-- `app/services/property_commissions.py` implements the confirmed 1% + 1% commission calculation using integer PKR minor units and explicit half-up rounding.
-- The confirmed PKR 500 listing fee and commission rates are named constants, not hidden UI literals.
-- Regression and negative tests cover default rates, integer minor-unit arithmetic, half-up rounding, configurable basis-point rates, invalid prices, and invalid rates.
-- The service does **not** create a payment, activate a provider, verify payment, settle funds, or publish a listing.
+- SQLite API tests cover phone-verification freshness/future timestamps, email gating, payment-reference non-activation, admin-only review, moderation evidence, private-field redaction, title-status non-assertion, buyer/seller ownership, price mismatch, commission creation, and completion after both manual payment reviews.
+- SQLite migration coverage asserts revision `0040_property_marketplace`, all four tables, and the partial unique payment indexes.
+- A PostgreSQL-only integration test exercises listing fee review, publication, bilateral confirmation, and commission calculation after the full Alembic upgrade.
 
-## Remaining blockers before property API activation
+## Explicit remaining gaps
 
-- The portable platform has not yet implemented the source's fresh phone-OTP verification workflow. No SMS provider credentials or owner setup are available; listing submission must remain blocked until a provider-neutral verification adapter and tests exist.
-- Property listing/transaction/payment models, tenant and ownership APIs, admin moderation, manual payment review, media access controls, retention and audit integration remain to be implemented.
-- Payment references remain review evidence only. No JazzCash or other external payment service is enabled by this work.
-- Complete source-to-target mapping, object-byte export, staged import, checksums and reconciliation remain unperformed. The live Hatchable project is untouched.
+- No portable OTP issuance/verification adapter, SMS credentials, rate-limit/replay service, or trusted phone-verification writer exists. Until one is implemented and configured, new portable listings fail closed unless a trusted verification record already exists.
+- No property media upload, object-byte storage, deed/document workflow, title/legal verification, disputes/refunds, settlement, or FX conversion is implemented.
+- The source's optional photos and document keys are intentionally not copied into the portable schema in this slice.
+- No JazzCash, Easypaisa, bank, or other payment provider is connected. References are manual-review evidence only; this work does not move money.
+- Full Hatchable export/import, redacted staging rehearsal, object checksums, relationship reconciliation, and rollback remain release gates. The 17-table source backup endpoint is incomplete and must not be used as the migration artifact.
