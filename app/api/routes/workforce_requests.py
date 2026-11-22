@@ -293,8 +293,8 @@ def submit_workforce_service_payment(
     )
     if item is None:
         raise HTTPException(status_code=404, detail="Service request not found")
-    if item.platform_fee_status not in {"pending", "rejected"}:
-        raise HTTPException(status_code=409, detail="Service fee is not awaiting payment")
+    if item.status != "new" or item.platform_fee_status not in {"pending", "rejected"}:
+        raise HTTPException(status_code=409, detail="Only a new request awaiting payment can accept fee evidence")
     payment = WorkforceServicePayment(
         service_request_id=item.id,
         amount_minor=item.platform_fee_minor,
@@ -375,6 +375,8 @@ def review_workforce_service_payment(
     if not payload.evidence_checked:
         raise HTTPException(status_code=409, detail="Evidence review must be confirmed")
     verified = payload.decision == "verify"
+    if verified and item.status == "cancelled":
+        raise HTTPException(status_code=409, detail="A cancelled request cannot be fee-verified")
     payment.status = "verified" if verified else "rejected"
     payment.reviewer_user_id = user.id
     payment.reviewer_notes = payload.notes
