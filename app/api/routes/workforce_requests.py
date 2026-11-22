@@ -420,6 +420,7 @@ def assign_workforce_service_provider(
     profile = db.get(WorkforceProfile, payload.provider_profile_id)
     if (
         profile is None
+        or profile.user_id == item.client_user_id
         or profile.moderation_status != "published"
         or profile.availability != "available"
         or not _has_current_role_entitlement(db, profile)
