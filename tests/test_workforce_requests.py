@@ -508,3 +508,152 @@ def test_client_cannot_assign_themselves_as_their_own_provider(
         json={"provider_profile_id": profile_id},
     )
     assert self_assignment.status_code == 409
+
+
+def _prepare_assigned_workforce_request(
+    client, verified_user_factory, role_key="contractor"
+):
+    admin_token = verified_user_factory(client, "platform-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    provider_token, profile_id = make_published_provider(
+        client, admin_headers, verified_user_factory, role_key=role_key
+    )
+    provider_headers = {"Authorization": f"Bearer {provider_token}"}
+    client_token = verified_user_factory(client, "relay-client@example.com")
+    client_headers = {"Authorization": f"Bearer {client_token}"}
+    add_verified_phone(client, "relay-client@example.com")
+    created = create_request(client, client_headers)
+    assert created.status_code == 201, created.text
+    request_id = created.json()["request"]["id"]
+    submitted = submit_fee(client, client_headers, request_id)
+    assert submitted.status_code == 200, submitted.text
+    reviewed = verify_fee(client, admin_headers, request_id)
+    assert reviewed.status_code == 200, reviewed.text
+    assigned = client.post(
+        f"/api/v1/platform/workforce/service-requests/{request_id}/assign",
+        headers=admin_headers,
+        json={"provider_profile_id": profile_id},
+    )
+    assert assigned.status_code == 200, assigned.text
+    return request_id, client_headers, provider_headers, admin_headers
+
+
+@pytest.mark.parametrize("role_key", ["contractor", "mason", "labour"])
+def test_workforce_contact_relay_is_scoped_to_the_client_and_exact_active_provider_role(
+    workforce_request_client, verified_user_factory, role_key
+):
+    client = workforce_request_client
+    request_id, client_headers, provider_headers, _ = _prepare_assigned_workforce_request(
+        client, verified_user_factory, role_key
+    )
+    client_message = client.post(
+        f"/api/v1/me/workforce/service-requests/{request_id}/messages",
+        headers=client_headers,
+        json={"body": "Please confirm the materials and site access plan."},
+    )
+    assert client_message.status_code == 201, client_message.text
+    assert "sender_user_id" not in client_message.json()["message"]
+
+    provider_path = (
+        f"/api/v1/me/workforce/{role_key}-service-requests/{request_id}/messages"
+    )
+    provider_read = client.get(provider_path, headers=provider_headers)
+    assert provider_read.status_code == 200, provider_read.text
+    assert len(provider_read.json()["messages"]) == 1
+    assert provider_read.json()["messages"][0]["sender_side"] == "client"
+
+    premature_provider_message = client.post(
+        provider_path,
+        headers=provider_headers,
+        json={"body": "I can confirm the work scope after reviewing the site details."},
+    )
+    assert premature_provider_message.status_code == 409
+
+    accepted = client.post(
+        f"/api/v1/me/workforce/{role_key}-service-requests/{request_id}/status",
+        headers=provider_headers,
+        json={"status": "accepted", "provider_terms_accepted": True},
+    )
+    assert accepted.status_code == 200, accepted.text
+    provider_message = client.post(
+        provider_path,
+        headers=provider_headers,
+        json={"body": "I have accepted the request and can begin after the scope is confirmed."},
+    )
+    assert provider_message.status_code == 201, provider_message.text
+
+    client_messages = client.get(
+        f"/api/v1/me/workforce/service-requests/{request_id}/messages",
+        headers=client_headers,
+    )
+    assert client_messages.status_code == 200
+    assert [item["sender_side"] for item in client_messages.json()["messages"]] == [
+        "client",
+        "provider",
+    ]
+
+    unrelated_token = verified_user_factory(client, "relay-unrelated@example.com")
+    unrelated_headers = {"Authorization": f"Bearer {unrelated_token}"}
+    denied_client = client.get(
+        f"/api/v1/me/workforce/service-requests/{request_id}/messages",
+        headers=unrelated_headers,
+    )
+    assert denied_client.status_code == 404
+    denied_provider = client.get(provider_path, headers=unrelated_headers)
+    assert denied_provider.status_code == 403
+
+
+def test_workforce_contact_relay_rejects_contact_details_and_closes_on_terminal_state(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    request_id, client_headers, provider_headers, _ = _prepare_assigned_workforce_request(
+        client, verified_user_factory, "contractor"
+    )
+    path = f"/api/v1/me/workforce/service-requests/{request_id}/messages"
+    for body in (
+        "Call me at +923001234567",
+        "Email me at client@example.com",
+        "Use https://example.com for the details",
+        "Message my account @client_handle",
+    ):
+        response = client.post(path, headers=client_headers, json={"body": body})
+        assert response.status_code == 422, body
+
+    provider_status = "/api/v1/me/workforce/contractor-service-requests/" + request_id + "/status"
+    accepted = client.post(
+        provider_status,
+        headers=provider_headers,
+        json={"status": "accepted", "provider_terms_accepted": True},
+    )
+    assert accepted.status_code == 200
+    started = client.post(
+        provider_status,
+        headers=provider_headers,
+        json={"status": "in_progress"},
+    )
+    assert started.status_code == 200
+    completed = client.post(
+        provider_status,
+        headers=provider_headers,
+        json={"status": "completed"},
+    )
+    assert completed.status_code == 200
+    closed = client.post(
+        path,
+        headers=client_headers,
+        json={"body": "Thank you for completing the agreed work."},
+    )
+    assert closed.status_code == 409
+
+    from sqlalchemy import text
+
+    with client.testing_sessions() as db:
+        audit_rows = db.execute(
+            text(
+                "SELECT details FROM audit_events "
+                "WHERE action = 'workforce.service_message.sent'"
+            )
+        ).all()
+    assert audit_rows
+    assert all("Thank you for completing" not in str(row[0]) for row in audit_rows)
