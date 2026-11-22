@@ -1874,3 +1874,62 @@ def test_postgres_concurrent_property_commission_reviews_serialize_settlement():
             )
         )
         assert verified_count == 2
+
+
+def test_postgres_workforce_profiles_enforce_user_role_uniqueness_and_json_round_trip():
+    """The workforce schema must behave consistently on PostgreSQL."""
+    from decimal import Decimal
+
+    from sqlalchemy.exc import IntegrityError
+
+    from app.db import SessionLocal
+    from app.models import RoleDefinition, User, WorkforceProfile
+
+    suffix = uuid4().hex
+    with SessionLocal() as db:
+        assert db.get(RoleDefinition, "contractor") is not None
+        user = User(
+            email=f"postgres-workforce-{suffix}@example.com",
+            password_hash="test-hash",
+            email_verified=True,
+        )
+        db.add(user)
+        db.flush()
+        profile = WorkforceProfile(
+            user_id=user.id,
+            role_key="contractor",
+            full_name="PostgreSQL Workforce",
+            specialty="Concrete works",
+            skills=["formwork", "estimation"],
+            experience_years=Decimal("5.5"),
+            city="Lahore",
+            country_code="PK",
+            available_cities=["Lahore", "Kasur"],
+        )
+        db.add(profile)
+        db.commit()
+        user_id = user.id
+        profile_id = profile.id
+
+    with SessionLocal() as db:
+        stored = db.get(WorkforceProfile, profile_id)
+        assert stored is not None
+        assert stored.skills == ["formwork", "estimation"]
+        assert stored.available_cities == ["Lahore", "Kasur"]
+        assert stored.experience_years == Decimal("5.5")
+        db.add(
+            WorkforceProfile(
+                user_id=user_id,
+                role_key="contractor",
+                full_name="Duplicate Workforce",
+                specialty="Duplicate",
+                skills=[],
+                experience_years=Decimal("1.0"),
+                city="Lahore",
+                country_code="PK",
+                available_cities=[],
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
