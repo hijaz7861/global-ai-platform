@@ -929,3 +929,28 @@ This snapshot records verified source and CI evidence only; it is not a release 
 **NOT SATISFIED.** PR #72's workforce directory is implemented and exact-head CI passed, but it remains Draft/unreviewed and stacked on unmerged parents. Hiring/service requests, contractor-company membership, workforce ratings/reviews, phone verification integration for hiring, remaining source verticals, portable worker/scheduler/object-storage integration, global commerce/FX/tax, signed/idempotent payment webhooks/refunds/settlement, complete AI controls, authenticated MCP POST verification, full staged Hatchable export/import with object-byte/financial/consent/audit reconciliation, backup/restore, independent-host rehearsal, security review, branch protection and owner approval remain open gates.
 
 No PR was merged, no production deployment or live Hatchable write occurred, no secret/provider was enabled, no data was copied/deleted, and no domain or paid service was purchased. Keep the repository name and live application unchanged.
+
+
+## 28. Verified workforce hiring continuation — 2026-11-22
+
+### Exact candidate state
+
+- Current master remains 11ad7da84e73126a450cb0d194e4859b90263a4a with Alembic head 0034_postgres_approval_nonces. The latest pre-update architecture-document head eab518f6add23d63c144387306f71689e222aaa6 was 46 commits ahead / 23 behind master and exact-head Run #947 passed 5/5 jobs. This new documentation commit requires its own exact-head run; do not reuse Run #947 as proof for the new head.
+- Workforce stack is now #69 → #70 → #71 → #72 → #73. PR #72 exact-head Run #946 passed 5/5: 439? No — Run #946 was the directory-only head and reported 432 passed / 25 skipped per Python matrix, 25 PostgreSQL integration tests. PR #73 is stacked on #72 at base 473eeededd0f98cd9dedfeeb14749fab340adf43 and head e16dde12b715109d3dc8af332308391546b0ad0e.
+- PR #73 exact-head Run #948 passed 5/5: Python 3.11/3.12/3.13 each reported 439 passed / 26 skipped (74 warnings); PostgreSQL integration reported 26 passed. Ruff, compilation, SQLite migration upgrade/Alembic check, PostgreSQL migration/schema verification, dependency audit and Bandit passed. The PostgreSQL partial unique payment-index regression passed.
+- PR #72 and #73 remain Draft/open/unmerged and have no owner reviews or inline review threads. Their parent chain #69–#71 also remains Draft/unmerged/unreviewed. No branch is protected in the 78-branch inventory; 30 PRs are open.
+
+### Verified service-request port
+
+- Read-only Version 40 inspection confirmed the source service_requests table and API functions api/marketplace-action.js, api/marketplace-admin.js and api/provider-workspace.js. Source service_type values are hire_worker and hire_contractor. The source platform fee is PKR 50; provider workspace exposes assigned requests only after fee status is paid and provider identity is verified.
+- PR #73 adds Alembic revision 0043_workforce_service_requests, after 0042_workforce_directory. The fee is represented as 5,000 PKR minor units. Manual methods are bank transfer/cash deposit only; no JazzCash or external payment provider is enabled. A user-submitted reference remains submitted until a verified platform administrator confirms evidence_checked.
+- Client creation requires verified email, a provider-issued E.164 phone verification no older than 30 days, and a versioned client terms acknowledgement. Only the verification timestamp is snapshotted; the phone number is not copied into the request or returned in client/provider responses.
+- Provider terms are separately accepted and timestamped by the assigned provider. Admin assignment requires verified fee, published/available provider profile, current role entitlement and a provider different from the client. Contractor, mason and labour list/status endpoints each use require_active_role for the exact role.
+- Provider state transitions are bounded and idempotent; client cancellation is limited to new/matched work; accepted work must be disputed rather than silently cancelled. Payment-reference and phone values are excluded from audit events and provider responses.
+- The service-request Draft does not provide a contact relay, refund workflow, dispute adjudication, provider payout/settlement, country-specific fee configuration or legally reviewed terms. It does not import source rows.
+
+### Remaining Definition of Done
+
+**NOT SATISFIED.** The workforce directory and hiring-request workflows are implemented only in stacked Draft PRs. Remaining work includes contact relay with explicit privacy controls, refunds/dispute adjudication/provider settlement, contractor-company teams and ratings, remaining source verticals, portable worker/scheduler/object-storage integration, global commerce/FX/tax, signed/idempotent payment webhooks, complete AI operating controls, authenticated MCP POST verification, staged Hatchable export/import and reconciliation, backup/restore, independent-host rehearsal, security review, branch protection and owner approval.
+
+No PR was merged, no deployment occurred, the live Hatchable app was not modified, no source rows/files were copied, no provider/secret was enabled, and no cost or domain purchase occurred. Keep the repository name and live app unchanged.
