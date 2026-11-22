@@ -221,6 +221,16 @@ def test_manual_service_fee_submission_never_self_verifies_and_provider_only_see
         client, admin_headers, verified_user_factory, "contractor"
     )
     provider_headers = {"Authorization": f"Bearer {provider_token}"}
+    wrong_mason_scope = client.get(
+        "/api/v1/me/workforce/mason-service-requests",
+        headers=provider_headers,
+    )
+    wrong_labour_scope = client.get(
+        "/api/v1/me/workforce/labour-service-requests",
+        headers=provider_headers,
+    )
+    assert wrong_mason_scope.status_code == 403
+    assert wrong_labour_scope.status_code == 403
 
     created = create_request(client, client_headers)
     assert created.status_code == 201, created.text
