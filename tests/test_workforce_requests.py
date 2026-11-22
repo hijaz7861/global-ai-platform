@@ -462,3 +462,49 @@ def test_cancelled_request_cannot_be_fee_verified_and_cannot_accept_late_payment
 
     later_payment = submit_fee(client, headers, request_id, "BANK-REF-CANCEL-2")
     assert later_payment.status_code == 409
+
+
+def test_client_cannot_assign_themselves_as_their_own_provider(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    admin_token = verified_user_factory(client, "platform-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    client_token = verified_user_factory(client, "self-hiring-client@example.com")
+    client_headers = {"Authorization": f"Bearer {client_token}"}
+    add_verified_phone(client, "self-hiring-client@example.com")
+    activate_role(client, client_token, admin_headers, "contractor")
+
+    profile = client.put(
+        "/api/v1/me/workforce/contractor-profile",
+        headers=client_headers,
+        json={
+            "full_name": "Self Hiring Example",
+            "specialty": "General works",
+            "skills": ["repair"],
+            "experience_years": "3.0",
+            "city": "Lahore",
+            "country_code": "PK",
+        },
+    )
+    assert profile.status_code == 200, profile.text
+    profile_id = profile.json()["profile"]["id"]
+    published = client.post(
+        f"/api/v1/platform/workforce/profiles/{profile_id}/review",
+        headers=admin_headers,
+        json={"decision": "publish", "content_reviewed": True},
+    )
+    assert published.status_code == 200
+
+    created = create_request(client, client_headers)
+    request_id = created.json()["request"]["id"]
+    submitted = submit_fee(client, client_headers, request_id)
+    assert submitted.status_code == 200
+    assert verify_fee(client, admin_headers, request_id).status_code == 200
+
+    self_assignment = client.post(
+        f"/api/v1/platform/workforce/service-requests/{request_id}/assign",
+        headers=admin_headers,
+        json={"provider_profile_id": profile_id},
+    )
+    assert self_assignment.status_code == 409
