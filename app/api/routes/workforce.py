@@ -1,5 +1,4 @@
 """Role-gated workforce directory with moderation and privacy-safe discovery."""
-from datetime import timezone
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -22,9 +21,6 @@ from app.models import (
 )
 
 router = APIRouter(tags=["workforce"])
-WORKFORCE_ROLES = ("contractor", "mason", "labour")
-
-
 class WorkforceProfileUpsert(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
