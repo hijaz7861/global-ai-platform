@@ -19,6 +19,7 @@ _ALLOWED_DETAIL_KEYS = {
     "open_until_epoch", "probe_until_epoch", "error_code",
     "amount_minor", "listing_status", "payment_status", "payment_type",
     "property_type", "commission_minor", "buyer_confirmed", "seller_confirmed",
+    "sender_side", "body_length",
 }
 
 
@@ -44,6 +45,12 @@ def record_audit_event(
             if key == "previous_status" and value not in {"pending_payment", "pending_review", "active", "rejected", "expired", "suspended", "revoked"}:
                 continue
             if key == "provider_state" and value not in {"closed", "open", "half_open"}:
+                continue
+            if key == "sender_side" and value not in {"client", "provider"}:
+                continue
+            if key == "body_length" and (
+                isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 2000
+            ):
                 continue
             if key == "error_code" and value not in {"", "retryable", "non_retryable", "timeout", "connection", "http_429", "http_5xx", "probe_abandoned"}:
                 continue
