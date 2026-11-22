@@ -20,7 +20,7 @@ The source marketplace-action function requires a provider-verified phone and cl
 
 ## Remaining gaps
 
-This slice does not provide a messaging/contact relay, refunds, dispute adjudication, provider payout/settlement, multi-currency budgets, contractor-company teams, ratings, document storage, phone-provider integration, or source-data migration. The provider terms version is an acknowledgement marker, not a legally reviewed contract or electronic signature. The service fee is a confirmed source snapshot, not a country-wide configurable fee engine. No hiring request data was imported.
+This slice does not provide refunds, dispute adjudication, provider payout/settlement, multi-currency budgets, contractor-company teams, ratings, document storage, phone-provider integration, or source-data migration. The provider terms version is an acknowledgement marker, not a legally reviewed contract or electronic signature. The service fee is a confirmed source snapshot, not a country-wide configurable fee engine. No hiring request data was imported.
 
 
 ## Internal contact relay — Draft PR #74
