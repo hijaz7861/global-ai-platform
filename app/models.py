@@ -1630,6 +1630,7 @@ class EducationTeacherProfile(Base):
     country_code: Mapped[str] = mapped_column(String(2), default="PK", nullable=False)
     online_classes: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     verification_status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    verification_reference: Mapped[str | None] = mapped_column(String(160), nullable=True)
     reviewer_user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
@@ -1683,6 +1684,8 @@ class EducationCourse(Base):
     price_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
     commission_bps: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    country_code: Mapped[str] = mapped_column(String(2), default="PK", nullable=False)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
     reviewer_user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -1735,6 +1738,7 @@ class EducationCourseEnrollment(Base):
     payment_status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
     payment_method: Mapped[str | None] = mapped_column(String(24), nullable=True)
     payment_reference: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    payment_verification_reference: Mapped[str | None] = mapped_column(String(160), nullable=True)
     reviewer_user_id: Mapped[str | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

@@ -33,7 +33,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column(
             "user_id", sa.String(36), sa.ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False, unique=True,
+            nullable=False,
         ),
         sa.Column("display_name", sa.String(120), nullable=False),
         sa.Column("preferred_language", sa.String(12), nullable=False, server_default="ur"),
@@ -49,6 +49,7 @@ def upgrade() -> None:
         sa.Column("city", sa.String(100), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.UniqueConstraint("user_id", name="uq_education_student_user"),
         sa.CheckConstraint(
             "age_band IN ('under_18','adult','prefer_not_to_say')",
             name="ck_education_student_age_band",
@@ -70,7 +71,7 @@ def upgrade() -> None:
         sa.Column(
             "student_profile_id", sa.String(36),
             sa.ForeignKey("education_student_profiles.id", ondelete="CASCADE"),
-            nullable=False, unique=True,
+            nullable=False,
         ),
         sa.Column("status", sa.String(16), nullable=False, server_default="pending"),
         sa.Column("submission_reference", sa.String(160), nullable=True),
@@ -83,6 +84,7 @@ def upgrade() -> None:
         sa.Column("verified_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.UniqueConstraint("student_profile_id", name="uq_education_guardian_student"),
         sa.CheckConstraint(
             "status IN ('pending','verified','rejected')",
             name="ck_education_guardian_status",
@@ -98,7 +100,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column(
             "user_id", sa.String(36), sa.ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False, unique=True,
+            nullable=False,
         ),
         sa.Column("full_name", sa.String(160), nullable=False),
         sa.Column("subjects", sa.JSON(), nullable=False),
@@ -108,6 +110,7 @@ def upgrade() -> None:
         sa.Column("country_code", sa.String(2), nullable=False, server_default="PK"),
         sa.Column("online_classes", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("verification_status", sa.String(16), nullable=False, server_default="pending"),
+        sa.Column("verification_reference", sa.String(160), nullable=True),
         sa.Column(
             "reviewer_user_id", sa.String(36),
             sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
@@ -116,6 +119,7 @@ def upgrade() -> None:
         sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.UniqueConstraint("user_id", name="uq_education_teacher_user"),
         sa.CheckConstraint(
             "verification_status IN ('pending','verified','rejected','suspended')",
             name="ck_education_teacher_status",
@@ -144,6 +148,8 @@ def upgrade() -> None:
         sa.Column("price_minor", sa.BigInteger(), nullable=False, server_default="0"),
         sa.Column("currency", sa.String(3), nullable=False, server_default="PKR"),
         sa.Column("commission_bps", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("country_code", sa.String(2), nullable=False, server_default="PK"),
+        sa.Column("city", sa.String(100), nullable=True),
         sa.Column("status", sa.String(16), nullable=False, server_default="pending"),
         sa.Column(
             "reviewer_user_id", sa.String(36),
@@ -203,6 +209,7 @@ def upgrade() -> None:
         sa.Column("payment_status", sa.String(16), nullable=False, server_default="pending"),
         sa.Column("payment_method", sa.String(24), nullable=True),
         sa.Column("payment_reference", sa.String(160), nullable=True),
+        sa.Column("payment_verification_reference", sa.String(160), nullable=True),
         sa.Column(
             "reviewer_user_id", sa.String(36),
             sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True,

@@ -24,9 +24,18 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
 
     engine = create_engine(database_url)
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0040_property_marketplace"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0041_education_marketplace"
     table_names = set(inspect(engine).get_table_names())
-    assert {"user_phone_verifications", "property_listings", "property_transactions", "property_payments"} <= table_names
+    assert {
+        "user_phone_verifications", "property_listings", "property_transactions", "property_payments",
+        "education_settings", "education_student_profiles", "education_guardian_consents",
+        "education_teacher_profiles", "education_courses", "education_course_enrollments",
+        "education_course_materials",
+    } <= table_names
+    course_columns = {column["name"] for column in inspect(engine).get_columns("education_courses")}
+    assert {"country_code", "city", "price_minor", "commission_bps"} <= course_columns
+    guardian_constraints = inspect(engine).get_unique_constraints("education_guardian_consents")
+    assert any(item["name"] == "uq_education_guardian_student" for item in guardian_constraints)
     payment_indexes = inspect(engine).get_indexes("property_payments")
     assert any(item["name"] == "uq_property_listing_fee_payment" and item["unique"] for item in payment_indexes)
     assert any(item["name"] == "uq_property_transaction_payment" and item["unique"] for item in payment_indexes)

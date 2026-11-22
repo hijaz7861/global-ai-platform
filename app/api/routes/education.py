@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -246,7 +246,7 @@ class CourseCreateRequest(BaseModel):
     language: str = Field(default="ur", min_length=2, max_length=12)
     age_group: Literal["under_18", "adult", "all"] = "all"
     course_type: Literal["recorded", "live", "notes", "hybrid"] = "recorded"
-    price_minor: int = Field(default=0, ge=0, le=MAX_MINOR_UNITS)
+    price_minor: int = Field(default=0, ge=0, le=MAX_MINOR_UNITS, strict=True)
     currency: Literal["PKR"] = "PKR"
 
     @field_validator("title", "description", "subject", "language")
@@ -296,6 +296,29 @@ class VerificationReviewRequest(BaseModel):
         return value.strip() if value and value.strip() else None
 
 
+class AgeReviewRequest(BaseModel):
+    decision: Literal["verify", "reject"]
+    evidence_checked: bool = False
+    verification_reference: str | None = Field(default=None, max_length=160)
+    notes: str | None = Field(default=None, max_length=500)
+
+    @field_validator("verification_reference", "notes")
+    @classmethod
+    def trim_age_review_text(cls, value: str | None) -> str | None:
+        return value.strip() if value and value.strip() else None
+
+
+class MaterialReviewRequest(BaseModel):
+    decision: Literal["publish", "reject"]
+    evidence_checked: bool = False
+    notes: str | None = Field(default=None, max_length=500)
+
+    @field_validator("notes")
+    @classmethod
+    def trim_material_review_notes(cls, value: str | None) -> str | None:
+        return value.strip() if value and value.strip() else None
+
+
 class ModerationReviewRequest(BaseModel):
     decision: Literal["publish", "reject", "suspend"]
     evidence_checked: bool = False
@@ -329,14 +352,26 @@ def list_public_education_courses(
     city: str | None = Query(default=None, max_length=100),
     subject: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=50, ge=1, le=100),
-    db: Annotated[Session, Depends(get_db)] = None,
+    db: Annotated[Session, Depends(get_db)],
 ) -> list[dict]:
     statement = (
         select(EducationCourse, EducationTeacherProfile.full_name)
         .join(EducationTeacherProfile, EducationTeacherProfile.id == EducationCourse.teacher_profile_id)
+        .join(UserRoleEntitlement, UserRoleEntitlement.user_id == EducationTeacherProfile.user_id)
+        .join(RoleDefinition, RoleDefinition.role_key == UserRoleEntitlement.role_key)
+        .join(User, User.id == EducationTeacherProfile.user_id)
         .where(
             EducationCourse.status == "published",
             EducationTeacherProfile.verification_status == "verified",
+            User.is_active.is_(True),
+            User.email_verified.is_(True),
+            RoleDefinition.role_key == "teacher",
+            RoleDefinition.is_active.is_(True),
+            UserRoleEntitlement.organization_id.is_(None),
+            UserRoleEntitlement.status == "active",
+            UserRoleEntitlement.age_verified.is_(True),
+            or_(UserRoleEntitlement.fee_amount_minor == 0, UserRoleEntitlement.payment_status == "verified"),
+            or_(UserRoleEntitlement.expires_at.is_(None), UserRoleEntitlement.expires_at > utc_now()),
         )
     )
     if country_code:
@@ -631,6 +666,12 @@ def enroll_in_course(
     )
     if course is None:
         raise HTTPException(status_code=404, detail="Published course not found")
+    teacher = db.get(EducationTeacherProfile, course.teacher_profile_id)
+    if (
+        teacher is None or teacher.verification_status != "verified"
+        or not _active_role_for_user(db, teacher.user_id, "teacher")
+    ):
+        raise HTTPException(status_code=404, detail="Course is unavailable")
     _require_student_course_age(db, student, course)
     if course.price_minor == 0:
         if payload.payment_method or payload.payment_reference:
@@ -685,6 +726,12 @@ def get_course_materials(
     )
     if student is None or course is None:
         raise HTTPException(status_code=404, detail="Student profile or published course not found")
+    teacher = db.get(EducationTeacherProfile, course.teacher_profile_id)
+    if (
+        teacher is None or teacher.verification_status != "verified"
+        or not _active_role_for_user(db, teacher.user_id, "teacher")
+    ):
+        raise HTTPException(status_code=404, detail="Course is unavailable")
     _require_student_course_age(db, student, course)
     if course.price_minor > 0:
         enrollment = db.scalar(
@@ -789,11 +836,16 @@ def review_teacher_profile(
     if payload.decision == "verify":
         if not payload.evidence_checked or not _active_role_for_user(db, item.user_id, "teacher"):
             raise HTTPException(status_code=409, detail="Reviewed evidence and an active paid, age-verified teacher role are required")
+        if not payload.verification_reference:
+            raise HTTPException(status_code=409, detail="Teacher verification reference is required")
         item.verification_status = "verified"
+        item.verification_reference = payload.verification_reference
     elif payload.decision == "suspend":
         item.verification_status = "suspended"
+        item.verification_reference = None
     else:
         item.verification_status = "rejected"
+        item.verification_reference = None
     item.reviewer_user_id = user.id
     item.reviewer_notes = payload.notes
     item.reviewed_at = utc_now()
@@ -806,7 +858,7 @@ def review_teacher_profile(
 @router.post("/platform/education/students/{profile_id}/age-review")
 def review_student_age(
     profile_id: str,
-    payload: VerificationReviewRequest,
+    payload: AgeReviewRequest,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
@@ -841,7 +893,7 @@ def review_student_age(
 @router.post("/platform/education/guardian-consents/{consent_id}/review")
 def review_guardian_consent(
     consent_id: str,
-    payload: VerificationReviewRequest,
+    payload: AgeReviewRequest,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
@@ -942,6 +994,7 @@ def review_education_payment(
         item.payment_status = "rejected"
         item.verified_at = None
     item.reviewer_user_id = user.id
+    item.payment_verification_reference = payload.verification_reference if payload.decision == "verify" else None
     item.reviewer_notes = payload.notes
     item.updated_at = utc_now()
     _audit(db, user, "education.payment.reviewed", "education_course_enrollment", item.id, item.payment_status)
@@ -952,7 +1005,7 @@ def review_education_payment(
 @router.post("/platform/education/materials/{material_id}/review")
 def review_education_material(
     material_id: str,
-    payload: ModerationReviewRequest,
+    payload: MaterialReviewRequest,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict:
