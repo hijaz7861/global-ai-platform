@@ -8,7 +8,7 @@ Read-only inspection of the active HIJAZ ONE Hatchable Version 40 project confir
 - Fee configuration table: workforce_registration_fee_settings.
 - Relevant API functions: api/marketplace-action.js, api/marketplace.js, api/marketplace-admin.js and api/provider-workspace.js.
 - The source profile stores full name, trade, skills, numeric experience, phone, city, region, country, service radius, biography, availability, travel preference, available cities, GPS coordinates, fee state and age/identity review fields.
-- Source registration fees are PKR 500 for contractors, PKR 200 for masons and PKR 50 for labour. The portable role catalogue already represents these as PKR minor units: 50,000; 20,000; and 5,000 respectively. This vertical does not create a second fee authority.
+- Confirmed active source registration fees are PKR 500 for contractors, PKR 200 for masons and PKR 50 for labour; the source also has an active other group at PKR 0. The portable role catalogue already represents contractor/mason/labour fees as PKR minor units: 50,000; 20,000; and 5,000 respectively. The ambiguous other group is not exposed as a professional role. This vertical does not create a second fee authority.
 
 No workforce rows, phone numbers, GPS coordinates, identity evidence, payment references, credentials or media were exported. The live Hatchable application was not changed.
 
