@@ -1789,3 +1789,90 @@ class EducationCourseMaterial(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
+
+
+class WorkforceProfile(Base):
+    """Public workforce profile; role entitlement remains the authority for age and fees."""
+    __tablename__ = "workforce_profiles"
+    __table_args__ = (
+        UniqueConstraint("user_id", "role_key", name="uq_workforce_user_role"),
+        CheckConstraint(
+            "role_key IN ('contractor','mason','labour')",
+            name="ck_workforce_role_key",
+        ),
+        CheckConstraint(
+            "experience_years >= 0 AND experience_years <= 70",
+            name="ck_workforce_experience_range",
+        ),
+        CheckConstraint(
+            "service_radius_km BETWEEN 1 AND 1000",
+            name="ck_workforce_service_radius",
+        ),
+        CheckConstraint(
+            "length(country_code) = 2",
+            name="ck_workforce_country_code_length",
+        ),
+        CheckConstraint(
+            "availability IN ('available','unavailable')",
+            name="ck_workforce_availability",
+        ),
+        CheckConstraint(
+            "moderation_status IN ('pending','published','rejected','suspended')",
+            name="ck_workforce_moderation_status",
+        ),
+        Index(
+            "ix_workforce_public_discovery",
+            "role_key",
+            "moderation_status",
+            "availability",
+            "country_code",
+            "city",
+        ),
+        Index("ix_workforce_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    role_key: Mapped[str] = mapped_column(
+        ForeignKey("role_definitions.role_key", ondelete="RESTRICT"), nullable=False
+    )
+    full_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    specialty: Mapped[str] = mapped_column(String(120), nullable=False)
+    skills: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    experience_years: Mapped[Decimal] = mapped_column(
+        Numeric(4, 1), default=Decimal("0.0"), nullable=False
+    )
+    city: Mapped[str] = mapped_column(String(100), nullable=False)
+    region: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country_code: Mapped[str] = mapped_column(String(2), default="PK", nullable=False)
+    service_radius_km: Mapped[int] = mapped_column(Integer, default=25, nullable=False)
+    travels_for_work: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    available_cities: Mapped[list[str]] = mapped_column(
+        JSON, default=list, nullable=False
+    )
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    availability: Mapped[str] = mapped_column(
+        String(16), default="available", nullable=False
+    )
+    moderation_status: Mapped[str] = mapped_column(
+        String(16), default="pending", nullable=False
+    )
+    reviewer_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewer_notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
