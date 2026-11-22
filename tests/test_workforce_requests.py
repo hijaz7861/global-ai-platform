@@ -543,7 +543,7 @@ def test_workforce_contact_relay_is_scoped_to_the_client_and_exact_active_provid
     workforce_request_client, verified_user_factory, role_key
 ):
     client = workforce_request_client
-    request_id, client_headers, provider_headers, _ = _prepare_assigned_workforce_request(
+    request_id, client_headers, provider_headers, admin_headers = _prepare_assigned_workforce_request(
         client, verified_user_factory, role_key
     )
     client_message = client.post(
@@ -601,6 +601,51 @@ def test_workforce_contact_relay_is_scoped_to_the_client_and_exact_active_provid
     assert denied_client.status_code == 404
     denied_provider = client.get(provider_path, headers=unrelated_headers)
     assert denied_provider.status_code == 403
+
+    wrong_role_key = "mason" if role_key != "mason" else "contractor"
+    wrong_role_token, _ = make_published_provider(
+        client, admin_headers, verified_user_factory, role_key=wrong_role_key
+    )
+    wrong_role_headers = {"Authorization": f"Bearer {wrong_role_token}"}
+    wrong_role_read = client.get(provider_path, headers=wrong_role_headers)
+    assert wrong_role_read.status_code == 403
+
+
+def test_workforce_contact_relay_waits_for_fee_and_provider_assignment(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    admin_token = verified_user_factory(client, "platform-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    provider_token, profile_id = make_published_provider(
+        client, admin_headers, verified_user_factory
+    )
+    client_token = verified_user_factory(client, "relay-prerequisite-client@example.com")
+    client_headers = {"Authorization": f"Bearer {client_token}"}
+    add_verified_phone(client, "relay-prerequisite-client@example.com")
+    created = create_request(client, client_headers)
+    assert created.status_code == 201, created.text
+    request_id = created.json()["request"]["id"]
+    path = f"/api/v1/me/workforce/service-requests/{request_id}/messages"
+
+    before_fee = client.post(path, headers=client_headers, json={"body": "Please confirm the scope."})
+    assert before_fee.status_code == 409
+    assert submit_fee(client, client_headers, request_id).status_code == 200
+    assert verify_fee(client, admin_headers, request_id).status_code == 200
+    before_assignment = client.post(
+        path, headers=client_headers, json={"body": "Please confirm the scope."}
+    )
+    assert before_assignment.status_code == 409
+
+    assigned = client.post(
+        f"/api/v1/platform/workforce/service-requests/{request_id}/assign",
+        headers=admin_headers,
+        json={"provider_profile_id": profile_id},
+    )
+    assert assigned.status_code == 200
+    ready = client.post(path, headers=client_headers, json={"body": "Please confirm the scope."})
+    assert ready.status_code == 201
+    assert set(ready.json()["message"]) == {"id", "sender_side", "body", "created_at"}
 
 
 def test_workforce_contact_relay_rejects_contact_details_and_closes_on_terminal_state(
