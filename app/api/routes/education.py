@@ -1,7 +1,6 @@
 """Role-gated education marketplace with explicit minor-consent and payment review."""
 from datetime import timezone
 from typing import Annotated, Literal
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
