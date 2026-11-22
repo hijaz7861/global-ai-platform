@@ -1876,3 +1876,180 @@ class WorkforceProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
+
+
+class WorkforceServiceRequest(Base):
+    """Client hiring request; verified phone is timestamped, never copied into this row."""
+    __tablename__ = "workforce_service_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "service_type IN ('hire_worker','hire_contractor')",
+            name="ck_workforce_service_request_type",
+        ),
+        CheckConstraint(
+            "status IN ('new','matched','accepted','in_progress','completed','cancelled','disputed')",
+            name="ck_workforce_service_request_status",
+        ),
+        CheckConstraint(
+            "platform_fee_status IN ('pending','submitted','verified','rejected')",
+            name="ck_workforce_service_request_fee_status",
+        ),
+        CheckConstraint("currency = 'PKR'", name="ck_workforce_service_request_currency"),
+        CheckConstraint(
+            "platform_fee_minor = 5000 AND platform_fee_currency = 'PKR'",
+            name="ck_workforce_service_request_fee_snapshot",
+        ),
+        CheckConstraint(
+            "budget_minor IS NULL OR budget_minor BETWEEN 0 AND 9000000000000000",
+            name="ck_workforce_service_request_budget",
+        ),
+        CheckConstraint(
+            "length(country_code) = 2",
+            name="ck_workforce_service_request_country_code",
+        ),
+        CheckConstraint(
+            "(provider_terms_version IS NULL AND provider_terms_accepted_at IS NULL) OR "
+            "(provider_terms_version IS NOT NULL AND provider_terms_accepted_at IS NOT NULL)",
+            name="ck_workforce_service_request_provider_terms_pair",
+        ),
+        UniqueConstraint("request_code", name="uq_workforce_service_request_code"),
+        Index(
+            "ix_workforce_service_request_client_created",
+            "client_user_id",
+            "created_at",
+        ),
+        Index(
+            "ix_workforce_service_request_provider_status",
+            "provider_profile_id",
+            "status",
+            "platform_fee_status",
+        ),
+        Index(
+            "ix_workforce_service_request_fee_created",
+            "platform_fee_status",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    request_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    client_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    provider_profile_id: Mapped[str | None] = mapped_column(
+        ForeignKey("workforce_profiles.id", ondelete="RESTRICT"), nullable=True
+    )
+    service_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    details: Mapped[str] = mapped_column(String(3000), nullable=False)
+    city: Mapped[str] = mapped_column(String(100), nullable=False)
+    region: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country_code: Mapped[str] = mapped_column(String(2), default="PK", nullable=False)
+    budget_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    client_phone_verified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    client_terms_version: Mapped[str] = mapped_column(String(48), nullable=False)
+    client_terms_accepted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    provider_terms_version: Mapped[str | None] = mapped_column(
+        String(48), nullable=True
+    )
+    provider_terms_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="new", nullable=False)
+    platform_fee_minor: Mapped[int] = mapped_column(
+        BigInteger, default=5000, nullable=False
+    )
+    platform_fee_currency: Mapped[str] = mapped_column(
+        String(3), default="PKR", nullable=False
+    )
+    platform_fee_status: Mapped[str] = mapped_column(
+        String(16), default="pending", nullable=False
+    )
+    assigned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    disputed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class WorkforceServicePayment(Base):
+    """Manual evidence review for a workforce service fee; never a provider webhook."""
+    __tablename__ = "workforce_service_payments"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('submitted','verified','rejected')",
+            name="ck_workforce_service_payment_status",
+        ),
+        CheckConstraint(
+            "payment_method IN ('bank_transfer','cash_deposit')",
+            name="ck_workforce_service_payment_method",
+        ),
+        CheckConstraint(
+            "amount_minor = 5000 AND currency = 'PKR'",
+            name="ck_workforce_service_payment_amount",
+        ),
+        Index(
+            "uq_workforce_service_payment_active",
+            "service_request_id",
+            unique=True,
+            sqlite_where=text("status IN ('submitted','verified')"),
+            postgresql_where=text("status IN ('submitted','verified')"),
+        ),
+        Index(
+            "ix_workforce_service_payment_request_created",
+            "service_request_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    service_request_id: Mapped[str] = mapped_column(
+        ForeignKey("workforce_service_requests.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="submitted", nullable=False)
+    payment_method: Mapped[str] = mapped_column(String(24), nullable=False)
+    payment_reference: Mapped[str] = mapped_column(String(160), nullable=False)
+    reviewer_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewer_notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

@@ -1933,3 +1933,109 @@ def test_postgres_workforce_profiles_enforce_user_role_uniqueness_and_json_round
         with pytest.raises(IntegrityError):
             db.commit()
         db.rollback()
+
+
+def test_postgres_workforce_service_payment_active_index_allows_retry_after_rejection():
+    """Only one submitted/verified service fee may exist for a request at a time."""
+    from app.db import SessionLocal
+    from app.models import (
+        RoleDefinition,
+        User,
+        WorkforceProfile,
+        WorkforceServicePayment,
+        WorkforceServiceRequest,
+        utc_now,
+    )
+
+    suffix = uuid4().hex
+    with SessionLocal() as db:
+        assert db.get(RoleDefinition, "contractor") is not None
+        client = User(
+            email=f"postgres-service-client-{suffix}@example.com",
+            password_hash="test-hash",
+            email_verified=True,
+        )
+        provider = User(
+            email=f"postgres-service-provider-{suffix}@example.com",
+            password_hash="test-hash",
+            email_verified=True,
+        )
+        db.add_all([client, provider])
+        db.flush()
+        profile = WorkforceProfile(
+            user_id=provider.id,
+            role_key="contractor",
+            full_name="Service Provider",
+            specialty="General construction",
+            skills=["repair"],
+            city="Lahore",
+            country_code="PK",
+            available_cities=[],
+            moderation_status="published",
+        )
+        db.add(profile)
+        db.flush()
+        request = WorkforceServiceRequest(
+            request_code=f"HJZ-PG-{suffix[:12].upper()}",
+            client_user_id=client.id,
+            provider_profile_id=profile.id,
+            service_type="hire_worker",
+            title="PostgreSQL service request",
+            details="PostgreSQL partial index regression.",
+            city="Lahore",
+            country_code="PK",
+            currency="PKR",
+            client_phone_verified_at=utc_now(),
+            client_terms_version="workforce-client-service-v1",
+            client_terms_accepted_at=utc_now(),
+            platform_fee_minor=5000,
+            platform_fee_currency="PKR",
+            platform_fee_status="submitted",
+        )
+        db.add(request)
+        db.flush()
+        first = WorkforceServicePayment(
+            service_request_id=request.id,
+            amount_minor=5000,
+            currency="PKR",
+            status="submitted",
+            payment_method="bank_transfer",
+            payment_reference=f"PG-{suffix}-ONE",
+        )
+        db.add(first)
+        db.commit()
+        request_id = request.id
+        first_id = first.id
+
+    with SessionLocal() as db:
+        from sqlalchemy.exc import IntegrityError
+
+        duplicate = WorkforceServicePayment(
+            service_request_id=request_id,
+            amount_minor=5000,
+            currency="PKR",
+            status="submitted",
+            payment_method="bank_transfer",
+            payment_reference=f"PG-{suffix}-DUP",
+        )
+        db.add(duplicate)
+        with pytest.raises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+    with SessionLocal() as db:
+        first = db.get(WorkforceServicePayment, first_id)
+        assert first is not None
+        first.status = "rejected"
+        db.commit()
+        retry = WorkforceServicePayment(
+            service_request_id=request_id,
+            amount_minor=5000,
+            currency="PKR",
+            status="submitted",
+            payment_method="cash_deposit",
+            payment_reference=f"PG-{suffix}-RETRY",
+        )
+        db.add(retry)
+        db.commit()
+        assert retry.status == "submitted"
