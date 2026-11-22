@@ -620,7 +620,13 @@ def test_workforce_contact_relay_rejects_contact_details_and_closes_on_terminal_
         response = client.post(path, headers=client_headers, json={"body": body})
         assert response.status_code == 422, body
 
-    provider_status = "/api/v1/me/workforce/contractor-service-requests/" + request_id + "/status"
+    valid_body = "Please confirm the site measurements before starting."
+    sent = client.post(path, headers=client_headers, json={"body": valid_body})
+    assert sent.status_code == 201, sent.text
+
+    provider_status = (
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/status"
+    )
     accepted = client.post(
         provider_status,
         headers=provider_headers,
@@ -646,6 +652,8 @@ def test_workforce_contact_relay_rejects_contact_details_and_closes_on_terminal_
     )
     assert closed.status_code == 409
 
+    import json
+
     from sqlalchemy import text
 
     with client.testing_sessions() as db:
@@ -656,4 +664,11 @@ def test_workforce_contact_relay_rejects_contact_details_and_closes_on_terminal_
             )
         ).all()
     assert audit_rows
-    assert all("Thank you for completing" not in str(row[0]) for row in audit_rows)
+    audit_details = [
+        json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        for row in audit_rows
+    ]
+    assert all(set(item) == {"sender_side", "body_length"} for item in audit_details)
+    assert all(item["sender_side"] == "client" for item in audit_details)
+    assert all(item["body_length"] == len(valid_body) for item in audit_details)
+    assert all(valid_body not in json.dumps(item) for item in audit_details)
