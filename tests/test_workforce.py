@@ -1,7 +1,6 @@
 """Workforce entitlement, moderation, lifecycle and privacy regressions."""
 from datetime import timedelta
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -101,7 +100,7 @@ def activate_role(client, token, admin_headers, role_key):
 
 def profile_payload(**overrides):
     payload = {
-        "full_name": "Naeem Example",
+        "full_name": "Contractor Example",
         "specialty": "Residential finishing",
         "skills": ["tiling", "estimation"],
         "experience_years": "8.5",
@@ -184,7 +183,7 @@ def test_workforce_profile_requires_active_role_and_admin_moderation(
     assert len(public.json()) == 1
     item = public.json()[0]
     assert item["role_key"] == "contractor"
-    assert item["full_name"] == "Naeem Example"
+    assert item["full_name"] == "Contractor Example"
     assert item["experience_years"] == "8.5"
     assert "moderation_status" not in item
     assert not {
