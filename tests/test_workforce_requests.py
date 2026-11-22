@@ -1,0 +1,418 @@
+"""Workforce hiring, verified-phone, fee-review, assignment and state-machine regressions."""
+from datetime import timedelta
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.core.config import settings
+from app.db import Base, get_db
+from app.main import app
+from app.models import (
+    RoleDefinition,
+    User,
+    UserPhoneVerification,
+    UserRoleEntitlement,
+    WorkforceProfile,
+    utc_now,
+)
+
+
+@pytest.fixture
+def workforce_request_client(monkeypatch):
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    sessions = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=engine)
+    monkeypatch.setattr(settings, "secret_key", "workforce-request-test-key-not-production")
+    monkeypatch.setattr(settings, "platform_admin_emails", "platform-admin@example.com")
+    monkeypatch.setattr(settings, "require_email_verification", True)
+    with sessions() as db:
+        db.add_all(
+            [
+                RoleDefinition(
+                    role_key="contractor",
+                    display_name="Contractor",
+                    description="Professional contractor profile",
+                    min_age=18,
+                    fee_amount_minor=50_000,
+                    fee_currency="PKR",
+                    requires_review=True,
+                    is_active=True,
+                ),
+                RoleDefinition(
+                    role_key="mason",
+                    display_name="Mason",
+                    description="Skilled mason profile",
+                    min_age=18,
+                    fee_amount_minor=20_000,
+                    fee_currency="PKR",
+                    requires_review=True,
+                    is_active=True,
+                ),
+                RoleDefinition(
+                    role_key="labour",
+                    display_name="Labour",
+                    description="Construction labour profile",
+                    min_age=18,
+                    fee_amount_minor=5_000,
+                    fee_currency="PKR",
+                    requires_review=True,
+                    is_active=True,
+                ),
+            ]
+        )
+        db.commit()
+
+    def override_get_db():
+        db = sessions()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as client:
+        client.testing_sessions = sessions
+        yield client
+    app.dependency_overrides.clear()
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+
+
+def activate_role(client, token, admin_headers, role_key):
+    application = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"role_key": role_key},
+    )
+    assert application.status_code == 201, application.text
+    reviewed = client.post(
+        f"/api/v1/platform/role-entitlements/{application.json()['id']}/review",
+        headers=admin_headers,
+        json={
+            "decision": "approve",
+            "payment_verified": True,
+            "age_verified": True,
+        },
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    return application.json()["id"]
+
+
+def add_verified_phone(client, email, *, age_days=0):
+    with client.testing_sessions() as db:
+        user = db.query(User).filter(User.email == email).one()
+        db.add(
+            UserPhoneVerification(
+                user_id=user.id,
+                phone_e164="+923001234567",
+                verified_at=utc_now() - timedelta(days=age_days),
+            )
+        )
+        db.commit()
+
+
+def make_published_provider(client, admin_headers, verified_user_factory, role_key="contractor"):
+    email = f"provider-{role_key}@example.com"
+    token = verified_user_factory(client, email)
+    headers = {"Authorization": f"Bearer {token}"}
+    activate_role(client, token, admin_headers, role_key)
+    path = f"/api/v1/me/workforce/{role_key}-profile"
+    profile = client.put(
+        path,
+        headers=headers,
+        json={
+            "full_name": f"{role_key.title()} Example",
+            "specialty": "Residential works",
+            "skills": ["masonry", "finishing"],
+            "experience_years": "6.0",
+            "city": "Lahore",
+            "country_code": "PK",
+        },
+    )
+    assert profile.status_code == 200, profile.text
+    profile_id = profile.json()["profile"]["id"]
+    published = client.post(
+        f"/api/v1/platform/workforce/profiles/{profile_id}/review",
+        headers=admin_headers,
+        json={"decision": "publish", "content_reviewed": True},
+    )
+    assert published.status_code == 200, published.text
+    return token, profile_id
+
+
+def create_request(client, headers, **overrides):
+    payload = {
+        "service_type": "hire_worker",
+        "title": "Residential repair",
+        "details": "Need a skilled worker for a small residential repair.",
+        "city": "Lahore",
+        "country_code": "PK",
+        "budget_minor": 250_000,
+        "client_terms_accepted": True,
+    }
+    payload.update(overrides)
+    return client.post(
+        "/api/v1/me/workforce/service-requests",
+        headers=headers,
+        json=payload,
+    )
+
+
+def submit_fee(client, headers, request_id, reference="BANK-REF-10001"):
+    return client.post(
+        f"/api/v1/me/workforce/service-requests/{request_id}/payment",
+        headers=headers,
+        json={"payment_method": "bank_transfer", "payment_reference": reference},
+    )
+
+
+def verify_fee(client, admin_headers, request_id, *, decision="verify", evidence_checked=True):
+    return client.post(
+        f"/api/v1/platform/workforce/service-requests/{request_id}/payment-review",
+        headers=admin_headers,
+        json={"decision": decision, "evidence_checked": evidence_checked},
+    )
+
+
+def test_workforce_service_request_requires_verified_phone_and_client_acceptance(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    token = verified_user_factory(client, "service-client@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    no_phone = create_request(client, headers)
+    assert no_phone.status_code == 403
+
+    add_verified_phone(client, "service-client@example.com")
+    no_terms = create_request(client, headers, client_terms_accepted=False)
+    assert no_terms.status_code == 409
+
+    created = create_request(client, headers)
+    assert created.status_code == 201, created.text
+    item = created.json()["request"]
+    assert item["status"] == "new"
+    assert item["platform_fee_minor"] == 5000
+    assert item["platform_fee_currency"] == "PKR"
+    assert item["platform_fee_status"] == "pending"
+    assert item["client_terms_version"] == "workforce-client-service-v1"
+    assert "client_phone" not in item
+    assert "phone_e164" not in item
+    assert "client_user_id" not in item
+
+
+def test_manual_service_fee_submission_never_self_verifies_and_provider_only_sees_assigned_paid_work(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    admin_token = verified_user_factory(client, "platform-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    client_token = verified_user_factory(client, "service-client-two@example.com")
+    client_headers = {"Authorization": f"Bearer {client_token}"}
+    add_verified_phone(client, "service-client-two@example.com")
+
+    provider_token, profile_id = make_published_provider(
+        client, admin_headers, verified_user_factory, "contractor"
+    )
+    provider_headers = {"Authorization": f"Bearer {provider_token}"}
+
+    created = create_request(client, client_headers)
+    assert created.status_code == 201, created.text
+    request_id = created.json()["request"]["id"]
+
+    unsupported = client.post(
+        f"/api/v1/me/workforce/service-requests/{request_id}/payment",
+        headers=client_headers,
+        json={"payment_method": "jazzcash", "payment_reference": "JZ-10001"},
+    )
+    assert unsupported.status_code == 422
+
+    submitted = submit_fee(client, client_headers, request_id)
+    assert submitted.status_code == 200, submitted.text
+    assert submitted.json()["request"]["platform_fee_status"] == "submitted"
+    assert submitted.json()["payment"]["status"] == "submitted"
+    assert client.get(
+        "/api/v1/me/workforce/contractor-service-requests",
+        headers=provider_headers,
+    ).json() == []
+
+    denied = verify_fee(
+        client, admin_headers, request_id, evidence_checked=False
+    )
+    assert denied.status_code == 409
+    non_admin = verify_fee(
+        client,
+        client_headers,
+        request_id,
+        evidence_checked=True,
+    )
+    assert non_admin.status_code == 403
+
+    verified = verify_fee(client, admin_headers, request_id)
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["request"]["platform_fee_status"] == "verified"
+
+    assigned = client.post(
+        f"/api/v1/platform/workforce/service-requests/{request_id}/assign",
+        headers=admin_headers,
+        json={"provider_profile_id": profile_id},
+    )
+    assert assigned.status_code == 200, assigned.text
+    assert assigned.json()["request"]["status"] == "matched"
+
+    provider_jobs = client.get(
+        "/api/v1/me/workforce/contractor-service-requests",
+        headers=provider_headers,
+    )
+    assert provider_jobs.status_code == 200
+    assert len(provider_jobs.json()) == 1
+    job = provider_jobs.json()[0]
+    assert job["id"] == request_id
+    assert "client_phone" not in job
+    assert "phone_e164" not in job
+    assert "client_user_id" not in job
+    assert "payment_reference" not in job
+
+    missing_terms = client.post(
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/status",
+        headers=provider_headers,
+        json={"status": "accepted"},
+    )
+    assert missing_terms.status_code == 409
+    accepted = client.post(
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/status",
+        headers=provider_headers,
+        json={"status": "accepted", "provider_terms_accepted": True},
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["request"]["provider_terms_version"] == "workforce-provider-service-v1"
+
+    started = client.post(
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/status",
+        headers=provider_headers,
+        json={"status": "in_progress"},
+    )
+    assert started.status_code == 200, started.text
+    completed = client.post(
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/status",
+        headers=provider_headers,
+        json={"status": "completed"},
+    )
+    assert completed.status_code == 200, completed.text
+    repeated = client.post(
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/status",
+        headers=provider_headers,
+        json={"status": "completed"},
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["request"]["status"] == "completed"
+
+    client_view = client.get(
+        "/api/v1/me/workforce/service-requests",
+        headers=client_headers,
+    )
+    assert client_view.status_code == 200
+    assert client_view.json()[0]["status"] == "completed"
+    assert "client_phone" not in client_view.json()[0]
+
+
+def test_workforce_service_payment_rejection_allows_retry_but_not_duplicate_active_payment(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    admin_token = verified_user_factory(client, "platform-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    token = verified_user_factory(client, "service-client-retry@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    add_verified_phone(client, "service-client-retry@example.com")
+
+    created = create_request(client, headers)
+    request_id = created.json()["request"]["id"]
+    first = submit_fee(client, headers, request_id, "BANK-REF-RETRY-1")
+    assert first.status_code == 200
+    duplicate = submit_fee(client, headers, request_id, "BANK-REF-RETRY-2")
+    assert duplicate.status_code == 409
+
+    rejected = verify_fee(
+        client, admin_headers, request_id, decision="reject"
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["request"]["platform_fee_status"] == "rejected"
+
+    retry = submit_fee(client, headers, request_id, "BANK-REF-RETRY-3")
+    assert retry.status_code == 200
+    assert retry.json()["payment"]["status"] == "submitted"
+
+
+def test_workforce_service_requests_enforce_client_ownership_and_state_transitions(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    admin_token = verified_user_factory(client, "platform-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    client_token = verified_user_factory(client, "service-owner@example.com")
+    client_headers = {"Authorization": f"Bearer {client_token}"}
+    other_token = verified_user_factory(client, "service-other@example.com")
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+    add_verified_phone(client, "service-owner@example.com")
+
+    created = create_request(client, client_headers)
+    request_id = created.json()["request"]["id"]
+    assert client.get(
+        "/api/v1/me/workforce/service-requests",
+        headers=other_headers,
+    ).json() == []
+
+    wrong_owner_payment = submit_fee(client, other_headers, request_id)
+    assert wrong_owner_payment.status_code == 404
+    cancelled = client.post(
+        f"/api/v1/me/workforce/service-requests/{request_id}/cancel",
+        headers=client_headers,
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["request"]["status"] == "cancelled"
+    repeated = client.post(
+        f"/api/v1/me/workforce/service-requests/{request_id}/cancel",
+        headers=client_headers,
+    )
+    assert repeated.status_code == 200
+
+    invalid_transition = client.post(
+        f"/api/v1/me/workforce/service-requests/{request_id}/dispute",
+        headers=client_headers,
+    )
+    assert invalid_transition.status_code == 409
+
+
+def test_workforce_service_request_rejects_untrusted_contact_and_provider_fields(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    token = verified_user_factory(client, "service-client-forgery@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    add_verified_phone(client, "service-client-forgery@example.com")
+
+    forged = create_request(
+        client,
+        headers,
+        client_phone="+923001234567",
+        phone_e164="+923001234567",
+        provider_terms_accepted=True,
+        platform_fee_status="verified",
+        platform_fee_minor=0,
+    )
+    assert forged.status_code == 422
+
+    old_phone_token = verified_user_factory(client, "service-client-old-phone@example.com")
+    old_phone_headers = {"Authorization": f"Bearer {old_phone_token}"}
+    add_verified_phone(client, "service-client-old-phone@example.com", age_days=31)
+    stale = create_request(client, old_phone_headers)
+    assert stale.status_code == 403
