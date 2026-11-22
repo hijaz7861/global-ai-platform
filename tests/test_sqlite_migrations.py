@@ -24,18 +24,23 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
 
     engine = create_engine(database_url)
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0043_workforce_service_requests"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0044_workforce_contact_relay"
     table_names = set(inspect(engine).get_table_names())
     assert {
         "user_phone_verifications", "property_listings", "property_transactions", "property_payments",
         "education_settings", "education_student_profiles", "education_guardian_consents",
         "education_teacher_profiles", "education_courses", "education_course_enrollments",
         "education_course_materials", "workforce_profiles", "workforce_service_requests", "workforce_service_payments",
+        "workforce_service_messages",
     } <= table_names
     course_columns = {column["name"] for column in inspect(engine).get_columns("education_courses")}
     assert {"country_code", "city", "price_minor", "commission_bps"} <= course_columns
     service_request_columns = {column["name"] for column in inspect(engine).get_columns("workforce_service_requests")}
     assert {"client_user_id", "provider_profile_id", "client_phone_verified_at", "platform_fee_status", "client_terms_version"} <= service_request_columns
+    message_columns = {column["name"] for column in inspect(engine).get_columns("workforce_service_messages")}
+    assert {"service_request_id", "sender_user_id", "sender_side", "body", "created_at"} <= message_columns
+    message_indexes = inspect(engine).get_indexes("workforce_service_messages")
+    assert any(item["name"] == "ix_workforce_service_message_request_created" for item in message_indexes)
     service_payment_indexes = inspect(engine).get_indexes("workforce_service_payments")
     assert any(item["name"] == "uq_workforce_service_payment_active" and item["unique"] for item in service_payment_indexes)
 
