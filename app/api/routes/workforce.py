@@ -246,7 +246,7 @@ def _save_profile(
             entity_id=item.id,
             details={
                 "role_key": role_key,
-                "moderation_status": "pending",
+                "status": "pending",
             },
         )
         db.commit()
@@ -426,7 +426,7 @@ def review_workforce_profile(
         entity_id=item.id,
         details={
             "role_key": item.role_key,
-            "moderation_status": item.moderation_status,
+            "status": item.moderation_status,
         },
     )
     db.commit()
