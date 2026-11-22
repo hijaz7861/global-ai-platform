@@ -35,7 +35,7 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
     course_columns = {column["name"] for column in inspect(engine).get_columns("education_courses")}
     assert {"country_code", "city", "price_minor", "commission_bps"} <= course_columns
     service_request_columns = {column["name"] for column in inspect(engine).get_columns("workforce_service_requests")}
-    assert {"client_user_id", "provider_profile_id", "client_phone_verified_at", "platform_fee_status"} <= service_request_columns
+    assert {"client_user_id", "provider_profile_id", "client_phone_verified_at", "platform_fee_status", "client_terms_version"} <= service_request_columns
     service_payment_indexes = inspect(engine).get_indexes("workforce_service_payments")
     assert any(item["name"] == "uq_workforce_service_payment_active" and item["unique"] for item in service_payment_indexes)
 
