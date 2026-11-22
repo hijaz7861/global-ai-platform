@@ -61,6 +61,7 @@ def upgrade() -> None:
             "platform_fee_status IN ('pending','submitted','verified','rejected')",
             name="ck_workforce_service_request_fee_status",
         ),
+        sa.CheckConstraint("currency = 'PKR'", name="ck_workforce_service_request_currency"),
         sa.CheckConstraint(
             "platform_fee_minor = 5000 AND platform_fee_currency = 'PKR'",
             name="ck_workforce_service_request_fee_snapshot",
