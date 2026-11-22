@@ -2053,3 +2053,7 @@ class WorkforceServicePayment(Base):
     verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+# Register the workforce contact-relay model for Alembic metadata and create_all.
+import app.workforce_contact_models  # noqa: F401,E402
