@@ -1514,3 +1514,274 @@ class PropertyPayment(Base):
     reviewer_notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EducationSettings(Base):
+    """Owner-configured education commission policy; unset means paid courses fail closed."""
+    __tablename__ = "education_settings"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_education_settings_singleton"),
+        CheckConstraint(
+            "course_commission_bps IS NULL OR course_commission_bps BETWEEN 0 AND 10000",
+            name="ck_education_settings_commission_bps",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    course_commission_bps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class EducationStudentProfile(Base):
+    """Minimal student profile; minor consent is a separate reviewed record."""
+    __tablename__ = "education_student_profiles"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_education_student_user"),
+        CheckConstraint(
+            "age_band IN ('under_18','adult','prefer_not_to_say')",
+            name="ck_education_student_age_band",
+        ),
+        CheckConstraint("length(country_code) = 2", name="ck_education_student_country_code"),
+        CheckConstraint(
+            "age_verified = false OR age_band = 'adult'",
+            name="ck_education_student_age_verified_adult",
+        ),
+        Index("ix_education_student_age_country", "age_band", "country_code"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    preferred_language: Mapped[str] = mapped_column(String(12), default="ur", nullable=False)
+    age_band: Mapped[str] = mapped_column(String(24), nullable=False)
+    age_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    age_verification_reference: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    age_verified_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    age_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    country_code: Mapped[str] = mapped_column(String(2), default="PK", nullable=False)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class EducationGuardianConsent(Base):
+    """A minor's guardian consent, verified separately by an authorized administrator."""
+    __tablename__ = "education_guardian_consents"
+    __table_args__ = (
+        UniqueConstraint("student_profile_id", name="uq_education_guardian_student"),
+        CheckConstraint(
+            "status IN ('pending','verified','rejected')",
+            name="ck_education_guardian_status",
+        ),
+        Index("ix_education_guardian_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    student_profile_id: Mapped[str] = mapped_column(
+        ForeignKey("education_student_profiles.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    submission_reference: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    verification_reference: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    reviewer_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewer_notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class EducationTeacherProfile(Base):
+    """Teacher listing profile; role fee and adult verification live in role entitlements."""
+    __tablename__ = "education_teacher_profiles"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_education_teacher_user"),
+        CheckConstraint(
+            "verification_status IN ('pending','verified','rejected','suspended')",
+            name="ck_education_teacher_status",
+        ),
+        CheckConstraint("length(country_code) = 2", name="ck_education_teacher_country_code"),
+        Index("ix_education_teacher_status_country", "verification_status", "country_code"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    full_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    subjects: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    qualifications: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country_code: Mapped[str] = mapped_column(String(2), default="PK", nullable=False)
+    online_classes: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    reviewer_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewer_notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class EducationCourse(Base):
+    """Moderated course with a commission snapshot and integer PKR minor-unit pricing."""
+    __tablename__ = "education_courses"
+    __table_args__ = (
+        CheckConstraint(
+            "age_group IN ('under_18','adult','all')",
+            name="ck_education_course_age_group",
+        ),
+        CheckConstraint(
+            "course_type IN ('recorded','live','notes','hybrid')",
+            name="ck_education_course_type",
+        ),
+        CheckConstraint(
+            "status IN ('pending','published','rejected','suspended')",
+            name="ck_education_course_status",
+        ),
+        CheckConstraint(
+            "price_minor >= 0 AND price_minor <= 9000000000000000",
+            name="ck_education_course_price",
+        ),
+        CheckConstraint("currency = 'PKR'", name="ck_education_course_currency_pkr"),
+        CheckConstraint(
+            "commission_bps BETWEEN 0 AND 10000",
+            name="ck_education_course_commission_bps",
+        ),
+        Index("ix_education_course_discovery", "status", "country_code", "city", "subject", "created_at"),
+        Index("ix_education_course_teacher_created", "teacher_profile_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    teacher_profile_id: Mapped[str] = mapped_column(
+        ForeignKey("education_teacher_profiles.id", ondelete="RESTRICT"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    description: Mapped[str] = mapped_column(String(3000), default="", nullable=False)
+    subject: Mapped[str] = mapped_column(String(100), nullable=False)
+    language: Mapped[str] = mapped_column(String(12), default="ur", nullable=False)
+    age_group: Mapped[str] = mapped_column(String(16), default="all", nullable=False)
+    course_type: Mapped[str] = mapped_column(String(16), default="recorded", nullable=False)
+    price_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    commission_bps: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    reviewer_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewer_notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class EducationCourseEnrollment(Base):
+    """Per-student course purchase snapshot; submitted references are never payment proof."""
+    __tablename__ = "education_course_enrollments"
+    __table_args__ = (
+        UniqueConstraint("course_id", "student_profile_id", name="uq_education_enrollment_course_student"),
+        CheckConstraint(
+            "payment_status IN ('pending','submitted','verified','rejected','refunded')",
+            name="ck_education_enrollment_payment_status",
+        ),
+        CheckConstraint(
+            "course_price_minor >= 0 AND commission_minor >= 0 AND teacher_amount_minor >= 0",
+            name="ck_education_enrollment_amounts_nonnegative",
+        ),
+        CheckConstraint(
+            "commission_minor + teacher_amount_minor = course_price_minor",
+            name="ck_education_enrollment_amounts_balanced",
+        ),
+        CheckConstraint("currency = 'PKR'", name="ck_education_enrollment_currency_pkr"),
+        CheckConstraint(
+            "payment_method IS NULL OR payment_method IN ('bank_transfer','cash','manual')",
+            name="ck_education_enrollment_payment_method",
+        ),
+        Index("ix_education_enrollment_student_created", "student_profile_id", "created_at"),
+        Index("ix_education_enrollment_payment_status", "payment_status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    course_id: Mapped[str] = mapped_column(
+        ForeignKey("education_courses.id", ondelete="RESTRICT"), nullable=False
+    )
+    student_profile_id: Mapped[str] = mapped_column(
+        ForeignKey("education_student_profiles.id", ondelete="RESTRICT"), nullable=False
+    )
+    course_price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    commission_minor: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    teacher_amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    payment_status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    payment_method: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    payment_reference: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    reviewer_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewer_notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class EducationCourseMaterial(Base):
+    """Teacher-owned learning material held for independent moderation."""
+    __tablename__ = "education_course_materials"
+    __table_args__ = (
+        CheckConstraint(
+            "material_type IN ('notes','video_link','resource_link')",
+            name="ck_education_material_type",
+        ),
+        CheckConstraint(
+            "status IN ('pending','published','rejected')",
+            name="ck_education_material_status",
+        ),
+        CheckConstraint(
+            "resource_url IS NULL OR resource_url LIKE 'https://%'",
+            name="ck_education_material_https_url",
+        ),
+        Index("ix_education_material_course_status", "course_id", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    course_id: Mapped[str] = mapped_column(
+        ForeignKey("education_courses.id", ondelete="RESTRICT"), nullable=False
+    )
+    teacher_profile_id: Mapped[str] = mapped_column(
+        ForeignKey("education_teacher_profiles.id", ondelete="RESTRICT"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(180), nullable=False)
+    material_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    content_text: Mapped[str | None] = mapped_column(String(12000), nullable=True)
+    resource_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    reviewer_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
