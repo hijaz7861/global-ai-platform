@@ -9,6 +9,7 @@ from app.api.routes.ai_skills import router as ai_skills_router
 from app.api.routes.ai_tools import router as ai_tools_router
 from app.api.routes.audit import router as audit_router
 from app.api.routes.construction import router as construction_router
+from app.api.routes.education import router as education_router
 from app.api.routes.health import router as health_router
 from app.api.routes.identity import router as identity_router
 from app.api.routes.listings import router as listings_router
@@ -34,6 +35,7 @@ api_router.include_router(orders_router)
 api_router.include_router(audit_router)
 api_router.include_router(accounting_router)
 api_router.include_router(construction_router)
+api_router.include_router(education_router)
 api_router.include_router(reconciliation_router)
 api_router.include_router(seller_router)
 api_router.include_router(role_entitlements_router)
