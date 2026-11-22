@@ -658,6 +658,7 @@ def test_workforce_contact_relay_rejects_contact_details_and_closes_on_terminal_
     path = f"/api/v1/me/workforce/service-requests/{request_id}/messages"
     for body in (
         "Call me at +923001234567",
+        "Use this number 92 300 1234567",
         "Email me at client@example.com",
         "Use https://example.com for the details",
         "Message my account @client_handle",
