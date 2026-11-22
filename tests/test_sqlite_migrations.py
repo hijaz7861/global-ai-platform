@@ -24,16 +24,23 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
 
     engine = create_engine(database_url)
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0041_education_marketplace"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0042_workforce_directory"
     table_names = set(inspect(engine).get_table_names())
     assert {
         "user_phone_verifications", "property_listings", "property_transactions", "property_payments",
         "education_settings", "education_student_profiles", "education_guardian_consents",
         "education_teacher_profiles", "education_courses", "education_course_enrollments",
-        "education_course_materials",
+        "education_course_materials", "workforce_profiles",
     } <= table_names
     course_columns = {column["name"] for column in inspect(engine).get_columns("education_courses")}
     assert {"country_code", "city", "price_minor", "commission_bps"} <= course_columns
+    workforce_columns = {column["name"] for column in inspect(engine).get_columns("workforce_profiles")}
+    assert {"role_key", "skills", "country_code", "moderation_status", "available_cities"} <= workforce_columns
+    workforce_constraints = inspect(engine).get_unique_constraints("workforce_profiles")
+    assert any(item["name"] == "uq_workforce_user_role" for item in workforce_constraints)
+    workforce_indexes = inspect(engine).get_indexes("workforce_profiles")
+    assert any(item["name"] == "ix_workforce_public_discovery" for item in workforce_indexes)
+
     guardian_constraints = inspect(engine).get_unique_constraints("education_guardian_consents")
     assert any(item["name"] == "uq_education_guardian_student" for item in guardian_constraints)
     payment_indexes = inspect(engine).get_indexes("property_payments")
