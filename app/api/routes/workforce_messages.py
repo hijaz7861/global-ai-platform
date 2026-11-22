@@ -27,7 +27,7 @@ PROVIDER_MESSAGE_STATUSES = {"accepted", "in_progress"}
 EMAIL_PATTERN = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
 URL_PATTERN = re.compile(r"(?i)\b(?:https?://|www\.)\S+")
 PHONE_PATTERN = re.compile(
-    r"(?<!\w)(?:\+\d(?:[\s().-]*\d){7,14}|0\d(?:[\s().-]*\d){8,13})(?!\w)"
+    r"(?<!\w)(?:\+\d(?:[\s().-]*\d){7,14}|0\d(?:[\s().-]*\d){8,13}|[1-9]\d(?:[\s().-]*\d){7,13})(?!\w)"
 )
 HANDLE_PATTERN = re.compile(r"(?<![\w.])@[A-Za-z0-9_]{2,}")
 CONTACT_PATTERNS = (EMAIL_PATTERN, URL_PATTERN, PHONE_PATTERN, HANDLE_PATTERN)
