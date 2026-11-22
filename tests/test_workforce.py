@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
-from app.models import RoleDefinition, UserRoleEntitlement, utc_now
+from app.models import AuditEvent, RoleDefinition, UserRoleEntitlement, utc_now
 
 
 @pytest.fixture
@@ -151,6 +151,10 @@ def test_workforce_profile_requires_active_role_and_admin_moderation(
     assert created.status_code == 200, created.text
     profile_id = created.json()["profile"]["id"]
     assert created.json()["profile"]["moderation_status"] == "pending"
+    with client.testing_sessions() as db:
+        audit = db.query(AuditEvent).filter(AuditEvent.entity_id == profile_id).one()
+        assert audit.action == "workforce.profile.created"
+        assert audit.details == {"role_key": "contractor", "status": "pending"}
     assert client.get("/api/v1/workforce/profiles").json() == []
 
     queue = client.get(
@@ -178,6 +182,12 @@ def test_workforce_profile_requires_active_role_and_admin_moderation(
     published = publish_profile(client, admin_headers, profile_id)
     assert published.status_code == 200, published.text
     assert published.json()["profile"]["moderation_status"] == "published"
+    with client.testing_sessions() as db:
+        audit = db.query(AuditEvent).filter(
+            AuditEvent.entity_id == profile_id,
+            AuditEvent.action == "workforce.profile.reviewed",
+        ).one()
+        assert audit.details == {"role_key": "contractor", "status": "published"}
 
     public = client.get("/api/v1/workforce/profiles")
     assert public.status_code == 200
