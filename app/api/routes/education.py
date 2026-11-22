@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -179,16 +179,25 @@ def _require_student_course_age(db: Session, student: EducationStudentProfile, c
 
 
 class StudentProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     display_name: str = Field(min_length=1, max_length=120)
     preferred_language: str = Field(default="ur", min_length=2, max_length=12)
     age_band: Literal["under_18", "adult", "prefer_not_to_say"]
     country_code: str = Field(default="PK", min_length=2, max_length=2)
     city: str | None = Field(default=None, max_length=100)
 
-    @field_validator("display_name", "preferred_language", "city")
+    @field_validator("display_name", "preferred_language")
     @classmethod
-    def trim_text(cls, value):
-        return value.strip() if isinstance(value, str) else value
+    def trim_required_student_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Text cannot be blank")
+        return value
+
+    @field_validator("city")
+    @classmethod
+    def trim_student_city(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
 
     @field_validator("country_code")
     @classmethod
@@ -200,15 +209,20 @@ class StudentProfileRequest(BaseModel):
 
 
 class GuardianConsentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     submission_reference: str = Field(min_length=3, max_length=160)
 
     @field_validator("submission_reference")
     @classmethod
     def trim_reference(cls, value: str) -> str:
-        return value.strip()
+        value = value.strip()
+        if not value:
+            raise ValueError("Submission reference cannot be blank")
+        return value
 
 
 class TeacherProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     full_name: str = Field(min_length=1, max_length=160)
     subjects: list[str] = Field(min_length=1, max_length=20)
     qualifications: str | None = Field(default=None, max_length=500)
@@ -217,10 +231,18 @@ class TeacherProfileRequest(BaseModel):
     country_code: str = Field(default="PK", min_length=2, max_length=2)
     online_classes: bool = True
 
-    @field_validator("full_name", "qualifications", "bio", "city")
+    @field_validator("full_name")
     @classmethod
-    def trim_optional_text(cls, value):
-        return value.strip() if isinstance(value, str) else value
+    def trim_teacher_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Teacher name cannot be blank")
+        return value
+
+    @field_validator("qualifications", "bio", "city")
+    @classmethod
+    def trim_teacher_optional_text(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
 
     @field_validator("subjects")
     @classmethod
@@ -240,6 +262,7 @@ class TeacherProfileRequest(BaseModel):
 
 
 class CourseCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=180)
     description: str = Field(default="", max_length=3000)
     subject: str = Field(min_length=1, max_length=100)
@@ -249,13 +272,22 @@ class CourseCreateRequest(BaseModel):
     price_minor: int = Field(default=0, ge=0, le=MAX_MINOR_UNITS, strict=True)
     currency: Literal["PKR"] = "PKR"
 
-    @field_validator("title", "description", "subject", "language")
+    @field_validator("title", "subject", "language")
     @classmethod
-    def trim_course_text(cls, value: str) -> str:
+    def trim_required_course_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Course title, subject and language cannot be blank")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def trim_course_description(cls, value: str) -> str:
         return value.strip()
 
 
 class EnrollmentCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     payment_method: Literal["bank_transfer", "cash", "manual"] | None = None
     payment_reference: str | None = Field(default=None, max_length=160)
 
@@ -266,15 +298,24 @@ class EnrollmentCreateRequest(BaseModel):
 
 
 class MaterialCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=180)
     material_type: Literal["notes", "video_link", "resource_link"] = "notes"
     content_text: str | None = Field(default=None, max_length=12000)
     resource_url: str | None = Field(default=None, max_length=1000)
 
-    @field_validator("title", "content_text")
+    @field_validator("title")
     @classmethod
-    def trim_material_text(cls, value):
-        return value.strip() if isinstance(value, str) else value
+    def trim_material_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Material title cannot be blank")
+        return value
+
+    @field_validator("content_text")
+    @classmethod
+    def trim_material_content(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
 
     @field_validator("resource_url")
     @classmethod
@@ -285,6 +326,7 @@ class MaterialCreateRequest(BaseModel):
 
 
 class VerificationReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     decision: Literal["verify", "reject", "suspend"]
     evidence_checked: bool = False
     verification_reference: str | None = Field(default=None, max_length=160)
@@ -297,6 +339,7 @@ class VerificationReviewRequest(BaseModel):
 
 
 class AgeReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     decision: Literal["verify", "reject"]
     evidence_checked: bool = False
     verification_reference: str | None = Field(default=None, max_length=160)
@@ -309,6 +352,7 @@ class AgeReviewRequest(BaseModel):
 
 
 class MaterialReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     decision: Literal["publish", "reject"]
     evidence_checked: bool = False
     notes: str | None = Field(default=None, max_length=500)
@@ -320,6 +364,7 @@ class MaterialReviewRequest(BaseModel):
 
 
 class ModerationReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     decision: Literal["publish", "reject", "suspend"]
     evidence_checked: bool = False
     notes: str | None = Field(default=None, max_length=500)
@@ -331,10 +376,12 @@ class ModerationReviewRequest(BaseModel):
 
 
 class EducationSettingsRequest(BaseModel):
-    course_commission_bps: int | None = Field(ge=0, le=10000)
+    model_config = ConfigDict(extra="forbid")
+    course_commission_bps: int | None = Field(ge=0, le=10000, strict=True)
 
 
 class PaymentReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     decision: Literal["verify", "reject", "refund"]
     evidence_checked: bool = False
     verification_reference: str | None = Field(default=None, max_length=160)
@@ -348,11 +395,11 @@ class PaymentReviewRequest(BaseModel):
 
 @router.get("/education/courses")
 def list_public_education_courses(
+    db: Annotated[Session, Depends(get_db)],
     country_code: str | None = Query(default=None, min_length=2, max_length=2),
     city: str | None = Query(default=None, max_length=100),
     subject: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=50, ge=1, le=100),
-    db: Annotated[Session, Depends(get_db)],
 ) -> list[dict]:
     statement = (
         select(EducationCourse, EducationTeacherProfile.full_name)
@@ -549,6 +596,7 @@ def save_teacher_profile(
         item.country_code = payload.country_code
         item.online_classes = payload.online_classes
         item.verification_status = "pending"
+        item.verification_reference = None
         item.reviewer_user_id = None
         item.reviewer_notes = None
         item.reviewed_at = None
@@ -792,9 +840,17 @@ def list_education_review_queue(
     ).all()
     return {
         "teachers": [{"id": item.id, "full_name": item.full_name, "status": item.verification_status} for item in teachers],
-        "guardian_consents": [{"id": item.id, "student_profile_id": item.student_profile_id, "status": item.status} for item in consents],
+        "guardian_consents": [{"id": item.id, "student_profile_id": item.student_profile_id, "submission_reference": item.submission_reference, "status": item.status} for item in consents],
+        "age_reviews": [
+            {"id": item.id, "age_band": item.age_band}
+            for item in db.scalars(
+                select(EducationStudentProfile)
+                .where(EducationStudentProfile.age_band == "adult", EducationStudentProfile.age_verified.is_(False))
+                .order_by(EducationStudentProfile.created_at.asc()).limit(100)
+            ).all()
+        ],
         "courses": [{"id": item.id, "title": item.title, "status": item.status} for item in courses],
-        "payments": [{"id": item.id, "course_id": item.course_id, "amount_minor": item.course_price_minor, "currency": item.currency, "status": item.payment_status} for item in payments],
+        "payments": [{"id": item.id, "course_id": item.course_id, "amount_minor": item.course_price_minor, "currency": item.currency, "payment_reference": item.payment_reference, "status": item.payment_status} for item in payments],
         "materials": [{"id": item.id, "course_id": item.course_id, "title": item.title, "status": item.status} for item in materials],
     }
 
@@ -977,6 +1033,9 @@ def review_education_payment(
     if item.course_price_minor == 0:
         raise HTTPException(status_code=409, detail="Free course enrollment does not require payment review")
     if payload.decision == "verify":
+        course = db.get(EducationCourse, item.course_id)
+        if course is None or course.status != "published":
+            raise HTTPException(status_code=409, detail="Only a published course can have a payment verified")
         if item.payment_status not in {"pending", "submitted"}:
             raise HTTPException(status_code=409, detail="Only pending or submitted payments can be verified")
         if not payload.evidence_checked or not payload.verification_reference:
@@ -1027,8 +1086,6 @@ def review_education_material(
         ):
             raise HTTPException(status_code=409, detail="Published course and active verified teacher are required")
         item.status = "published"
-    elif payload.decision == "suspend":
-        item.status = "rejected"
     else:
         item.status = "rejected"
     item.reviewer_user_id = user.id
