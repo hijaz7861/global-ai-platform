@@ -26,6 +26,7 @@ from app.api.routes.suppliers import router as suppliers_router
 from app.api.routes.transport import router as transport_router
 from app.api.routes.workforce import router as workforce_router
 from app.api.routes.workforce_requests import router as workforce_requests_router
+from app.api.routes.workforce_messages import router as workforce_messages_router
 
 api_router = APIRouter()
 api_router.include_router(health_router, tags=["health"])
@@ -45,6 +46,7 @@ api_router.include_router(suppliers_router)
 api_router.include_router(transport_router)
 api_router.include_router(workforce_router)
 api_router.include_router(workforce_requests_router)
+api_router.include_router(workforce_messages_router)
 api_router.include_router(property_router)
 api_router.include_router(platform_operations_router)
 api_router.include_router(procurement_router)
