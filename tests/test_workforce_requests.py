@@ -14,8 +14,6 @@ from app.models import (
     RoleDefinition,
     User,
     UserPhoneVerification,
-    UserRoleEntitlement,
-    WorkforceProfile,
     utc_now,
 )
 
@@ -314,6 +312,12 @@ def test_manual_service_fee_submission_never_self_verifies_and_provider_only_see
     )
     assert repeated.status_code == 200
     assert repeated.json()["request"]["status"] == "completed"
+    invalid_after_completion = client.post(
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/status",
+        headers=provider_headers,
+        json={"status": "in_progress"},
+    )
+    assert invalid_after_completion.status_code == 409
 
     client_view = client.get(
         "/api/v1/me/workforce/service-requests",
@@ -356,8 +360,6 @@ def test_workforce_service_requests_enforce_client_ownership_and_state_transitio
     workforce_request_client, verified_user_factory
 ):
     client = workforce_request_client
-    admin_token = verified_user_factory(client, "platform-admin@example.com")
-    admin_headers = {"Authorization": f"Bearer {admin_token}"}
     client_token = verified_user_factory(client, "service-owner@example.com")
     client_headers = {"Authorization": f"Bearer {client_token}"}
     other_token = verified_user_factory(client, "service-other@example.com")
@@ -416,3 +418,37 @@ def test_workforce_service_request_rejects_untrusted_contact_and_provider_fields
     add_verified_phone(client, "service-client-old-phone@example.com", age_days=31)
     stale = create_request(client, old_phone_headers)
     assert stale.status_code == 403
+
+
+def test_cancelled_request_cannot_be_fee_verified_and_cannot_accept_late_payment(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    admin_token = verified_user_factory(client, "platform-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    token = verified_user_factory(client, "service-client-cancelled@example.com")
+    headers = {"Authorization": f"Bearer {token}"}
+    add_verified_phone(client, "service-client-cancelled@example.com")
+
+    created = create_request(client, headers)
+    request_id = created.json()["request"]["id"]
+    submit = submit_fee(client, headers, request_id, "BANK-REF-CANCEL-1")
+    assert submit.status_code == 200
+
+    cancelled = client.post(
+        f"/api/v1/me/workforce/service-requests/{request_id}/cancel",
+        headers=headers,
+    )
+    assert cancelled.status_code == 200
+    blocked_verify = verify_fee(client, admin_headers, request_id)
+    assert blocked_verify.status_code == 409
+    rejected = verify_fee(
+        client,
+        admin_headers,
+        request_id,
+        decision="reject",
+    )
+    assert rejected.status_code == 200
+
+    later_payment = submit_fee(client, headers, request_id, "BANK-REF-CANCEL-2")
+    assert later_payment.status_code == 409
