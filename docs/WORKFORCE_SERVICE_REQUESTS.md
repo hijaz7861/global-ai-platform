@@ -21,3 +21,17 @@ The source marketplace-action function requires a provider-verified phone and cl
 ## Remaining gaps
 
 This slice does not provide a messaging/contact relay, refunds, dispute adjudication, provider payout/settlement, multi-currency budgets, contractor-company teams, ratings, document storage, phone-provider integration, or source-data migration. The provider terms version is an acknowledgement marker, not a legally reviewed contract or electronic signature. The service fee is a confirmed source snapshot, not a country-wide configurable fee engine. No hiring request data was imported.
+
+
+## Internal contact relay — Draft PR #74
+
+The next portable slice adds participant-only internal messages for an assigned workforce request:
+
+- Client access is limited to the request owner; provider access is limited to the exact assigned, published contractor/mason/labour profile and the matching active role entitlement.
+- A verified fee and assigned provider are required before either side can open the thread.
+- Clients can message while work is matched/accepted/in progress. Providers can message only after accepting the provider terms, while work is accepted/in progress. Existing messages remain readable to participants after the work reaches a terminal state.
+- Message bodies are limited to 2,000 characters. The API rejects recognizable phone numbers, email addresses, URLs and @handles; this is a narrow input guard, not comprehensive DLP.
+- The table stores only request ID, sender user ID, sender side, body and timestamp. API responses omit sender IDs and contact verification data. Audit records contain message ID, request ID, side and body length only; message content is not copied to the audit log.
+- No SMS, WhatsApp, email, push notification, phone-number disclosure, attachment upload or external provider is enabled.
+
+The Draft implementation does not yet provide end-to-end encryption, message retention/deletion controls, moderation/reporting, abuse throttling, attachment scanning, delivery/read receipts, legal terms review or production data import. Do not treat the contact relay as a substitute for a secure external communications provider.
