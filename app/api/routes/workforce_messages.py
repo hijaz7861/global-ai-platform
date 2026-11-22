@@ -171,7 +171,6 @@ def _send_message(
         entity_type="workforce_service_message",
         entity_id=message.id,
         details={
-            "service_request_id": item.id,
             "sender_side": sender_side,
             "body_length": len(body),
         },
