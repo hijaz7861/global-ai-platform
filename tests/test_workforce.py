@@ -1,4 +1,5 @@
 """Workforce entitlement, moderation, lifecycle and privacy regressions."""
+import pytest
 from datetime import timedelta
 
 from fastapi.testclient import TestClient
