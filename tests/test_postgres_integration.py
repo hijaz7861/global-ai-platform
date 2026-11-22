@@ -1944,6 +1944,7 @@ def test_postgres_workforce_service_payment_active_index_allows_retry_after_reje
         WorkforceProfile,
         WorkforceServicePayment,
         WorkforceServiceRequest,
+        utc_now,
     )
 
     suffix = uuid4().hex
@@ -1984,9 +1985,9 @@ def test_postgres_workforce_service_payment_active_index_allows_retry_after_reje
             city="Lahore",
             country_code="PK",
             currency="PKR",
-            client_phone_verified_at=__import__("app.models", fromlist=["utc_now"]).utc_now(),
+            client_phone_verified_at=utc_now(),
             client_terms_version="workforce-client-service-v1",
-            client_terms_accepted_at=__import__("app.models", fromlist=["utc_now"]).utc_now(),
+            client_terms_accepted_at=utc_now(),
             platform_fee_minor=5000,
             platform_fee_currency="PKR",
             platform_fee_status="submitted",
