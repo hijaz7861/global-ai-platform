@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 from app.models import utc_now
+from app.security.encrypted_message import EncryptedMessageText
 
 
 class WorkforceServiceMessage(Base):
@@ -19,7 +20,7 @@ class WorkforceServiceMessage(Base):
             name="ck_workforce_service_message_sender_side",
         ),
         CheckConstraint(
-            "length(body) BETWEEN 1 AND 2000",
+            "length(body) BETWEEN 1 AND 4096",
             name="ck_workforce_service_message_body_length",
         ),
         Index(
@@ -47,7 +48,7 @@ class WorkforceServiceMessage(Base):
         nullable=False,
     )
     sender_side: Mapped[str] = mapped_column(String(12), nullable=False)
-    body: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(EncryptedMessageText(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )

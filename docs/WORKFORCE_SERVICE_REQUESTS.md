@@ -35,3 +35,21 @@ The next portable slice adds participant-only internal messages for an assigned 
 - No SMS, WhatsApp, email, push notification, phone-number disclosure, attachment upload or external provider is enabled.
 
 The Draft implementation stores message bodies as application data; end-to-end encryption and at-rest encryption configuration are not established by this slice. It does not yet provide message retention/deletion controls, moderation/reporting, abuse throttling, attachment scanning, delivery/read receipts, legal terms review or production data import. Do not treat the contact relay as a substitute for a secure external communications provider.
+
+
+
+## Workforce message encryption — Draft PR #75
+
+Message bodies are now encrypted before SQLAlchemy writes them to `workforce_service_messages.body` using Fernet authenticated encryption. The database stores the `fernet:v1:` ciphertext envelope; application responses decrypt only after the participant authorization checks. The API returns HTTP 503 and does not write or read relay content when the current key is absent or malformed. Production startup additionally requires a valid `WORKFORCE_MESSAGE_ENCRYPTION_KEY`.
+
+Migration `0045_workforce_message_encryption` encrypts any pre-existing plaintext rows before the application serves them. If rows exist and the current key is absent/invalid, the migration fails closed. The database check constraint is raised to 4,096 characters because a 2,000-character plaintext message expands when encrypted; the API input limit remains 2,000 characters. Downgrade is blocked while encrypted message rows exist to avoid silently making them unreadable.
+
+Keys are deployment secrets and must be stored separately from the database and its backups. Generate a key offline with:
+
+```bash
+python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+```
+
+Set `WORKFORCE_MESSAGE_ENCRYPTION_KEY` in the runtime secret manager; never commit it or place it in a database backup. During key rotation, configure the new key as current and comma-separated old Fernet keys in `WORKFORCE_MESSAGE_PREVIOUS_ENCRYPTION_KEYS`. New writes use the current key and reads accept current/previous keys. Do not remove an old key until an approved re-encryption/retirement procedure has verified every retained row. Automated key retirement is not claimed by this PR.
+
+This is encryption at rest, not end-to-end encryption: the application process and authorized participants can access plaintext. Transport TLS, retention/deletion policy, moderation/reporting, abuse throttling, legal review and production data migration remain separate release gates. No Hatchable data was exported and the live application was not changed.

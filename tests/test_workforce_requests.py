@@ -3,6 +3,7 @@ from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -28,6 +29,8 @@ def workforce_request_client(monkeypatch):
     sessions = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
     monkeypatch.setattr(settings, "secret_key", "workforce-request-test-key-not-production")
+    monkeypatch.setattr(settings, "workforce_message_encryption_key", SecretStr("MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="))
+    monkeypatch.setattr(settings, "workforce_message_previous_encryption_keys", SecretStr(""))
     monkeypatch.setattr(settings, "platform_admin_emails", "platform-admin@example.com")
     monkeypatch.setattr(settings, "require_email_verification", True)
     with sessions() as db:
@@ -669,6 +672,15 @@ def test_workforce_contact_relay_rejects_contact_details_and_closes_on_terminal_
     valid_body = "Please confirm the site measurements before starting."
     sent = client.post(path, headers=client_headers, json={"body": valid_body})
     assert sent.status_code == 201, sent.text
+    assert sent.json()["message"]["body"] == valid_body
+    from sqlalchemy import text
+    with client.testing_sessions() as db:
+        stored_body = db.scalar(
+            text("SELECT body FROM workforce_service_messages WHERE service_request_id = :request_id"),
+            {"request_id": request_id},
+        )
+    assert stored_body.startswith("fernet:v1:")
+    assert valid_body not in stored_body
 
     provider_status = (
         f"/api/v1/me/workforce/contractor-service-requests/{request_id}/status"
@@ -718,3 +730,28 @@ def test_workforce_contact_relay_rejects_contact_details_and_closes_on_terminal_
     assert all(item["sender_side"] == "client" for item in audit_details)
     assert all(item["body_length"] == len(valid_body) for item in audit_details)
     assert all(valid_body not in json.dumps(item) for item in audit_details)
+
+
+
+def test_workforce_contact_relay_fails_closed_when_encryption_key_is_missing(
+    workforce_request_client, verified_user_factory, monkeypatch
+):
+    client = workforce_request_client
+    request_id, client_headers, _, _ = _prepare_assigned_workforce_request(
+        client, verified_user_factory, "contractor"
+    )
+    monkeypatch.setattr(settings, "workforce_message_encryption_key", None)
+    response = client.post(
+        f"/api/v1/me/workforce/service-requests/{request_id}/messages",
+        headers=client_headers,
+        json={"body": "Please confirm the approved work scope."},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Workforce message encryption is not configured"
+    from sqlalchemy import text
+    with client.testing_sessions() as db:
+        count = db.scalar(
+            text("SELECT count(*) FROM workforce_service_messages WHERE service_request_id = :request_id"),
+            {"request_id": request_id},
+        )
+    assert count == 0
