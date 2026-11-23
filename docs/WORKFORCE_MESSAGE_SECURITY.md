@@ -8,6 +8,7 @@
 - `WORKFORCE_MESSAGE_PREVIOUS_ENCRYPTION_KEYS` is a comma-separated list of previous Fernet keys for controlled rotation. Writes always use the current key; reads can authenticate with current or previous keys.
 - Migration `0045_workforce_msg_encrypt` encrypts retained plaintext rows in place. If rows exist without a valid current key, migration stops before serving the application. It also expands the database body-length constraint to 16,384 characters for ciphertext while keeping the API plaintext cap at 2,000.
 - Downgrade is intentionally blocked while encrypted messages exist. Do not remove old keys until an approved re-encryption and restore rehearsal has verified all retained records.
+- Message sends use an atomic SQLite/PostgreSQL sliding-window limiter backed by the existing `auth_rate_limit_locks` and `auth_attempts` tables; no additional migration or rate-limit database is introduced. The default is 20 attempts per authenticated sender per 5 minutes, configurable with `WORKFORCE_MESSAGE_SEND_LIMIT` and `WORKFORCE_MESSAGE_SEND_WINDOW_MINUTES`. A throttled request returns HTTP 429 with `Retry-After`; the persisted subject is a SHA-256 digest of the authenticated user ID, not the raw ID or message body. Existing bounded security maintenance removes rate-limit records older than 24 hours.
 
 ## Key generation and handling
 
@@ -23,4 +24,4 @@ For rotation, deploy the new key as current and place the old key(s) in `WORKFOR
 
 ## Security boundaries and open gates
 
-This is authenticated encryption at rest, not end-to-end encryption. Authorized application code and participants still receive plaintext. TLS, role/ownership authorization, moderation/reporting, rate limiting, retention/deletion, attachment scanning, legal review and source-data migration remain separate controls. No external messaging provider is enabled and no Hatchable data or live configuration is changed.
+This is authenticated encryption at rest, not end-to-end encryption. Authorized application code and participants still receive plaintext. TLS, role/ownership authorization, moderation/reporting, retention/deletion, attachment scanning, legal review and source-data migration remain separate controls. Database-backed per-sender abuse throttling is implemented; it is not a substitute for moderation/reporting or network-level denial-of-service protection. No external messaging provider is enabled and no Hatchable data or live configuration is changed.
