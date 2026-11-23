@@ -954,3 +954,32 @@ No PR was merged, no production deployment or live Hatchable write occurred, no 
 **NOT SATISFIED.** The workforce directory and hiring-request workflows are implemented only in stacked Draft PRs. Remaining work includes contact relay with explicit privacy controls, refunds/dispute adjudication/provider settlement, contractor-company teams and ratings, remaining source verticals, portable worker/scheduler/object-storage integration, global commerce/FX/tax, signed/idempotent payment webhooks, complete AI operating controls, authenticated MCP POST verification, staged Hatchable export/import and reconciliation, backup/restore, independent-host rehearsal, security review, branch protection and owner approval.
 
 No PR was merged, no deployment occurred, the live Hatchable app was not modified, no source rows/files were copied, no provider/secret was enabled, and no cost or domain purchase occurred. Keep the repository name and live app unchanged.
+
+
+## Verified continuation — 2026-11-23, workforce messaging security
+
+This addendum records only current GitHub evidence and supersedes earlier workforce messaging snapshots where they conflict.
+
+### Canonical repository and migration baseline
+
+- The repository remains `hijaz7861/global-ai-platform`, default branch `master`, at `11ad7da84e73126a450cb0d194e4859b90263a4a`.
+- Direct inspection of the complete master migration tree confirms the latest master revision is `0034_postgres_approval_nonces`. The workforce messaging candidate stack extends this separately through `0044_workforce_contact_relay` and `0045_workforce_msg_encrypt`; neither migration is on master.
+- GitHub returned 82 branches and 33 open pull requests at this snapshot. The `master` branch object reports `protected: false`; branch protection/required-review enforcement is therefore not enabled in the returned branch metadata and remains a release blocker.
+- PR #22 remains Draft/open/unmerged. This document is still on its feature branch and is not a master-merged architecture contract.
+
+### Workforce messaging candidate stack
+
+- **PR #74 — contact relay:** Draft/open, head `9b58d351639b4ec0b2b4821e8f31252df8a8887e`. Exact-head Actions Run #952 passed 5/5 jobs: Python 3.11/3.12/3.13 each 444 passed / 26 skipped; PostgreSQL integration 26 passed; dependency audit/Bandit passed. It adds participant-only messaging for an assigned, fee-verified service request with exact contractor/mason/labour entitlement checks and contact-data rejection.
+- **PR #75 — encryption at rest:** Draft/open, head `b3371c767378a385d3f00412cd6a5094766d4449`. Exact-head Actions Run #956 passed 5/5 jobs: Python 3.11/3.12/3.13 each 453 passed / 26 skipped; PostgreSQL integration 26 passed; dependency audit/Bandit passed. Migration `0045_workforce_msg_encrypt` encrypts retained plaintext rows with Fernet, requires a separately provisioned key, supports configured previous keys, and blocks downgrade while ciphertext remains. It is not end-to-end encryption; key backup/restore and key retirement remain operational gates.
+- **PR #76 — abuse throttling:** Draft/open, head `b27f056d30d6241f683c2b14df3b8b7ba991846f`, stacked on #75. Exact-head Actions Run #957 passed 5/5 jobs: Python 3.11/3.12/3.13 each 454 passed / 27 skipped; PostgreSQL integration 27 passed; dependency audit/Bandit, Ruff, compilation, SQLite migration verification, PostgreSQL migration apply and schema verification passed. It adds an atomic per-sender sliding-window limit using the existing auth rate-limit tables, default 20 accepted sends per 5 minutes, HTTP 429/Retry-After, and hashed sender identifiers. The SQLite API negative test and PostgreSQL two-session concurrency test both passed.
+- PR #74 → #75 → #76 is a dependent Draft chain. No PR in this chain was merged, and no live Hatchable application or data was changed. No external SMS, WhatsApp, email or payment provider was enabled.
+- GitHub review-thread lookups returned zero inline threads for PRs #20, #22, #23 and #69–#76; no owner review is recorded for the current messaging stack. CI success is not human approval.
+
+### Current disposition and remaining gates
+
+- PR #20 remains Draft; exact-head Run #931 passed 5/5, but authenticated Streamable HTTP POST `initialize`, `tools/list` and `tools/call` remain unverified.
+- PR #23 remains an old, stale Draft candidate at `63b037cfc13ad2d121ca556934f6d2dbe44e6011`; GitHub reports `mergeable=false`. The current-master consolidated role foundation is represented by PR #69, whose exact-head Run #929 passed 5/5. Do not merge PR #23 independently.
+- PRs #69–#73 remain Draft candidates with their previously recorded exact-head successful CI runs; the current workforce chain #74–#76 is stacked after #73 and still requires ordered owner review and reconciliation.
+- Message reporting/moderation, a legally approved retention/deletion schedule, attachment scanning, DDoS protection, key escrow and restore rehearsal, complete provider payout/refund/dispute workflows, remaining verticals, global commerce, portable-host rehearsal, full Hatchable export/import reconciliation, and release security review remain incomplete.
+- The live Hatchable Version 40 application remains untouched. Its existing partial backup is not a complete export/import mechanism; no source rows or object bytes have been copied.
+- The full Definition of Done remains **NOT SATISFIED**. Do not merge, deploy, rename the repository, change production secrets, activate providers, purchase a domain or delete production data before all release gates and owner approval are complete.
