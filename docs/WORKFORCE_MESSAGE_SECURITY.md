@@ -11,7 +11,7 @@
 
 ## Key generation and handling
 
-Generate a new key on a trusted offline/admin environment:
+Generate a new key on a trusted offline/admin environment. Automated tests use ephemeral test-only keys; no production key is stored in the repository:
 
 ```bash
 python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
