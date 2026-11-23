@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     secret_key: str | None = None
     workforce_message_encryption_key: SecretStr | None = None
     workforce_message_previous_encryption_keys: SecretStr = SecretStr("")
+    workforce_message_send_limit: int = Field(default=20, ge=1, le=100)
+    workforce_message_send_window_minutes: int = Field(default=5, ge=1, le=60)
     previous_secret_keys: str = ""
     access_token_expire_minutes: int = Field(default=30, ge=5, le=1440)
     refresh_token_expire_days: int = Field(default=30, ge=1, le=90)

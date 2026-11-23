@@ -765,3 +765,62 @@ def test_workforce_contact_relay_fails_closed_when_encryption_key_is_missing(
             {"request_id": request_id},
         )
     assert count == 0
+
+
+def test_workforce_contact_relay_rate_limits_sender_across_message_attempts(
+    workforce_request_client, verified_user_factory, monkeypatch
+):
+    from sqlalchemy import text
+
+    client = workforce_request_client
+    monkeypatch.setattr(settings, "workforce_message_send_limit", 1)
+    monkeypatch.setattr(settings, "workforce_message_send_window_minutes", 5)
+    request_id, client_headers, _, _ = _prepare_assigned_workforce_request(
+        client, verified_user_factory, "contractor"
+    )
+    path = f"/api/v1/me/workforce/service-requests/{request_id}/messages"
+
+    first = client.post(
+        path,
+        headers=client_headers,
+        json={"body": "Please confirm the approved work scope."},
+    )
+    assert first.status_code == 201, first.text
+
+    throttled = client.post(
+        path,
+        headers=client_headers,
+        json={"body": "A second message must be throttled."},
+    )
+    assert throttled.status_code == 429
+    assert throttled.headers["retry-after"] == "300"
+    assert throttled.json()["detail"] == (
+        "Too many messages. Please wait before sending again."
+    )
+
+    with client.testing_sessions() as db:
+        attempt_count = db.scalar(
+            text(
+                "SELECT count(*) FROM auth_attempts "
+                "WHERE scope = 'workforce_message_send'"
+            )
+        )
+        message_count = db.scalar(
+            text(
+                "SELECT count(*) FROM workforce_service_messages "
+                "WHERE service_request_id = :request_id"
+            ),
+            {"request_id": request_id},
+        )
+        subjects = db.execute(
+            text(
+                "SELECT subject_hash FROM auth_attempts "
+                "WHERE scope = 'workforce_message_send'"
+            )
+        ).scalars().all()
+
+    assert attempt_count == 1
+    assert message_count == 1
+    assert len(subjects) == 1
+    assert len(subjects[0]) == 64
+    assert subjects[0] != client_headers["Authorization"]
