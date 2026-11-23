@@ -42,7 +42,7 @@ The Draft implementation stores message bodies as application data; end-to-end e
 
 Message bodies are now encrypted before SQLAlchemy writes them to `workforce_service_messages.body` using Fernet authenticated encryption. The database stores the `fernet:v1:` ciphertext envelope; application responses decrypt only after the participant authorization checks. The API returns HTTP 503 and does not write or read relay content when the current key is absent or malformed. Production startup additionally requires a valid `WORKFORCE_MESSAGE_ENCRYPTION_KEY`.
 
-Migration `0045_workforce_message_encryption` encrypts any pre-existing plaintext rows before the application serves them. If rows exist and the current key is absent/invalid, the migration fails closed. The database check constraint is raised to 16,384 characters because a 2,000-character plaintext message expands when encrypted; the API input limit remains 2,000 characters. Downgrade is blocked while encrypted message rows exist to avoid silently making them unreadable.
+Migration `0045_workforce_msg_encrypt` encrypts any pre-existing plaintext rows before the application serves them. If rows exist and the current key is absent/invalid, the migration fails closed. The database check constraint is raised to 16,384 characters because a 2,000-character plaintext message expands when encrypted; the API input limit remains 2,000 characters. Downgrade is blocked while encrypted message rows exist to avoid silently making them unreadable.
 
 Keys are deployment secrets and must be stored separately from the database and its backups. Generate a key offline with:
 

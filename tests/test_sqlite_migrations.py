@@ -24,7 +24,7 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
 
     engine = create_engine(database_url)
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0045_workforce_message_encryption"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0045_workforce_msg_encrypt"
     table_names = set(inspect(engine).get_table_names())
     assert {
         "user_phone_verifications", "property_listings", "property_transactions", "property_payments",
@@ -228,7 +228,7 @@ def test_workforce_message_encryption_migration_encrypts_existing_rows(tmp_path,
         version = connection.scalar(text("SELECT version_num FROM alembic_version"))
     engine.dispose()
 
-    assert version == "0045_workforce_message_encryption"
+    assert version == "0045_workforce_msg_encrypt"
     assert stored.startswith("fernet:v1:")
     assert plaintext not in stored
     token = stored[len("fernet:v1:"):].encode("ascii")

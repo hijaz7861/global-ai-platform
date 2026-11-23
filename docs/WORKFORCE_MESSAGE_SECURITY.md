@@ -6,7 +6,7 @@
 - The relay API returns HTTP 503 if the current key is missing or invalid. It never falls back to plaintext storage or plaintext reads.
 - Production startup requires a valid `WORKFORCE_MESSAGE_ENCRYPTION_KEY`. The key must be generated outside the repository and stored in the deployment secret manager.
 - `WORKFORCE_MESSAGE_PREVIOUS_ENCRYPTION_KEYS` is a comma-separated list of previous Fernet keys for controlled rotation. Writes always use the current key; reads can authenticate with current or previous keys.
-- Migration `0045_workforce_message_encryption` encrypts retained plaintext rows in place. If rows exist without a valid current key, migration stops before serving the application. It also expands the database body-length constraint to 16,384 characters for ciphertext while keeping the API plaintext cap at 2,000.
+- Migration `0045_workforce_msg_encrypt` encrypts retained plaintext rows in place. If rows exist without a valid current key, migration stops before serving the application. It also expands the database body-length constraint to 16,384 characters for ciphertext while keeping the API plaintext cap at 2,000.
 - Downgrade is intentionally blocked while encrypted messages exist. Do not remove old keys until an approved re-encryption and restore rehearsal has verified all retained records.
 
 ## Key generation and handling

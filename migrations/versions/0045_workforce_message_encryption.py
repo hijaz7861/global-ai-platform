@@ -6,7 +6,7 @@ from alembic import op
 import sqlalchemy as sa
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
-revision: str = "0045_workforce_message_encryption"
+revision: str = "0045_workforce_msg_encrypt"
 down_revision: Union[str, None] = "0044_workforce_contact_relay"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
