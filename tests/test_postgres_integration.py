@@ -2039,3 +2039,58 @@ def test_postgres_workforce_service_payment_active_index_allows_retry_after_reje
         db.add(retry)
         db.commit()
         assert retry.status == "submitted"
+
+
+def test_postgres_workforce_message_rate_limit_serializes_concurrent_senders(
+    monkeypatch,
+):
+    """Two workers sharing one sender cannot both pass a one-message window."""
+    import hashlib
+    from threading import Barrier
+
+    from fastapi import HTTPException
+
+    from app.core.config import settings
+    from app.db import SessionLocal
+    from app.models import AuthAttempt, User
+    from app.services.workforce_message_limits import record_workforce_message_attempt
+
+    monkeypatch.setattr(settings, "workforce_message_send_limit", 1)
+    monkeypatch.setattr(settings, "workforce_message_send_window_minutes", 5)
+    suffix = uuid4().hex
+    with SessionLocal() as db:
+        user = User(
+            email=f"postgres-message-limit-{suffix}@example.com",
+            password_hash="test-hash",
+            email_verified=True,
+        )
+        db.add(user)
+        db.commit()
+        user_id = user.id
+
+    barrier = Barrier(2)
+
+    def reserve_once():
+        with SessionLocal() as db:
+            barrier.wait(timeout=10)
+            try:
+                record_workforce_message_attempt(db, user_id)
+                db.commit()
+                return "allowed"
+            except HTTPException as exc:
+                db.rollback()
+                if exc.status_code == 429:
+                    return "throttled"
+                raise
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda _: reserve_once(), range(2)))
+
+    assert sorted(outcomes) == ["allowed", "throttled"]
+    subject_hash = hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+    with SessionLocal() as db:
+        attempts = db.query(AuthAttempt).filter(
+            AuthAttempt.scope == "workforce_message_send",
+            AuthAttempt.subject_hash == subject_hash,
+        ).count()
+    assert attempts == 1
