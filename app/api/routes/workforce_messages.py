@@ -12,6 +12,7 @@ from app.api.deps import get_current_user, require_active_role
 from app.audit import record_audit_event
 from app.db import get_db
 from app.security.encrypted_message import message_encryption_ready
+from app.services.workforce_message_limits import record_workforce_message_attempt
 from app.models import (
     User,
     UserRoleEntitlement,
@@ -164,6 +165,7 @@ def _send_message(
             status_code=409,
             detail="Messages are available only while the service is active",
         )
+    record_workforce_message_attempt(db, user.id)
     message = WorkforceServiceMessage(
         id=str(uuid4()),
         service_request_id=item.id,
