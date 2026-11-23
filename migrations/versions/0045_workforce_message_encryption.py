@@ -22,6 +22,8 @@ def upgrade() -> None:
         sa.column("body", sa.Text()),
     )
     rows = connection.execute(sa.select(messages.c.id, messages.c.body)).all()
+    current = None
+    keyring = None
     if rows:
         current_key = os.environ.get("WORKFORCE_MESSAGE_ENCRYPTION_KEY", "").strip()
         if not current_key:
@@ -40,6 +42,16 @@ def upgrade() -> None:
         except (ValueError, UnicodeEncodeError):
             raise RuntimeError("Workforce message encryption key configuration is invalid") from None
 
+    # Expand the database constraint before ciphertext is written: Fernet tokens
+    # are longer than the 2,000-character plaintext API limit.
+    with op.batch_alter_table("workforce_service_messages") as batch:
+        batch.drop_constraint("ck_workforce_service_message_body_length", type_="check")
+        batch.create_check_constraint(
+            "ck_workforce_service_message_body_length",
+            "length(body) BETWEEN 1 AND 4096",
+        )
+
+    if rows:
         for row in rows:
             value = row.body
             try:
@@ -55,14 +67,6 @@ def upgrade() -> None:
             connection.execute(
                 messages.update().where(messages.c.id == row.id).values(body=encrypted)
             )
-
-    with op.batch_alter_table("workforce_service_messages") as batch:
-        batch.drop_constraint("ck_workforce_service_message_body_length", type_="check")
-        batch.create_check_constraint(
-            "ck_workforce_service_message_body_length",
-            "length(body) BETWEEN 1 AND 4096",
-        )
-
 
 def downgrade() -> None:
     connection = op.get_bind()
