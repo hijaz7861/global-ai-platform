@@ -175,9 +175,8 @@ def test_workforce_message_encryption_migration_encrypts_existing_rows(tmp_path,
     with engine.begin() as connection:
         connection.execute(
             text(
-                "INSERT INTO users (id, email, password_hash, is_active, created_at, "
-                "email_verified, auth_version, failed_login_attempts, mfa_enabled) "
-                "VALUES (:id, :email, :password_hash, 1, :created_at, 1, 0, 0, 0)"
+                "INSERT INTO users (id, email, password_hash, is_active, created_at) "
+                "VALUES (:id, :email, :password_hash, 1, :created_at)"
             ),
             {
                 "id": "encryption-user",
