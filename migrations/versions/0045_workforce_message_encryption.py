@@ -48,7 +48,7 @@ def upgrade() -> None:
         batch.drop_constraint("ck_workforce_service_message_body_length", type_="check")
         batch.create_check_constraint(
             "ck_workforce_service_message_body_length",
-            "length(body) BETWEEN 1 AND 4096",
+            "length(body) BETWEEN 1 AND 16384",
         )
 
     if rows:

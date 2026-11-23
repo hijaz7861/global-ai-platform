@@ -42,7 +42,7 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
     message_indexes = inspect(engine).get_indexes("workforce_service_messages")
     assert any(item["name"] == "ix_workforce_service_message_request_created" for item in message_indexes)
     message_checks = inspect(engine).get_check_constraints("workforce_service_messages")
-    assert any("4096" in item["sqltext"] for item in message_checks)
+    assert any("16384" in item["sqltext"] for item in message_checks)
     service_payment_indexes = inspect(engine).get_indexes("workforce_service_payments")
     assert any(item["name"] == "uq_workforce_service_payment_active" and item["unique"] for item in service_payment_indexes)
 
@@ -153,3 +153,84 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
                 )
     finally:
         engine.dispose()
+
+
+
+def test_workforce_message_encryption_migration_encrypts_existing_rows(tmp_path, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    key = Fernet.generate_key().decode("ascii")
+    monkeypatch.setenv("WORKFORCE_MESSAGE_ENCRYPTION_KEY", key)
+    database_url = f"sqlite:///{tmp_path / 'workforce-message-encryption.db'}"
+    monkeypatch.setattr(settings, "database_url", database_url)
+    repository_root = Path(__file__).resolve().parents[1]
+    config = Config(str(repository_root / "alembic.ini"))
+    config.set_main_option("script_location", str(repository_root / "migrations"))
+    config.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(config, "0044_workforce_contact_relay")
+
+    engine = create_engine(database_url)
+    plaintext = "Legacy workforce message that must not remain in the database"
+    timestamp = "2026-11-23 18:00:00"
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO users (id, email, password_hash, is_active, created_at, "
+                "email_verified, auth_version, failed_login_attempts, mfa_enabled) "
+                "VALUES (:id, :email, :password_hash, 1, :created_at, 1, 0, 0, 0)"
+            ),
+            {
+                "id": "encryption-user",
+                "email": "encryption-migration@example.com",
+                "password_hash": "test-hash",
+                "created_at": timestamp,
+            },
+        )
+        connection.execute(
+            text(
+                "INSERT INTO workforce_service_requests "
+                "(id, request_code, client_user_id, service_type, title, details, city, "
+                "country_code, currency, client_phone_verified_at, client_terms_version, "
+                "client_terms_accepted_at, status, platform_fee_minor, "
+                "platform_fee_currency, platform_fee_status, created_at, updated_at) "
+                "VALUES (:id, :code, :user_id, 'hire_worker', 'Legacy request', "
+                "'A sufficiently detailed legacy request', 'Lahore', 'PK', 'PKR', "
+                ":verified_at, 'terms-v1', :accepted_at, 'matched', 5000, 'PKR', "
+                "'verified', :created_at, :updated_at)"
+            ),
+            {
+                "id": "encryption-request",
+                "code": "HJZ-ENCRYPT-0001",
+                "user_id": "encryption-user",
+                "verified_at": timestamp,
+                "accepted_at": timestamp,
+                "created_at": timestamp,
+                "updated_at": timestamp,
+            },
+        )
+        connection.execute(
+            text(
+                "INSERT INTO workforce_service_messages "
+                "(id, service_request_id, sender_user_id, sender_side, body, created_at) "
+                "VALUES ('encryption-message', 'encryption-request', 'encryption-user', "
+                "'client', :body, :created_at)"
+            ),
+            {"body": plaintext, "created_at": timestamp},
+        )
+
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        stored = connection.scalar(
+            text(
+                "SELECT body FROM workforce_service_messages "
+                "WHERE id = 'encryption-message'"
+            )
+        )
+        version = connection.scalar(text("SELECT version_num FROM alembic_version"))
+    engine.dispose()
+
+    assert version == "0045_workforce_message_encryption"
+    assert stored.startswith("fernet:v1:")
+    assert plaintext not in stored
+    token = stored[len("fernet:v1:"):].encode("ascii")
+    assert Fernet(key.encode("ascii")).decrypt(token).decode("utf-8") == plaintext

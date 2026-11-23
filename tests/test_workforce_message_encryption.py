@@ -74,3 +74,43 @@ def test_legacy_plaintext_is_rejected_until_migration_encrypts_it(monkeypatch):
 
     with pytest.raises(RuntimeError, match="run migration 0045"):
         EncryptedMessageText().process_result_value("legacy plaintext", dialect())
+
+
+
+def test_two_thousand_multibyte_characters_fit_the_ciphertext_column(monkeypatch):
+    key = Fernet.generate_key().decode("ascii")
+    monkeypatch.setattr(settings, "workforce_message_encryption_key", SecretStr(key))
+    monkeypatch.setattr(settings, "workforce_message_previous_encryption_keys", SecretStr(""))
+
+    plaintext = "🙂" * 2000
+    column = EncryptedMessageText()
+    stored = column.process_bind_param(plaintext, dialect())
+    assert len(stored) < 16384
+    assert column.process_result_value(stored, dialect()) == plaintext
+
+
+def test_production_runtime_requires_a_valid_message_encryption_key():
+    from app.core.config import Settings, validate_runtime_settings
+
+    base = {
+        "environment": "production",
+        "secret_key": "s" * 40,
+        "database_url": "postgresql+psycopg://user:pass@localhost/hijaz_one",
+    }
+    with pytest.raises(RuntimeError, match="WORKFORCE_MESSAGE_ENCRYPTION_KEY"):
+        validate_runtime_settings(Settings(**base))
+
+    valid_key = Fernet.generate_key().decode("ascii")
+    config = Settings(
+        **base,
+        workforce_message_encryption_key=SecretStr(valid_key),
+    )
+    validate_runtime_settings(config)
+
+    with pytest.raises(RuntimeError, match="valid Fernet keys"):
+        validate_runtime_settings(
+            Settings(
+                **base,
+                workforce_message_encryption_key=SecretStr("invalid-key"),
+            )
+        )

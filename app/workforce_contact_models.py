@@ -20,7 +20,7 @@ class WorkforceServiceMessage(Base):
             name="ck_workforce_service_message_sender_side",
         ),
         CheckConstraint(
-            "length(body) BETWEEN 1 AND 4096",
+            "length(body) BETWEEN 1 AND 16384",
             name="ck_workforce_service_message_body_length",
         ),
         Index(
