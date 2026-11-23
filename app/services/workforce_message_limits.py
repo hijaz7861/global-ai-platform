@@ -65,7 +65,7 @@ def record_workforce_message_attempt(db: Session, user_id: str) -> None:
         )
 
     db.add(AuthAttempt(scope=_SCOPE, subject_hash=subject_hash, created_at=now))
-    # Commit the throttle reservation before message creation. A downstream
-    # validation/storage failure still consumes an attempt, preventing retries
-    # from bypassing the abuse limit.
-    db.commit()
+    # Keep the lock and attempt in the caller's transaction. The message row and
+    # audit event commit atomically with this reservation, so the request-state
+    # row lock is not released between authorization and message creation.
+    db.flush()
