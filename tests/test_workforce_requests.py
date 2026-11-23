@@ -29,7 +29,11 @@ def workforce_request_client(monkeypatch):
     sessions = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=engine)
     monkeypatch.setattr(settings, "secret_key", "workforce-request-test-key-not-production")
-    monkeypatch.setattr(settings, "workforce_message_encryption_key", SecretStr("MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="))
+    monkeypatch.setattr(
+        settings,
+        "workforce_message_encryption_key",
+        SecretStr("MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="),
+    )
     monkeypatch.setattr(settings, "workforce_message_previous_encryption_keys", SecretStr(""))
     monkeypatch.setattr(settings, "platform_admin_emails", "platform-admin@example.com")
     monkeypatch.setattr(settings, "require_email_verification", True)
@@ -676,7 +680,10 @@ def test_workforce_contact_relay_rejects_contact_details_and_closes_on_terminal_
     from sqlalchemy import text
     with client.testing_sessions() as db:
         stored_body = db.scalar(
-            text("SELECT body FROM workforce_service_messages WHERE service_request_id = :request_id"),
+            text(
+                "SELECT body FROM workforce_service_messages "
+                "WHERE service_request_id = :request_id"
+            ),
             {"request_id": request_id},
         )
     assert stored_body.startswith("fernet:v1:")
@@ -751,7 +758,10 @@ def test_workforce_contact_relay_fails_closed_when_encryption_key_is_missing(
     from sqlalchemy import text
     with client.testing_sessions() as db:
         count = db.scalar(
-            text("SELECT count(*) FROM workforce_service_messages WHERE service_request_id = :request_id"),
+            text(
+                "SELECT count(*) FROM workforce_service_messages "
+                "WHERE service_request_id = :request_id"
+            ),
             {"request_id": request_id},
         )
     assert count == 0

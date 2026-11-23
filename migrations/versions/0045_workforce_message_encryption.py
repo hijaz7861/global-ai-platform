@@ -28,7 +28,8 @@ def upgrade() -> None:
         current_key = os.environ.get("WORKFORCE_MESSAGE_ENCRYPTION_KEY", "").strip()
         if not current_key:
             raise RuntimeError(
-                "WORKFORCE_MESSAGE_ENCRYPTION_KEY is required to encrypt existing workforce messages"
+                "WORKFORCE_MESSAGE_ENCRYPTION_KEY is required to encrypt existing "
+                "workforce messages"
             )
         previous = os.environ.get("WORKFORCE_MESSAGE_PREVIOUS_ENCRYPTION_KEYS", "")
         try:
@@ -40,7 +41,9 @@ def upgrade() -> None:
             ]
             keyring = MultiFernet([current, *previous_keys])
         except (ValueError, UnicodeEncodeError):
-            raise RuntimeError("Workforce message encryption key configuration is invalid") from None
+            raise RuntimeError(
+                "Workforce message encryption key configuration is invalid"
+            ) from None
 
     # Expand the database constraint before ciphertext is written: Fernet tokens
     # are longer than the 2,000-character plaintext API limit.
@@ -78,7 +81,8 @@ def downgrade() -> None:
     ).scalar_one()
     if encrypted_count:
         raise RuntimeError(
-            "Cannot downgrade while encrypted workforce messages exist; preserve ciphertext and keys"
+            "Cannot downgrade while encrypted workforce messages exist; "
+            "preserve ciphertext and keys"
         )
     with op.batch_alter_table("workforce_service_messages") as batch:
         batch.drop_constraint("ck_workforce_service_message_body_length", type_="check")

@@ -93,7 +93,9 @@ def validate_runtime_settings(config: "Settings") -> None:
         try:
             Fernet(key.encode("ascii"))
         except (ValueError, UnicodeEncodeError):
-            raise RuntimeError("Workforce message encryption keys must be valid Fernet keys") from None
+            raise RuntimeError(
+                "Workforce message encryption keys must be valid Fernet keys"
+            ) from None
 
 
 settings = Settings()

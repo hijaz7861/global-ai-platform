@@ -49,7 +49,9 @@ class EncryptedMessageText(TypeDecorator):
         if value is None:
             return None
         if not value.startswith(CIPHERTEXT_PREFIX):
-            raise RuntimeError("Unencrypted workforce message row; run migration 0045 before serving it")
+            raise RuntimeError(
+                "Unencrypted workforce message row; run migration 0045 before serving it"
+            )
         fernet = _message_fernet()
         if fernet is None:
             raise RuntimeError("WORKFORCE_MESSAGE_ENCRYPTION_KEY is not configured or invalid")
