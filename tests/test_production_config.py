@@ -1,5 +1,6 @@
 """Production configuration validation tests."""
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings, settings, validate_runtime_settings
@@ -37,6 +38,7 @@ def test_production_accepts_strong_key_and_postgresql() -> None:
         environment="production",
         database_url="postgresql+psycopg://user:pass@localhost/db",
         secret_key="x" * 40,
+        workforce_message_encryption_key=Fernet.generate_key().decode("ascii"),
     )
     validate_runtime_settings(config)
 

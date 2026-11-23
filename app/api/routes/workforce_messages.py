@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_active_role
 from app.audit import record_audit_event
 from app.db import get_db
+from app.security.encrypted_message import message_encryption_ready
 from app.models import (
     User,
     UserRoleEntitlement,
@@ -49,6 +50,14 @@ class WorkforceMessageCreate(BaseModel):
                 "Direct contact details and external links are not allowed in the relay"
             )
         return normalized
+
+
+def _require_message_encryption() -> None:
+    if not message_encryption_ready():
+        raise HTTPException(
+            status_code=503,
+            detail="Workforce message encryption is not configured",
+        )
 
 
 def _require_verified_user(user: User) -> None:
@@ -122,6 +131,7 @@ def _message_payload(item: WorkforceServiceMessage) -> dict:
 def _list_messages(
     db: Session, item: WorkforceServiceRequest, *, limit: int, offset: int
 ) -> dict:
+    _require_message_encryption()
     messages = db.scalars(
         select(WorkforceServiceMessage)
         .where(WorkforceServiceMessage.service_request_id == item.id)
@@ -143,6 +153,7 @@ def _send_message(
     sender_side: str,
     body: str,
 ) -> dict:
+    _require_message_encryption()
     allowed_statuses = (
         ACTIVE_MESSAGE_STATUSES
         if sender_side == "client"

@@ -1,5 +1,5 @@
 """Environment-backed application settings."""
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str = "sqlite:///./global_ai_platform.db"
     secret_key: str | None = None
+    workforce_message_encryption_key: SecretStr | None = None
+    workforce_message_previous_encryption_keys: SecretStr = SecretStr("")
     previous_secret_keys: str = ""
     access_token_expire_minutes: int = Field(default=30, ge=5, le=1440)
     refresh_token_expire_days: int = Field(default=30, ge=1, le=90)
@@ -81,6 +83,19 @@ def validate_runtime_settings(config: "Settings") -> None:
         raise RuntimeError("Production requires a SECRET_KEY of at least 32 characters")
     if not config.database_url.lower().startswith(("postgresql://", "postgresql+")):
         raise RuntimeError("Production requires PostgreSQL; SQLite is for local development only")
+    if config.workforce_message_encryption_key is None:
+        raise RuntimeError("Production requires WORKFORCE_MESSAGE_ENCRYPTION_KEY")
+    from cryptography.fernet import Fernet
+
+    current_key = config.workforce_message_encryption_key.get_secret_value()
+    previous_keys = config.workforce_message_previous_encryption_keys.get_secret_value()
+    for key in [current_key, *[item.strip() for item in previous_keys.split(",") if item.strip()]]:
+        try:
+            Fernet(key.encode("ascii"))
+        except (ValueError, UnicodeEncodeError):
+            raise RuntimeError(
+                "Workforce message encryption keys must be valid Fernet keys"
+            ) from None
 
 
 settings = Settings()
