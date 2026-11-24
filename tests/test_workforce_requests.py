@@ -824,3 +824,205 @@ def test_workforce_contact_relay_rate_limits_sender_across_message_attempts(
     assert len(subjects) == 1
     assert len(subjects[0]) == 64
     assert subjects[0] != client_headers["Authorization"]
+
+
+
+def test_workforce_message_reports_are_participant_scoped_deduplicated_and_admin_reviewable(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    request_id, client_headers, provider_headers, admin_headers = _prepare_assigned_workforce_request(
+        client, verified_user_factory, "contractor"
+    )
+    client_path = f"/api/v1/me/workforce/service-requests/{request_id}/messages"
+    provider_path = (
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/messages"
+    )
+
+    client_message = client.post(
+        client_path,
+        headers=client_headers,
+        json={"body": "Please confirm the agreed construction scope."},
+    )
+    assert client_message.status_code == 201, client_message.text
+    accepted = client.post(
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/status",
+        headers=provider_headers,
+        json={"status": "accepted", "provider_terms_accepted": True},
+    )
+    assert accepted.status_code == 200, accepted.text
+    provider_message = client.post(
+        provider_path,
+        headers=provider_headers,
+        json={"body": "I have reviewed the scope and can begin tomorrow."},
+    )
+    assert provider_message.status_code == 201, provider_message.text
+
+    report_path = f"{client_path}/{provider_message.json()['message']['id']}/reports"
+    own_report = client.post(
+        f"{client_path}/{client_message.json()['message']['id']}/reports",
+        headers=client_headers,
+        json={"reason_code": "other"},
+    )
+    assert own_report.status_code == 409
+
+    reported = client.post(
+        report_path, headers=client_headers, json={"reason_code": "harassment"}
+    )
+    assert reported.status_code == 201, reported.text
+    report_id = reported.json()["report"]["id"]
+    assert reported.json()["report"]["status"] == "open"
+    duplicate = client.post(
+        report_path, headers=client_headers, json={"reason_code": "spam"}
+    )
+    assert duplicate.status_code == 409
+
+    non_admin_queue = client.get(
+        "/api/v1/platform/workforce/message-reports", headers=provider_headers
+    )
+    assert non_admin_queue.status_code == 403
+    queue = client.get(
+        "/api/v1/platform/workforce/message-reports", headers=admin_headers
+    )
+    assert queue.status_code == 200, queue.text
+    entry = next(item for item in queue.json() if item["report"]["id"] == report_id)
+    assert entry["report"]["reason_code"] == "harassment"
+    assert entry["message"]["body"] == "I have reviewed the scope and can begin tomorrow."
+    assert "reporter_user_id" not in entry["report"]
+    assert "sender_user_id" not in entry["message"]
+    assert "phone_e164" not in entry["message"]
+
+    dismissed = client.post(
+        f"/api/v1/platform/workforce/message-reports/{report_id}/review",
+        headers=admin_headers,
+        json={"decision": "dismiss"},
+    )
+    assert dismissed.status_code == 200, dismissed.text
+    assert dismissed.json()["report"]["status"] == "dismissed"
+    assert dismissed.json()["message"]["moderation_status"] == "visible"
+    visible = client.get(client_path, headers=client_headers)
+    assert visible.status_code == 200
+    assert len(visible.json()["messages"]) == 2
+
+    with client.testing_sessions() as db:
+        from sqlalchemy import inspect, text
+
+        columns = {
+            column["name"]
+            for column in inspect(db.get_bind()).get_columns("workforce_message_reports")
+        }
+        assert "body" not in columns
+        audit_rows = db.execute(
+            text(
+                "SELECT details FROM audit_events "
+                "WHERE action IN ('workforce.service_message.reported', "
+                "'workforce.message_report.reviewed')"
+            )
+        ).all()
+    assert audit_rows
+
+
+def test_workforce_message_report_can_be_hidden_and_provider_role_is_exact(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    request_id, client_headers, provider_headers, admin_headers = _prepare_assigned_workforce_request(
+        client, verified_user_factory, "contractor"
+    )
+    client_path = f"/api/v1/me/workforce/service-requests/{request_id}/messages"
+    client_message = client.post(
+        client_path,
+        headers=client_headers,
+        json={"body": "Please confirm the approved site access plan."},
+    )
+    assert client_message.status_code == 201, client_message.text
+    accepted = client.post(
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/status",
+        headers=provider_headers,
+        json={"status": "accepted", "provider_terms_accepted": True},
+    )
+    assert accepted.status_code == 200, accepted.text
+
+    provider_report_path = (
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/messages/"
+        f"{client_message.json()['message']['id']}/reports"
+    )
+    report = client.post(
+        provider_report_path, headers=provider_headers,
+        json={"reason_code": "unsafe_content"},
+    )
+    assert report.status_code == 201, report.text
+    report_id = report.json()["report"]["id"]
+
+    wrong_role_token, _ = make_published_provider(
+        client, admin_headers, verified_user_factory, role_key="mason"
+    )
+    wrong_role_path = (
+        f"/api/v1/me/workforce/mason-service-requests/{request_id}/messages/"
+        f"{client_message.json()['message']['id']}/reports"
+    )
+    wrong_role = client.post(
+        wrong_role_path,
+        headers={"Authorization": f"Bearer {wrong_role_token}"},
+        json={"reason_code": "other"},
+    )
+    assert wrong_role.status_code in {403, 404}
+
+    hidden = client.post(
+        f"/api/v1/platform/workforce/message-reports/{report_id}/review",
+        headers=admin_headers,
+        json={"decision": "hide_message"},
+    )
+    assert hidden.status_code == 200, hidden.text
+    assert hidden.json()["report"]["status"] == "actioned"
+    assert hidden.json()["message"]["moderation_status"] == "hidden"
+
+    client_messages = client.get(client_path, headers=client_headers)
+    provider_messages = client.get(
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/messages",
+        headers=provider_headers,
+    )
+    assert client_messages.status_code == 200
+    assert provider_messages.status_code == 200
+    assert client_messages.json()["messages"] == []
+    assert provider_messages.json()["messages"] == []
+
+    retry_report = client.post(
+        provider_report_path, headers=provider_headers,
+        json={"reason_code": "other"},
+    )
+    assert retry_report.status_code == 409
+
+
+def test_workforce_message_report_rejects_invalid_reason_and_foreign_message(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    first_request, first_client_headers, _, _ = _prepare_assigned_workforce_request(
+        client, verified_user_factory, "contractor"
+    )
+    second_request, second_client_headers, _, _ = _prepare_assigned_workforce_request(
+        client, verified_user_factory, "contractor"
+    )
+    first_path = f"/api/v1/me/workforce/service-requests/{first_request}/messages"
+    second_path = f"/api/v1/me/workforce/service-requests/{second_request}/messages"
+    foreign_message = client.post(
+        second_path,
+        headers=second_client_headers,
+        json={"body": "Please confirm the second site delivery schedule."},
+    )
+    assert foreign_message.status_code == 201, foreign_message.text
+    foreign_id = foreign_message.json()["message"]["id"]
+
+    invalid = client.post(
+        f"{first_path}/{foreign_id}/reports",
+        headers=first_client_headers,
+        json={"reason_code": "some arbitrary free text"},
+    )
+    assert invalid.status_code == 422
+    foreign = client.post(
+        f"{first_path}/{foreign_id}/reports",
+        headers=first_client_headers,
+        json={"reason_code": "spam"},
+    )
+    assert foreign.status_code == 404
