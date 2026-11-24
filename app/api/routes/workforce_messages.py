@@ -340,7 +340,6 @@ def send_labour_workforce_message(
     return _send_provider_message("labour", request_id, payload, user, db)
 
 
-
 class WorkforceMessageReportCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
