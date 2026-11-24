@@ -919,7 +919,18 @@ def test_workforce_message_reports_are_participant_scoped_deduplicated_and_admin
                 "'workforce.message_report.reviewed')"
             )
         ).all()
-    assert audit_rows
+    import json
+
+    audit_details = [
+        json.loads(row[0]) if isinstance(row[0], str) else row[0]
+        for row in audit_rows
+    ]
+    assert audit_details
+    assert all(set(details).issubset({"status"}) for details in audit_details)
+    assert all(
+        "I have reviewed the scope and can begin tomorrow." not in str(details)
+        for details in audit_details
+    )
 
 
 def test_workforce_message_report_can_be_hidden_and_provider_role_is_exact(
