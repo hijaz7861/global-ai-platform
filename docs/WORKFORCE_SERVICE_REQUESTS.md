@@ -55,7 +55,6 @@ Set `WORKFORCE_MESSAGE_ENCRYPTION_KEY` in the runtime secret manager; never comm
 This is encryption at rest, not end-to-end encryption: the application process and authorized participants can access plaintext. Transport TLS, retention/deletion policy, moderation/reporting, abuse throttling, legal review and production data migration remain separate release gates. No Hatchable data was exported and the live application was not changed.
 
 
-
 ## Participant message reporting — Draft PR #77
 
 The dependent workforce messaging stack adds a participant report workflow:
