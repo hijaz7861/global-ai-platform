@@ -1000,3 +1000,19 @@ Draft PR #77 is stacked directly on PR #76 and adds the first participant-report
 This closes only a basic human report/hide workflow. Appeals, account sanctions, legally approved retention/deletion, attachment scanning, TLS and operational key restore remain open. Provider refunds, dispute adjudication and settlement, remaining Version 40 verticals, global commerce, portable runtime rehearsal, complete AI controls, authenticated MCP POST verification, full Hatchable export/import reconciliation, backup/restore, independent-host rehearsal, security review, branch protection and owner approval remain release gates.
 
 The canonical master remains `11ad7da84e73126a450cb0d194e4859b90263a4a` with migration head `0034_postgres_approval_nonces`. PR #77 does not alter master. The live Hatchable application remains untouched; no source rows/files were exported or copied, no external provider was enabled, and no production secret was changed. The full Definition of Done remains **NOT SATISFIED**.
+
+
+
+## Verified continuation — 2026-11-24, workforce moderation CI repair
+
+This addendum supersedes the earlier statement that PR #77 Run #959 was still in progress.
+
+- The canonical repository is still `hijaz7861/global-ai-platform`; default branch `master` remains at `11ad7da84e73126a450cb0d194e4859b90263a4a`. Direct inspection of `migrations/versions` confirms 34 revisions on master, with head `0034_postgres_approval_nonces`.
+- Current inventory at this snapshot: 83 branches and 33 open pull requests. PR #22 remains Draft/open/unmerged. The branch API reports `master.protected=false` and required status checks disabled; the separate protection endpoint returned 403, so no additional protection details could be verified.
+- PR #77 remains Draft/open/unmerged on `feat/hijaz-one-workforce-message-moderation-20261124`, stacked directly on PR #76 at base `b27f056d30d6241f683c2b14df3b8b7ba991846f`. Its final exact head is `29cec0ff4856a2eed203c8b73577969b7b08f873`; compare confirms 15 commits ahead and 0 behind its parent.
+- Initial exact-head Run #959 failed three tests. Two migration regression assertions still expected revision 0045 after migration 0046 had been added; the foreign-message test registered fixed email fixtures twice. Both were corrected without changing application behavior: migration tests now assert head 0046 and the report schema; the isolation test creates two requests for the same authenticated client and verifies that a message from the second request cannot be reported against the first.
+- Corrected exact-head GitHub Actions Run #960 completed successfully on `29cec0ff4856a2eed203c8b73577969b7b08f873`: all 5/5 jobs passed. Python 3.11, 3.12 and 3.13 each reported 457 passed / 27 skipped; PostgreSQL integration reported 27 passed; dependency audit/Bandit, Ruff, compilation and migration checks passed.
+- Review-thread and submitted-review lookups for PR #77 returned no entries. CI success is not owner approval. The dependency chain #74 → #75 → #76 → #77 remains entirely Draft/unmerged and requires ordered owner review.
+- PR #77 closes only participant reporting and a basic verified-admin dismiss/hide workflow. Appeals, account sanctions, legally approved retention/deletion, attachment scanning, formal disputes/refunds/settlement, key restore, remaining Version 40 verticals, portable runtime, global commerce, complete AI controls, authenticated MCP POST verification, full Hatchable export/import reconciliation, backup/restore, independent-host rehearsal, security review, branch protection and owner approval remain release gates.
+- The live Hatchable Version 40 application remains untouched; no data or files were exported or copied, no provider or production secret was enabled/changed, and no data was deleted. Full Definition of Done remains **NOT SATISFIED**.
+
