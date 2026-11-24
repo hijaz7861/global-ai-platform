@@ -53,3 +53,15 @@ python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 Set `WORKFORCE_MESSAGE_ENCRYPTION_KEY` in the runtime secret manager; never commit it or place it in a database backup. During key rotation, configure the new key as current and comma-separated old Fernet keys in `WORKFORCE_MESSAGE_PREVIOUS_ENCRYPTION_KEYS`. New writes use the current key and reads accept current/previous keys. Do not remove an old key until an approved re-encryption/retirement procedure has verified every retained row. Automated key retirement is not claimed by this PR.
 
 This is encryption at rest, not end-to-end encryption: the application process and authorized participants can access plaintext. Transport TLS, retention/deletion policy, moderation/reporting, abuse throttling, legal review and production data migration remain separate release gates. No Hatchable data was exported and the live application was not changed.
+
+
+
+## Participant message reporting — Draft PR #77
+
+The dependent workforce messaging stack adds a participant report workflow:
+
+- A client can report only a provider-authored message in that client's own assigned request. A contractor, mason or labour provider can report only a client-authored message for a request assigned to that exact published profile and active role.
+- Reports use a fixed reason-code allowlist and do not accept free-text descriptions. One participant can create at most one report per message.
+- A verified platform administrator can inspect the report queue and encrypted message context, then dismiss the report or hide the message. Hiding removes the message from both participant read APIs and marks all open reports for that message actioned.
+- Report rows contain references, reason/status and review timestamps only; they do not duplicate message bodies, phone numbers or email addresses. Audit records store status only.
+- This is a first moderation control. Appeals, account sanctions, retention/deletion policy, legal review, attachment scanning and formal service-dispute adjudication remain release gates.
