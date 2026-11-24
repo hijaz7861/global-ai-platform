@@ -983,3 +983,20 @@ This addendum records only current GitHub evidence and supersedes earlier workfo
 - Message reporting/moderation, a legally approved retention/deletion schedule, attachment scanning, DDoS protection, key escrow and restore rehearsal, complete provider payout/refund/dispute workflows, remaining verticals, global commerce, portable-host rehearsal, full Hatchable export/import reconciliation, and release security review remain incomplete.
 - The live Hatchable Version 40 application remains untouched. Its existing partial backup is not a complete export/import mechanism; no source rows or object bytes have been copied.
 - The full Definition of Done remains **NOT SATISFIED**. Do not merge, deploy, rename the repository, change production secrets, activate providers, purchase a domain or delete production data before all release gates and owner approval are complete.
+
+
+
+## Workforce message moderation continuation — 2026-11-24
+
+Draft PR #77 is stacked directly on PR #76 and adds the first participant-reporting and human-moderation slice. It must not be treated as merged or production-ready.
+
+- Adds Alembic revision `0046_workforce_moderation` after `0045_workforce_msg_encrypt`, with constrained message visibility and a report table containing references, fixed reason codes and review metadata only.
+- Client reporting is scoped to the request owner and the exact assigned provider's message. Contractor, mason and labour reporting requires the exact active role, assigned published profile and exact client counterpart. Self-reports, foreign-request messages, duplicate reports and free-text reasons are rejected.
+- Only a verified allowlisted platform administrator can inspect the queue or dismiss/hide a message. Hidden messages are omitted from both participant read APIs; open reports for a hidden message are marked actioned. Report/audit metadata never duplicates message content.
+- Regression tests cover ownership, exact-role/counterpart checks, duplicate and invalid report rejection, admin authorization, privacy-limited output, dismissal, hiding and audit redaction.
+- PR #77 final head at the time of this addendum is `c9de6683a76f31b6aaf29ed5381fa317c73f7ab1`. Exact-head GitHub Actions Run #959 is still in progress; no CI pass is claimed yet. Parent PR #76 Run #957 remains verified success (5/5 jobs).
+- The dependent chain is now #74 → #75 → #76 → #77. All four remain Draft/unmerged and have no submitted owner reviews or inline review threads in the inspected snapshots.
+
+This closes only a basic human report/hide workflow. Appeals, account sanctions, legally approved retention/deletion, attachment scanning, TLS and operational key restore remain open. Provider refunds, dispute adjudication and settlement, remaining Version 40 verticals, global commerce, portable runtime rehearsal, complete AI controls, authenticated MCP POST verification, full Hatchable export/import reconciliation, backup/restore, independent-host rehearsal, security review, branch protection and owner approval remain release gates.
+
+The canonical master remains `11ad7da84e73126a450cb0d194e4859b90263a4a` with migration head `0034_postgres_approval_nonces`. PR #77 does not alter master. The live Hatchable application remains untouched; no source rows/files were exported or copied, no external provider was enabled, and no production secret was changed. The full Definition of Done remains **NOT SATISFIED**.
