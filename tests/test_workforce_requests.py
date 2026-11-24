@@ -1008,17 +1008,41 @@ def test_workforce_message_report_rejects_invalid_reason_and_foreign_message(
     workforce_request_client, verified_user_factory
 ):
     client = workforce_request_client
-    first_request, first_client_headers, _, _ = _prepare_assigned_workforce_request(
+    first_request, first_client_headers, _, admin_headers = _prepare_assigned_workforce_request(
         client, verified_user_factory, "contractor"
     )
-    second_request, second_client_headers, _, _ = _prepare_assigned_workforce_request(
-        client, verified_user_factory, "contractor"
+    # Create a second request for the same authenticated client. This isolates
+    # message-to-request binding without registering duplicate fixture accounts.
+    from sqlalchemy import text
+
+    with client.testing_sessions() as db:
+        provider_profile_id = db.execute(
+            text(
+                "SELECT provider_profile_id FROM workforce_service_requests "
+                "WHERE id = :request_id"
+            ),
+            {"request_id": first_request},
+        ).scalar_one()
+
+    second_created = create_request(client, first_client_headers)
+    assert second_created.status_code == 201, second_created.text
+    second_request = second_created.json()["request"]["id"]
+    assert submit_fee(
+        client, first_client_headers, second_request, reference="BANK-REF-FOREIGN-0002"
+    ).status_code == 200
+    assert verify_fee(client, admin_headers, second_request).status_code == 200
+    assigned = client.post(
+        f"/api/v1/platform/workforce/service-requests/{second_request}/assign",
+        headers=admin_headers,
+        json={"provider_profile_id": provider_profile_id},
     )
+    assert assigned.status_code == 200, assigned.text
+
     first_path = f"/api/v1/me/workforce/service-requests/{first_request}/messages"
     second_path = f"/api/v1/me/workforce/service-requests/{second_request}/messages"
     foreign_message = client.post(
         second_path,
-        headers=second_client_headers,
+        headers=first_client_headers,
         json={"body": "Please confirm the second site delivery schedule."},
     )
     assert foreign_message.status_code == 201, foreign_message.text
