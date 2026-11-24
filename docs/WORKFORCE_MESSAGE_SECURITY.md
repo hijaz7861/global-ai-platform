@@ -27,7 +27,6 @@ For rotation, deploy the new key as current and place the old key(s) in `WORKFOR
 This is authenticated encryption at rest, not end-to-end encryption. Authorized application code and participants still receive plaintext. TLS, role/ownership authorization, moderation/reporting, retention/deletion, attachment scanning, legal review and source-data migration remain separate controls. Database-backed per-sender abuse throttling is implemented; it is not a substitute for moderation/reporting or network-level denial-of-service protection. No external messaging provider is enabled and no Hatchable data or live configuration is changed.
 
 
-
 ## Participant reporting and platform moderation — Draft PR #77
 
 - Either participant may report a message sent by the other participant on the same assigned service request. The client path is owner-scoped; provider paths require the exact active contractor, mason or labour entitlement and the assigned published profile.
