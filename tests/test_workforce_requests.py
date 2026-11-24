@@ -826,7 +826,6 @@ def test_workforce_contact_relay_rate_limits_sender_across_message_attempts(
     assert subjects[0] != client_headers["Authorization"]
 
 
-
 def test_workforce_message_reports_are_participant_scoped_deduplicated_and_admin_reviewable(
     workforce_request_client, verified_user_factory
 ):
