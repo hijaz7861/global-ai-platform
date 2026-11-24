@@ -25,3 +25,15 @@ For rotation, deploy the new key as current and place the old key(s) in `WORKFOR
 ## Security boundaries and open gates
 
 This is authenticated encryption at rest, not end-to-end encryption. Authorized application code and participants still receive plaintext. TLS, role/ownership authorization, moderation/reporting, retention/deletion, attachment scanning, legal review and source-data migration remain separate controls. Database-backed per-sender abuse throttling is implemented; it is not a substitute for moderation/reporting or network-level denial-of-service protection. No external messaging provider is enabled and no Hatchable data or live configuration is changed.
+
+
+
+## Participant reporting and platform moderation — Draft PR #77
+
+- Either participant may report a message sent by the other participant on the same assigned service request. The client path is owner-scoped; provider paths require the exact active contractor, mason or labour entitlement and the assigned published profile.
+- Reports use a fixed reason-code allowlist (spam, harassment, contact_sharing, scam_or_fraud, unsafe_content, other). There is no free-text report field, so reports do not create another channel for phone numbers, email addresses, URLs or identity documents.
+- A participant cannot report their own message. A unique message/reporter constraint prevents duplicate reports by the same participant. Reports reference the encrypted message row; the report table never copies message text or contact data.
+- Only a verified platform administrator configured in PLATFORM_ADMIN_EMAILS can read the moderation queue or review reports. The queue returns decrypted message context only to that administrator and omits participant user IDs and phone-verification fields.
+- An administrator can dismiss a report or hide its message. Hidden messages are omitted from both participant message-list APIs. Hiding one message marks all open reports for that message as actioned. Review operations are transaction-bound and write allowlisted audit events containing status only, never message bodies or report text.
+- This is a basic human moderation queue, not automated content classification, a complete appeals process, a legal adjudication workflow, or a retention/deletion policy. It does not scan attachments (attachments are not enabled), suspend accounts, refund fees, adjudicate service disputes, or enable external communications.
+- The queue requires the workforce message encryption key and fails closed when encryption is not configured. No message body is copied into report rows or audit metadata.
