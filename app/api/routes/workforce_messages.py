@@ -391,7 +391,17 @@ def _report_workforce_message(
         raise HTTPException(status_code=404, detail="Message not found")
     if message.sender_user_id == user.id:
         raise HTTPException(status_code=409, detail="You cannot report your own message")
-    if message.sender_side != reported_side:
+    if reported_side == "provider":
+        assigned_profile = db.get(WorkforceProfile, item.provider_profile_id)
+        expected_sender_user_id = (
+            assigned_profile.user_id if assigned_profile is not None else None
+        )
+    else:
+        expected_sender_user_id = item.client_user_id
+    if (
+        message.sender_side != reported_side
+        or message.sender_user_id != expected_sender_user_id
+    ):
         raise HTTPException(status_code=404, detail="Message not found")
     if message.moderation_status != "visible":
         raise HTTPException(status_code=409, detail="Message is no longer reportable")
