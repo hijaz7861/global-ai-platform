@@ -24,14 +24,14 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
 
     engine = create_engine(database_url)
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0046_workforce_moderation"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0047_workforce_message_appeals"
     table_names = set(inspect(engine).get_table_names())
     assert {
         "user_phone_verifications", "property_listings", "property_transactions", "property_payments",
         "education_settings", "education_student_profiles", "education_guardian_consents",
         "education_teacher_profiles", "education_courses", "education_course_enrollments",
         "education_course_materials", "workforce_profiles", "workforce_service_requests", "workforce_service_payments",
-        "workforce_service_messages", "workforce_message_reports",
+        "workforce_service_messages", "workforce_message_reports", "workforce_message_appeals",
     } <= table_names
     course_columns = {column["name"] for column in inspect(engine).get_columns("education_courses")}
     assert {"country_code", "city", "price_minor", "commission_bps"} <= course_columns
@@ -228,7 +228,7 @@ def test_workforce_message_encryption_migration_encrypts_existing_rows(tmp_path,
         version = connection.scalar(text("SELECT version_num FROM alembic_version"))
     engine.dispose()
 
-    assert version == "0046_workforce_moderation"
+    assert version == "0047_workforce_message_appeals"
     assert stored.startswith("fernet:v1:")
     with engine.connect() as connection:
         moderation_status = connection.scalar(
@@ -244,6 +244,20 @@ def test_workforce_message_encryption_migration_encrypts_existing_rows(tmp_path,
     assert moderation_status == "visible"
     assert {"message_id", "reporter_user_id", "reason_code", "status"} <= report_columns
     assert "body" not in report_columns
+    appeal_columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("workforce_message_appeals")
+    }
+    assert {
+        "message_id", "appellant_user_id", "reason_code", "status",
+        "reviewed_by_user_id", "reviewed_at", "created_at",
+    } <= appeal_columns
+    assert "body" not in appeal_columns
+    appeal_constraints = inspect(engine).get_unique_constraints("workforce_message_appeals")
+    assert any(
+        item["name"] == "uq_workforce_message_appeal_message_appellant"
+        for item in appeal_constraints
+    )
     assert plaintext not in stored
     token = stored[len("fernet:v1:"):].encode("ascii")
     assert Fernet(key.encode("ascii")).decrypt(token).decode("utf-8") == plaintext
