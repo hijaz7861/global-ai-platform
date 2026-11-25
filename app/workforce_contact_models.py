@@ -114,3 +114,56 @@ class WorkforceMessageReport(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
+
+
+
+class WorkforceMessageAppeal(Base):
+    """A bounded appeal by the original sender of a moderator-hidden message."""
+
+    __tablename__ = "workforce_message_appeals"
+    __table_args__ = (
+        CheckConstraint(
+            "reason_code IN ('decision_incorrect','context_missing','identity_misuse','other')",
+            name="ck_workforce_message_appeal_reason",
+        ),
+        CheckConstraint(
+            "status IN ('open','upheld','denied')",
+            name="ck_workforce_message_appeal_status",
+        ),
+        CheckConstraint(
+            "status = 'open' OR reviewed_at IS NOT NULL",
+            name="ck_workforce_message_appeal_reviewed_at",
+        ),
+        UniqueConstraint(
+            "message_id",
+            "appellant_user_id",
+            name="uq_workforce_message_appeal_message_appellant",
+        ),
+        Index("ix_workforce_message_appeals_status_created", "status", "created_at"),
+        Index("ix_workforce_message_appeals_message_created", "message_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    message_id: Mapped[str] = mapped_column(
+        ForeignKey("workforce_service_messages.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    appellant_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    reason_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), default="open", server_default="open", nullable=False
+    )
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
