@@ -1029,6 +1029,7 @@ This snapshot supersedes earlier PR #77 status notes where they conflict. It rec
 - PR #22 remains Draft/open/unmerged and its documentation branch is diverged from current master. Do not rebase it blindly; inspect the full documentation diff and preserve the architecture inventory.
 - PR #23 remains Draft/open/unmerged and GitHub reports `mergeable=false`. Its current head is `63b037cfc13ad2d121ca556934f6d2dbe44e6011`, 26 commits ahead and 23 behind master. Do not merge it independently.
 - PR #63 is the refreshed role-entitlement branch; PR #69 is the current-master platform integration branch. Both contain the same verified `0035_role_entitlements.py` blob (`59327d94dddefd23b827d8b32db55c34f4d063c7`). PR #69 is 58 commits ahead / 0 behind master.
+- PRs #24–#28 remain a separate stacked chain rooted at PR #23's older role branch (`13de2075119b4863d54e7c561bbb316ee210c9c2`): #24 → #25 → #26 → #27 → #28. They are not retargeted onto #63 or #69, even though the `0035_role_entitlements.py` blob is identical. Their exact-head CI runs are successful, but the dependency ancestry still requires ordered reconciliation before owner review; no rebase was performed in this run.
 - PR #20 remains Draft/unmerged and is 10 commits ahead / 0 behind master. Its exact-head Run #931 passed, but authenticated Streamable HTTP POST `initialize`, `tools/list` and `tools/call` remain unverified. Keep it blocked from merge until an authorized POST-capable protocol test succeeds.
 
 ### Exact-head workflow and review inventory
