@@ -1060,3 +1060,193 @@ def test_workforce_message_report_rejects_invalid_reason_and_foreign_message(
         json={"reason_code": "spam"},
     )
     assert foreign.status_code == 404
+
+
+
+def _hide_client_message_for_appeal(client, verified_user_factory):
+    request_id, client_headers, provider_headers, admin_headers = (
+        _prepare_assigned_workforce_request(client, verified_user_factory, "contractor")
+    )
+    message_response = client.post(
+        f"/api/v1/me/workforce/service-requests/{request_id}/messages",
+        headers=client_headers,
+        json={"body": "Please confirm the approved site access and work sequence."},
+    )
+    assert message_response.status_code == 201, message_response.text
+    message_id = message_response.json()["message"]["id"]
+
+    accepted = client.post(
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/status",
+        headers=provider_headers,
+        json={"status": "accepted", "provider_terms_accepted": True},
+    )
+    assert accepted.status_code == 200, accepted.text
+    report = client.post(
+        f"/api/v1/me/workforce/contractor-service-requests/{request_id}/messages/{message_id}/reports",
+        headers=provider_headers,
+        json={"reason_code": "unsafe_content"},
+    )
+    assert report.status_code == 201, report.text
+    report_id = report.json()["report"]["id"]
+    hidden = client.post(
+        f"/api/v1/platform/workforce/message-reports/{report_id}/review",
+        headers=admin_headers,
+        json={"decision": "hide_message"},
+    )
+    assert hidden.status_code == 200, hidden.text
+    assert hidden.json()["message"]["moderation_status"] == "hidden"
+    return request_id, message_id, client_headers, provider_headers, admin_headers
+
+
+def test_workforce_message_appeal_is_author_only_deduplicated_and_admin_reviewable(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    request_id, message_id, client_headers, provider_headers, admin_headers = (
+        _hide_client_message_for_appeal(client, verified_user_factory)
+    )
+    appeal_path = f"/api/v1/me/workforce/messages/{message_id}/appeals"
+
+    # The participant who reported the message is not its author and cannot appeal it.
+    wrong_actor = client.post(
+        appeal_path,
+        headers=provider_headers,
+        json={"reason_code": "context_missing"},
+    )
+    assert wrong_actor.status_code == 404
+
+    extra_fields = client.post(
+        appeal_path,
+        headers=client_headers,
+        json={"reason_code": "other", "explanation": "Please reveal hidden text"},
+    )
+    assert extra_fields.status_code == 422
+
+    created = client.post(
+        appeal_path,
+        headers=client_headers,
+        json={"reason_code": "context_missing"},
+    )
+    assert created.status_code == 201, created.text
+    appeal = created.json()["appeal"]
+    appeal_id = appeal["id"]
+    assert appeal["status"] == "open"
+    assert "body" not in appeal
+
+    duplicate = client.post(
+        appeal_path,
+        headers=client_headers,
+        json={"reason_code": "decision_incorrect"},
+    )
+    assert duplicate.status_code == 409
+
+    non_admin_queue = client.get(
+        "/api/v1/platform/workforce/message-appeals",
+        headers=provider_headers,
+    )
+    assert non_admin_queue.status_code == 403
+    queue = client.get(
+        "/api/v1/platform/workforce/message-appeals",
+        headers=admin_headers,
+    )
+    assert queue.status_code == 200, queue.text
+    entry = next(item for item in queue.json() if item["appeal"]["id"] == appeal_id)
+    assert entry["message"]["body"] == "Please confirm the approved site access and work sequence."
+    assert "appellant_user_id" not in entry["appeal"]
+    assert "sender_user_id" not in entry["message"]
+    assert "phone_e164" not in entry["message"]
+
+    denied = client.post(
+        f"/api/v1/platform/workforce/message-appeals/{appeal_id}/review",
+        headers=admin_headers,
+        json={"decision": "deny"},
+    )
+    assert denied.status_code == 200, denied.text
+    assert denied.json()["appeal"]["status"] == "denied"
+    assert denied.json()["message"]["moderation_status"] == "hidden"
+
+    appellant_status = client.get(
+        f"/api/v1/me/workforce/message-appeals/{appeal_id}",
+        headers=client_headers,
+    )
+    assert appellant_status.status_code == 200
+    assert appellant_status.json()["appeal"]["status"] == "denied"
+    foreign_status = client.get(
+        f"/api/v1/me/workforce/message-appeals/{appeal_id}",
+        headers=provider_headers,
+    )
+    assert foreign_status.status_code == 404
+    assert client.get(
+        f"/api/v1/me/workforce/service-requests/{request_id}/messages",
+        headers=client_headers,
+    ).json()["messages"] == []
+
+
+def test_workforce_message_appeal_can_restore_a_hidden_message(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    request_id, message_id, client_headers, _provider_headers, admin_headers = (
+        _hide_client_message_for_appeal(client, verified_user_factory)
+    )
+    created = client.post(
+        f"/api/v1/me/workforce/messages/{message_id}/appeals",
+        headers=client_headers,
+        json={"reason_code": "identity_misuse"},
+    )
+    assert created.status_code == 201, created.text
+    appeal_id = created.json()["appeal"]["id"]
+
+    restored = client.post(
+        f"/api/v1/platform/workforce/message-appeals/{appeal_id}/review",
+        headers=admin_headers,
+        json={"decision": "restore_message"},
+    )
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["appeal"]["status"] == "upheld"
+    assert restored.json()["message"]["moderation_status"] == "visible"
+
+    visible = client.get(
+        f"/api/v1/me/workforce/service-requests/{request_id}/messages",
+        headers=client_headers,
+    )
+    assert visible.status_code == 200
+    assert any(item["id"] == message_id for item in visible.json()["messages"])
+
+    repeated = client.post(
+        f"/api/v1/platform/workforce/message-appeals/{appeal_id}/review",
+        headers=admin_headers,
+        json={"decision": "deny"},
+    )
+    assert repeated.status_code == 409
+
+
+def test_workforce_message_appeal_expires_fourteen_days_after_moderation(
+    workforce_request_client, verified_user_factory
+):
+    client = workforce_request_client
+    _request_id, message_id, client_headers, _provider_headers, _admin_headers = (
+        _hide_client_message_for_appeal(client, verified_user_factory)
+    )
+    from sqlalchemy import text
+
+    with client.testing_sessions() as db:
+        db.execute(
+            text(
+                "UPDATE workforce_message_reports SET reviewed_at = :reviewed_at "
+                "WHERE message_id = :message_id AND status = 'actioned'"
+            ),
+            {
+                "reviewed_at": utc_now() - timedelta(days=15),
+                "message_id": message_id,
+            },
+        )
+        db.commit()
+
+    expired = client.post(
+        f"/api/v1/me/workforce/messages/{message_id}/appeals",
+        headers=client_headers,
+        json={"reason_code": "other"},
+    )
+    assert expired.status_code == 409
+    assert expired.json()["detail"] == "The message appeal window has expired"
