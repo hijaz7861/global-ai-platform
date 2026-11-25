@@ -1,11 +1,12 @@
 """Privacy-preserving internal contact relay for assigned workforce requests."""
 import re
+from datetime import timedelta, timezone
 from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -653,5 +654,231 @@ def review_workforce_message_report(
     db.refresh(report)
     return {
         "report": {"id": report.id, "status": report_status},
+        "message": {"id": message.id, "moderation_status": message.moderation_status},
+    }
+
+
+# A sender may appeal a moderator's hide decision once, within this fixed window.
+WORKFORCE_MESSAGE_APPEAL_WINDOW_DAYS = 14
+
+
+class WorkforceMessageAppealCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason_code: Literal[
+        "decision_incorrect",
+        "context_missing",
+        "identity_misuse",
+        "other",
+    ]
+
+
+class WorkforceMessageAppealReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["deny", "restore_message"]
+
+
+def _message_appeal_payload(appeal: WorkforceMessageAppeal) -> dict:
+    return {
+        "id": appeal.id,
+        "status": appeal.status,
+        "reason_code": appeal.reason_code,
+        "created_at": appeal.created_at,
+        "reviewed_at": appeal.reviewed_at,
+    }
+
+
+@router.post(
+    "/me/workforce/messages/{message_id}/appeals",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_workforce_message_appeal(
+    message_id: str,
+    payload: WorkforceMessageAppealCreate,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    """Allow only the author of a hidden message to appeal the hide decision."""
+    _require_verified_user(user)
+    message = db.scalar(
+        select(WorkforceServiceMessage)
+        .where(WorkforceServiceMessage.id == message_id)
+        .with_for_update()
+    )
+    # Do not reveal whether another participant's message exists.
+    if message is None or message.sender_user_id != user.id:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if message.moderation_status != "hidden":
+        raise HTTPException(status_code=409, detail="Only hidden messages can be appealed")
+
+    moderated_at = db.scalar(
+        select(func.max(WorkforceMessageReport.reviewed_at)).where(
+            WorkforceMessageReport.message_id == message.id,
+            WorkforceMessageReport.status == "actioned",
+        )
+    )
+    if moderated_at is None:
+        raise HTTPException(status_code=409, detail="No appealable moderation decision exists")
+    if moderated_at.tzinfo is None:
+        moderated_at = moderated_at.replace(tzinfo=timezone.utc)
+    if utc_now() > moderated_at + timedelta(days=WORKFORCE_MESSAGE_APPEAL_WINDOW_DAYS):
+        raise HTTPException(status_code=409, detail="The message appeal window has expired")
+
+    appeal = WorkforceMessageAppeal(
+        message_id=message.id,
+        appellant_user_id=user.id,
+        reason_code=payload.reason_code,
+        status="open",
+        created_at=utc_now(),
+    )
+    db.add(appeal)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="An appeal has already been submitted for this message",
+        ) from None
+
+    record_audit_event(
+        db,
+        actor_user_id=user.id,
+        organization_id=None,
+        action="workforce.service_message.appealed",
+        entity_type="workforce_message_appeal",
+        entity_id=appeal.id,
+        details={"status": "open"},
+    )
+    db.commit()
+    db.refresh(appeal)
+    return {"appeal": _message_appeal_payload(appeal)}
+
+
+@router.get("/me/workforce/message-appeals/{appeal_id}")
+def get_workforce_message_appeal(
+    appeal_id: str,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    _require_verified_user(user)
+    appeal = db.scalar(
+        select(WorkforceMessageAppeal).where(
+            WorkforceMessageAppeal.id == appeal_id,
+            WorkforceMessageAppeal.appellant_user_id == user.id,
+        )
+    )
+    if appeal is None:
+        raise HTTPException(status_code=404, detail="Message appeal not found")
+    return {"appeal": _message_appeal_payload(appeal)}
+
+
+@router.get("/platform/workforce/message-appeals")
+def list_workforce_message_appeals(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    appeal_status: Literal["open", "upheld", "denied"] = Query(default="open"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+) -> list[dict]:
+    _require_platform_admin(user)
+    _require_message_encryption()
+    rows = db.execute(
+        select(WorkforceMessageAppeal, WorkforceServiceMessage, WorkforceServiceRequest)
+        .join(
+            WorkforceServiceMessage,
+            WorkforceServiceMessage.id == WorkforceMessageAppeal.message_id,
+        )
+        .join(
+            WorkforceServiceRequest,
+            WorkforceServiceRequest.id == WorkforceServiceMessage.service_request_id,
+        )
+        .where(WorkforceMessageAppeal.status == appeal_status)
+        .order_by(
+            WorkforceMessageAppeal.created_at.asc(),
+            WorkforceMessageAppeal.id.asc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return [
+        {
+            "appeal": _message_appeal_payload(appeal),
+            "message": {
+                "id": message.id,
+                "body": message.body,
+                "moderation_status": message.moderation_status,
+                "created_at": message.created_at,
+            },
+            "request": {
+                "request_code": request.request_code,
+                "title": request.title,
+                "status": request.status,
+            },
+        }
+        for appeal, message, request in rows
+    ]
+
+
+@router.post("/platform/workforce/message-appeals/{appeal_id}/review")
+def review_workforce_message_appeal(
+    appeal_id: str,
+    payload: WorkforceMessageAppealReview,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    _require_platform_admin(user)
+    appeal = db.scalar(
+        select(WorkforceMessageAppeal)
+        .where(WorkforceMessageAppeal.id == appeal_id)
+        .with_for_update()
+    )
+    if appeal is None:
+        raise HTTPException(status_code=404, detail="Message appeal not found")
+    if appeal.status != "open":
+        raise HTTPException(status_code=409, detail="Message appeal has already been reviewed")
+
+    message = db.scalar(
+        select(WorkforceServiceMessage)
+        .where(WorkforceServiceMessage.id == appeal.message_id)
+        .with_for_update()
+    )
+    if message is None:
+        raise HTTPException(status_code=404, detail="Appealed message not found")
+    if message.moderation_status != "hidden":
+        raise HTTPException(status_code=409, detail="Appealed message is no longer hidden")
+
+    now = utc_now()
+    appeal.reviewed_by_user_id = user.id
+    appeal.reviewed_at = now
+    if payload.decision == "restore_message":
+        message.moderation_status = "visible"
+        appeal.status = "upheld"
+        record_audit_event(
+            db,
+            actor_user_id=user.id,
+            organization_id=None,
+            action="workforce.service_message.restored",
+            entity_type="workforce_service_message",
+            entity_id=message.id,
+            details={"status": "visible"},
+        )
+    else:
+        appeal.status = "denied"
+
+    record_audit_event(
+        db,
+        actor_user_id=user.id,
+        organization_id=None,
+        action="workforce.message_appeal.reviewed",
+        entity_type="workforce_message_appeal",
+        entity_id=appeal.id,
+        details={"status": appeal.status},
+    )
+    db.commit()
+    db.refresh(appeal)
+    return {
+        "appeal": {"id": appeal.id, "status": appeal.status},
         "message": {"id": message.id, "moderation_status": message.moderation_status},
     }
