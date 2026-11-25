@@ -1026,7 +1026,7 @@ This snapshot supersedes earlier PR #77 status notes where they conflict. It rec
 
 - Default branch remains `master` at `11ad7da84e73126a450cb0d194e4859b90263a4a`; its migration head remains `0034_postgres_approval_nonces`.
 - Current inventory after opening PR #78: **35 open pull requests and 84 branches**. The new branch is `feat/hijaz-one-workforce-message-appeals-20261125`.
-- PR #22 remains Draft/open/unmerged. Its branch is now 51 commits ahead and 23 behind current master; do not rebase this documentation branch blindly.
+- PR #22 remains Draft/open/unmerged. Before this addendum it was 51 commits ahead; this documentation commit makes it 52 commits ahead and 23 behind current master. Do not rebase this documentation branch blindly.
 - PR #23 remains Draft/open/unmerged and GitHub reports `mergeable=false`. Its current head is `63b037cfc13ad2d121ca556934f6d2dbe44e6011`, 26 commits ahead and 23 behind master. Do not merge it independently.
 - PR #63 is the refreshed role-entitlement branch; PR #69 is the current-master platform integration branch. Both contain the same verified `0035_role_entitlements.py` blob (`59327d94dddefd23b827d8b32db55c34f4d063c7`). PR #69 is 58 commits ahead / 0 behind master.
 - PR #20 remains Draft/unmerged and is 10 commits ahead / 0 behind master. Its exact-head Run #931 passed, but authenticated Streamable HTTP POST `initialize`, `tools/list` and `tools/call` remain unverified. Keep it blocked from merge until an authorized POST-capable protocol test succeeds.
