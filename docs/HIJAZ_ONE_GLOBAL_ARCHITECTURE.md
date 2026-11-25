@@ -1016,3 +1016,42 @@ This addendum supersedes the earlier statement that PR #77 Run #959 was still in
 - PR #77 closes only participant reporting and a basic verified-admin dismiss/hide workflow. Appeals, account sanctions, legally approved retention/deletion, attachment scanning, formal disputes/refunds/settlement, key restore, remaining Version 40 verticals, portable runtime, global commerce, complete AI controls, authenticated MCP POST verification, full Hatchable export/import reconciliation, backup/restore, independent-host rehearsal, security review, branch protection and owner approval remain release gates.
 - The live Hatchable Version 40 application remains untouched; no data or files were exported or copied, no provider or production secret was enabled/changed, and no data was deleted. Full Definition of Done remains **NOT SATISFIED**.
 
+
+
+## Verified continuation — 2026-11-25, workforce message appeals
+
+This snapshot supersedes earlier PR #77 status notes where they conflict. It records GitHub evidence only; it is not a production-readiness claim.
+
+### Canonical repository and open work
+
+- Default branch remains `master` at `11ad7da84e73126a450cb0d194e4859b90263a4a`; its migration head remains `0034_postgres_approval_nonces`.
+- Current inventory after opening PR #78: **35 open pull requests and 84 branches**. The new branch is `feat/hijaz-one-workforce-message-appeals-20261125`.
+- PR #22 remains Draft/open/unmerged. Its branch is now 51 commits ahead and 23 behind current master; do not rebase this documentation branch blindly.
+- PR #23 remains Draft/open/unmerged and GitHub reports `mergeable=false`. Its current head is `63b037cfc13ad2d121ca556934f6d2dbe44e6011`, 26 commits ahead and 23 behind master. Do not merge it independently.
+- PR #63 is the refreshed role-entitlement branch; PR #69 is the current-master platform integration branch. Both contain the same verified `0035_role_entitlements.py` blob (`59327d94dddefd23b827d8b32db55c34f4d063c7`). PR #69 is 58 commits ahead / 0 behind master.
+- PR #20 remains Draft/unmerged and is 10 commits ahead / 0 behind master. Its exact-head Run #931 passed, but authenticated Streamable HTTP POST `initialize`, `tools/list` and `tools/call` remain unverified. Keep it blocked from merge until an authorized POST-capable protocol test succeeds.
+
+### Exact-head workflow and review inventory
+
+- Exact-head workflow runs were found and completed successfully for open PRs #2, #3, #4, #10, #20, #24–#28, #43, #44, #48–#50 and #61–#78. PR #69's earlier Run #928 was cancelled; Run #929 is the successful exact-head run.
+- PR #22's latest change is documentation-only and marked `[skip ci]`; no new CI result is claimed for its latest head.
+- PR #23's current head has no associated PR workflow run in the inspected workflow-run lookup. Its previous run evidence must not be treated as exact-head evidence.
+- GitHub review-thread and submitted-review APIs returned **zero inline review threads and zero submitted reviews across all 35 open PRs**. No owner review is recorded. CI success is not human approval.
+- Branch-protection endpoint access returned HTTP 403 (`Resource not accessible by integration`); this run does not claim branch protection is configured or enforceable.
+
+### Workforce message appeal — PR #78
+
+- PR #78 is Draft/open/unmerged, stacked directly on PR #77's exact head `29cec0ff4856a2eed203c8b73577969b7b08f873`. Its final head is `11e94237582bd0943695a49eeea2be58f35a9e65`, 8 commits ahead / 0 behind its parent and 158 commits ahead / 0 behind master.
+- Adds migration `0047_workforce_message_appeals` after `0046_workforce_moderation`. The branch's migration inventory is a linear `0035`–`0047` sequence; master remains at `0034`.
+- Only the original sender of a hidden message may appeal, within 14 days of the hide decision. One appeal per message/appellant is enforced by a unique constraint. Reasons are allowlisted and extra/free-text data is rejected. Appeal records do not copy message bodies or contact fields.
+- Appellants can read only their own status. Only verified platform administrators can inspect the queue or decide an appeal. A human administrator can deny or uphold by restoring message visibility; the message is never restored automatically. Review and status-only audit records are transaction-bound.
+- Exact-head GitHub Actions Run [#961](https://github.com/hijaz7861/global-ai-platform/actions/runs/45675355698) completed SUCCESS on `11e94237582bd0943695a49eeea2be58f35a9e65`: all 5 jobs passed. Python 3.11/3.12/3.13 each reported 460 passed / 28 skipped; the dedicated PostgreSQL job reported 28 passed, applied migrations through 0047 and passed `alembic check`; dependency audit, Bandit, Ruff and compilation passed. Non-fatal existing test warnings remain (76–77 per Python job).
+- PRs #74–#78 form the workforce contact chain: relay, encryption, abuse throttling, moderation and appeals. All remain Draft/unmerged and require ordered owner review. PR #77 exact-head Run #960 passed; PR #78 does not make its parent chain merge-ready by itself.
+
+### Remaining release gates and safety
+
+- This appeal slice is not legal adjudication, account sanctions, refund/dispute resolution, retention/deletion policy, attachment scanning, automated classification, network-level DDoS protection or end-to-end encryption.
+- Full role/tenant/ownership review, all vertical integrations, portable runtime and independent-host rehearsal, global commerce and provider webhooks, AI approval/checkpoint/DLP controls, authenticated MCP POST verification, dependency/security review, branch governance, backup/restore, and complete Hatchable export/import reconciliation remain incomplete.
+- Hatchable Version 40 remains live and untouched. Its partial backup does not cover all 46 tables or object bytes and no import endpoint has been verified. No live rows/files were exported or copied.
+- No PR was merged, no deployment or production secret change occurred, no external provider was enabled, no paid service or domain was purchased, and no production data was deleted.
+- The complete Definition of Done remains **NOT SATISFIED**. Do not rename the repository or cut over from Hatchable until all release gates, reconciliation and owner approval are demonstrated.
