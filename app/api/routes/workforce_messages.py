@@ -23,7 +23,11 @@ from app.models import (
     WorkforceServiceRequest,
     utc_now,
 )
-from app.workforce_contact_models import WorkforceMessageReport, WorkforceServiceMessage
+from app.workforce_contact_models import (
+    WorkforceMessageAppeal,
+    WorkforceMessageReport,
+    WorkforceServiceMessage,
+)
 
 router = APIRouter(tags=["workforce contact relay"])
 
