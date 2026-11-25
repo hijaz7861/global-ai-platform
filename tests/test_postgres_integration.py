@@ -2094,3 +2094,37 @@ def test_postgres_workforce_message_rate_limit_serializes_concurrent_senders(
             AuthAttempt.subject_hash == subject_hash,
         ).count()
     assert attempts == 1
+
+
+
+def test_postgres_workforce_message_appeal_schema_has_constraints():
+    """The appeal migration must preserve its PostgreSQL keys and allowlists."""
+    from sqlalchemy import inspect
+
+    from app.db import SessionLocal
+
+    with SessionLocal() as db:
+        inspector = inspect(db.get_bind())
+        columns = {
+            column["name"]
+            for column in inspector.get_columns("workforce_message_appeals")
+        }
+        unique_constraints = inspector.get_unique_constraints("workforce_message_appeals")
+        foreign_keys = inspector.get_foreign_keys("workforce_message_appeals")
+        checks = inspector.get_check_constraints("workforce_message_appeals")
+
+    assert {
+        "message_id", "appellant_user_id", "reason_code", "status",
+        "reviewed_by_user_id", "reviewed_at", "created_at",
+    } <= columns
+    assert "body" not in columns
+    assert any(
+        item["name"] == "uq_workforce_message_appeal_message_appellant"
+        for item in unique_constraints
+    )
+    assert len(foreign_keys) == 3
+    assert {
+        "ck_workforce_message_appeal_reason",
+        "ck_workforce_message_appeal_status",
+        "ck_workforce_message_appeal_reviewed_at",
+    } <= {item["name"] for item in checks}
