@@ -36,3 +36,14 @@ This is authenticated encryption at rest, not end-to-end encryption. Authorized 
 - An administrator can dismiss a report or hide its message. Hidden messages are omitted from both participant message-list APIs. Hiding one message marks all open reports for that message as actioned. Review operations are transaction-bound and write allowlisted audit events containing status only, never message bodies or report text.
 - This is a basic human moderation queue, not automated content classification, a complete appeals process, a legal adjudication workflow, or a retention/deletion policy. It does not scan attachments (attachments are not enabled), suspend accounts, refund fees, adjudicate service disputes, or enable external communications.
 - The queue requires the workforce message encryption key and fails closed when encryption is not configured. No message body is copied into report rows or audit metadata.
+
+
+
+## Participant appeals — Draft PR #78
+
+- Only the original sender of a moderator-hidden message may appeal it. The endpoint returns not-found for other participants, avoiding message-existence disclosure.
+- Appeals must be filed within 14 days of the moderator hide decision. Only one appeal is accepted per message and appellant; the database enforces this with a unique constraint.
+- Appeal reasons are a fixed allowlist (decision_incorrect, context_missing, identity_misuse, other). Extra/free-text fields are rejected, and no message body or contact data is copied into an appeal record.
+- Appellants can read only their own appeal status. The verified platform-admin allowlist is required for the queue and decisions; the queue exposes decrypted message context only to an authorized admin and omits participant user IDs and phone-verification data.
+- A human administrator may deny an appeal or uphold it by restoring message visibility. A restore is transaction-bound and audited; a denial leaves the message hidden. Appeals never automatically restore content.
+- This is a bounded internal appeal path, not an external legal appeal, account-sanction process, refund workflow, service-dispute adjudication or retention/deletion policy. Attachments remain disabled and no external messaging provider is enabled.
