@@ -1114,7 +1114,7 @@ This snapshot supersedes earlier PR #77 status notes where they conflict. It rec
 - Marketing consent is separate from email/SMS/WhatsApp consent. Channel opt-in requires marketing opt-in; email requires verified email; SMS/WhatsApp require a provider-verified E.164 phone record no older than 30 days.
 - No email or phone is duplicated into engagement lead/consent records. Unsubscribe tokens are stored only as SHA-256 digests; unknown, expired and replayed tokens return the same 204 response and valid opt-out suppresses all channels.
 - No email, SMS, WhatsApp or AI provider is called. No follow-up is scheduled until the portable independent worker/scheduler is implemented.
-- Exact-head Actions Run #966 is still in progress at the time of this documentation update. Python lint/compile/migration steps and the dependency-audit job have completed successfully; the test matrix and PostgreSQL integration are not yet complete. Do not treat this as a passing run.
+- Exact-head Actions Run #966 failed on the prior head 7d5389ec4fed621b5da229a6ee839a20aaf4e9b7. The exact failure was confined to test fixtures: missing created_at/updated_at in the direct user inserts and a duplicate user_phone_verifications insert. Those fixtures were corrected; exact-head Run #969 is pending on b3fd527bb75667c86a20ff6447ae991f03329821. No passing CI claim is made for PR #80 until Run #969 completes.
 
 ### Remaining gaps and safety
 
