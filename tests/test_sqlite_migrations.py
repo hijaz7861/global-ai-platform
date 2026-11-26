@@ -369,7 +369,7 @@ def test_sqlite_customer_engagement_consent_events_are_append_only(tmp_path, mon
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
-    user_id, lead_id, event_id = str(uuid4()), str(uuid4()), str(uuid4())
+    user_id, lead_id = str(uuid4()), str(uuid4())
     with engine.begin() as connection:
         connection.execute(
             text("INSERT INTO users (id, email, password_hash) VALUES (:id, :email, 'test-hash')"),
