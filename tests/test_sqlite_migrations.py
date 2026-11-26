@@ -382,28 +382,28 @@ def test_sqlite_customer_engagement_consent_events_are_append_only(tmp_path, mon
         connection.execute(
             text(
                 "INSERT INTO customer_engagement_consent_events "
-                "(id, lead_id, user_id, channel, consent, policy_version, source) "
-                "VALUES (:id, :lead_id, :user_id, 'marketing', 1, 'test-v1', 'test')"
+                "(lead_id, user_id, channel, consent, policy_version, source) "
+                "VALUES (:lead_id, :user_id, 'marketing', 1, 'test-v1', 'test')"
             ),
-            {"id": event_id, "lead_id": lead_id, "user_id": user_id},
+            {"lead_id": lead_id, "user_id": user_id},
         )
 
     with pytest.raises(IntegrityError, match="append-only"):
         with engine.begin() as connection:
             connection.execute(
-                text("UPDATE customer_engagement_consent_events SET consent = 0 WHERE id = :id"),
-                {"id": event_id},
+                text("UPDATE customer_engagement_consent_events SET consent = 0 WHERE lead_id = :lead_id"),
+                {"lead_id": lead_id},
             )
     with pytest.raises(IntegrityError, match="append-only"):
         with engine.begin() as connection:
             connection.execute(
-                text("DELETE FROM customer_engagement_consent_events WHERE id = :id"),
-                {"id": event_id},
+                text("DELETE FROM customer_engagement_consent_events WHERE lead_id = :lead_id"),
+                {"lead_id": lead_id},
             )
 
     with engine.connect() as connection:
         assert connection.scalar(
-            text("SELECT consent FROM customer_engagement_consent_events WHERE id = :id"),
-            {"id": event_id},
-        ) is True
+            text("SELECT consent FROM customer_engagement_consent_events WHERE lead_id = :lead_id"),
+            {"lead_id": lead_id},
+        ) == 1
     engine.dispose()
