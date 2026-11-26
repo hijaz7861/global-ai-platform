@@ -217,8 +217,7 @@ def update_engagement_consent(
             issued_unsubscribe_token = _issue_unsubscribe_token(db, lead)
         elif not payload.consent:
             for channel in CONSENT_CHANNELS:
-                if current[channel]:
-                    _record_consent(db, lead, channel, False, "user_settings")
+                _record_consent(db, lead, channel, False, "user_settings")
             lead.status = "opted_out"
             lead.next_followup_at = None
             tokens = db.scalars(
