@@ -24,8 +24,14 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
     command.upgrade(config, "head")
 
     engine = create_engine(database_url)
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection, _record):
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0048_construction_labour_material_registers"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0048_construction_labour_mat"
     table_names = set(inspect(engine).get_table_names())
     assert {
         "user_phone_verifications", "property_listings", "property_transactions", "property_payments",
@@ -86,12 +92,6 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
     payment_indexes = inspect(engine).get_indexes("property_payments")
     assert any(item["name"] == "uq_property_listing_fee_payment" and item["unique"] for item in payment_indexes)
     assert any(item["name"] == "uq_property_transaction_payment" and item["unique"] for item in payment_indexes)
-
-    @event.listens_for(engine, "connect")
-    def enable_foreign_keys(connection, _record):
-        cursor = connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
 
     from app.models import (
         Account, ConstructionCashbookEntry, ConstructionClient, ConstructionLabourEntry,
@@ -315,7 +315,7 @@ def test_workforce_message_encryption_migration_encrypts_existing_rows(tmp_path,
         version = connection.scalar(text("SELECT version_num FROM alembic_version"))
     engine.dispose()
 
-    assert version == "0048_construction_labour_material_registers"
+    assert version == "0048_construction_labour_mat"
     assert stored.startswith("fernet:v1:")
     with engine.connect() as connection:
         moderation_status = connection.scalar(

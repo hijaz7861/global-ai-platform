@@ -90,7 +90,7 @@ Read-only inspection of the live HIJAZ ONE Version 40 PostgreSQL schema and sour
 
 ### Portable implementation
 
-The Draft implementation adds organization/project-scoped construction_labour_entries and construction_material_entries under migration 0048_construction_labour_material_registers, following the PR #78 chain at 0047_workforce_message_appeals.
+The Draft implementation adds organization/project-scoped construction_labour_entries and construction_material_entries under migration 0048_construction_labour_mat, following the PR #78 chain at 0047_workforce_message_appeals.
 
 - Source worker/date/count/days/rate and material/item/quantity/unit/rate/supplier/date fields are mapped into typed tenant-owned models.
 - Money is stored as integer PKR minor units; quantity and days use Python Decimal and ROUND_HALF_UP. Totals are calculated server-side, never accepted from the request.
@@ -106,3 +106,13 @@ The Draft implementation adds organization/project-scoped construction_labour_en
 Regression coverage includes Decimal rounding, server-computed totals, invalid/overflow numeric values, missing role/tenant isolation, project-creator/owner/admin access, audit PII minimization, composite tenant foreign keys, append-only enforcement, SQLite migration from empty database and PostgreSQL schema/integration.
 
 This PR is stacked on Draft PR #78 and must be reconciled after the role/vertical dependency chain is reviewed. It does not complete the construction vertical: tenant rate-book governance, supplier settlement, labour attendance/payroll, procurement integration, tax/FX, export/import reconciliation and production migration remain open. The live Hatchable Version 40 application remains untouched.
+
+
+### CI correction after Run #964
+
+The first exact-head CI exposed two independent portability defects before any data was touched:
+
+- PostgreSQL's standard Alembic version table uses VARCHAR(32); the initial revision identifier exceeded that limit. The migration file name remains descriptive, but the revision ID is now the 28-character `0048_construction_labour_mat`.
+- The SQLite migration test registered its foreign-key pragma listener after the first connection had already been opened. The listener is now registered immediately after engine creation, before schema inspection, so the composite tenant foreign keys are actually exercised rather than silently skipped.
+
+Run #964 is recorded as failed: PostgreSQL migration stopped at the Alembic revision-length check, and Python 3.11/3.13 exposed the SQLite foreign-key test-order defect. The corrected commit must receive its own exact-head CI; Run #964 is not a pass.
