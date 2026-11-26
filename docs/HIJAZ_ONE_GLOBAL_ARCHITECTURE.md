@@ -1056,3 +1056,39 @@ This snapshot supersedes earlier PR #77 status notes where they conflict. It rec
 - Hatchable Version 40 remains live and untouched. Its partial backup does not cover all 46 tables or object bytes and no import endpoint has been verified. No live rows/files were exported or copied.
 - No PR was merged, no deployment or production secret change occurred, no external provider was enabled, no paid service or domain was purchased, and no production data was deleted.
 - The complete Definition of Done remains **NOT SATISFIED**. Do not rename the repository or cut over from Hatchable until all release gates, reconciliation and owner approval are demonstrated.
+
+
+## 29. Verified engineering continuation — 2026-11-26
+
+### Canonical repository and release governance
+
+- Canonical repository remains `hijaz7861/global-ai-platform`, default branch `master`, at `11ad7da84e73126a450cb0d194e4859b90263a4a`.
+- Direct inspection of the master Git tree confirms the Alembic chain ends at `0034_postgres_approval_nonces`; no `0035_role_entitlements` migration is present on master. The candidate role/vertical/workforce chain remains Draft and outside master.
+- Master exact-SHA check-runs show the three Python jobs, PostgreSQL integration, dependency audit and Bandit all completed successfully on Run #44810369173. This is CI evidence for master only, not for Draft branches.
+- GitHub reports 35 open PRs and 84 branches. All 35 open PRs were inspected for current head/base, exact-head PR-triggered workflow evidence, submitted reviews and inline review threads. The review APIs returned zero submitted reviews and zero inline threads across those 35 PRs.
+- The `master` branch API object explicitly reports `protected=false`, protection disabled and required-status-check enforcement off. A separate branch-protection read endpoint returned HTTP 403; no settings were changed. This is a confirmed governance blocker.
+- PR #22 remains Draft/open/unmerged. This documentation update uses `[skip ci]`; no CI success is claimed for the resulting documentation-only head.
+
+### Role entitlement hardening consolidated into PR #69
+
+- Draft PR #69 remains based directly on current master and carries role entitlements plus supplier, transport, construction and property-commission foundations with migrations `0035_role_entitlements` through `0039_construction_cashbook`.
+- The previously separate PR #63 regression for global and organization-scoped uniqueness has now been incorporated into PR #69. It verifies one global and two independent organization-scoped student entitlements can coexist, duplicate applications in each exact scope return HTTP 409, and a non-member receives the non-disclosing HTTP 404 even when given an organization ID.
+- Exact-head Run #962 passed 5/5 jobs on `f23d902d7b6e04fde7f9cce26a588f6c05e724d8`: 422 passed / 22 skipped on each Python version and 22 PostgreSQL integration tests passed.
+- A follow-on concurrency fix updates `require_active_role()` to lock the exact active entitlement row with PostgreSQL `FOR UPDATE` and the role-definition row with `FOR SHARE`, refreshing ORM state before payment, age, enabled-state and expiry checks. Lock order matches administrator lifecycle transitions (entitlement then role).
+- Global and organization-scoped dependency-query regression tests assert the correct row locks and scope predicates. Exact-head Run [#963](https://github.com/hijaz7861/global-ai-platform/actions/runs/45855196934) passed all 5 jobs on `0d65de4b80081a5096a31bf446035fbd4099383e`: Python 3.11/3.12/3.13 each 424 passed / 22 skipped; PostgreSQL integration 22 passed; Ruff, compilation, migration checks, dependency audit and Bandit passed. Existing test warnings and legacy B108 suppression notices remain.
+- PR #69 is still Draft/open/unmerged, 60 commits ahead / 0 behind master, with no submitted owner review or inline review threads. CI does not authorize merge.
+
+### Exact-head status and unresolved dependencies
+
+- PR #20 remains Draft/unmerged at `2922fe4c1bbd2117041f92486ed0b9461250735b`; exact-head Run #931 passed 5/5 jobs, but authenticated Streamable HTTP POST `initialize`, `tools/list` and `tools/call` remain unverified. The earlier unauthenticated POST was intercepted by Vercel SSO; keep SSO protection enabled.
+- PR #23 remains a stale Draft branch with `mergeable=false` and no workflow run associated with its current head. Do not merge it; use the refreshed/consolidated role foundation in PR #69.
+- PRs #70–#73 add property, education, workforce-directory and hiring/service-request slices on top of older PR #69 ancestry. They require ordered reconciliation onto the refreshed PR #69 head before integration. Their previously recorded exact-head CI results do not apply to any future rebased heads.
+- PRs #74–#78 are a separate workforce contact-relay chain. PR #78 exact-head Run #961 passed 5/5 jobs on `11e94237582bd0943695a49eeea2be58f35a9e65` (460 passed / 28 skipped per Python version; PostgreSQL 28 passed). The entire chain remains Draft and requires ordered owner review. PR #69's Run #963 is a separate exact-head verification.
+
+### Hatchable and production boundary
+
+- The last read-only Version 40 inventory remains the 2026-11-18 snapshot: 46 tables, 25 active API functions, 75 files and 14 SQL migrations. The inspected admin-only backup covers only 17 table datasets and media metadata, not object bytes; no import endpoint was found.
+- No live Hatchable rows or files were exported, copied or modified. No staging import/reconciliation, backup restore or independent-host rehearsal is claimed.
+- No PR was merged, no production deployment or secret change occurred, no external payment/communication provider was enabled, and no domain or paid service was purchased.
+- Remaining release gates include full role/tenant/ownership review; construction labour/material registers and rate-book governance; supplier/provider settlement, refunds and disputes; complete remaining verticals; portable durable worker/scheduler and object storage; global commerce/webhooks; AI approval/checkpoint/DLP/evaluation; authenticated MCP POST verification; complete export/import manifest and reconciliation; backup/restore; independent-host rehearsal; security review; branch protection; and owner approval.
+- The full HIJAZ ONE Definition of Done remains **NOT SATISFIED**. Do not merge, deploy, change the live Hatchable application, migrate production data or rename the repository before every gate is demonstrated and the owner approves.
