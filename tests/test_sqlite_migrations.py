@@ -31,7 +31,7 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
         cursor.close()
 
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0048_construction_labour_mat"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0049_customer_engagement"
     table_names = set(inspect(engine).get_table_names())
     assert {
         "user_phone_verifications", "property_listings", "property_transactions", "property_payments",
@@ -39,6 +39,8 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
         "education_teacher_profiles", "education_courses", "education_course_enrollments",
         "education_course_materials", "workforce_profiles", "workforce_service_requests", "workforce_service_payments",
         "workforce_service_messages", "workforce_message_reports", "workforce_message_appeals",
+        "customer_engagement_leads", "customer_engagement_consent_events",
+        "customer_engagement_unsubscribe_tokens",
         "construction_labour_entries", "construction_material_entries",
     } <= table_names
     course_columns = {column["name"] for column in inspect(engine).get_columns("education_courses")}
@@ -315,7 +317,7 @@ def test_workforce_message_encryption_migration_encrypts_existing_rows(tmp_path,
         version = connection.scalar(text("SELECT version_num FROM alembic_version"))
     engine.dispose()
 
-    assert version == "0048_construction_labour_mat"
+    assert version == "0049_customer_engagement"
     assert stored.startswith("fernet:v1:")
     with engine.connect() as connection:
         moderation_status = connection.scalar(
