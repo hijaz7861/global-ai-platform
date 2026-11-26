@@ -2265,10 +2265,10 @@ def test_customer_engagement_consent_events_are_append_only_on_postgres():
         connection.execute(
             text(
                 "INSERT INTO customer_engagement_consent_events "
-                "(id, lead_id, user_id, channel, consent, policy_version, source) "
-                "VALUES (:id, :lead_id, :user_id, 'marketing', true, 'test-v1', 'test')"
+                "(lead_id, user_id, channel, consent, policy_version, source) "
+                "VALUES (:lead_id, :user_id, 'marketing', true, 'test-v1', 'test')"
             ),
-            {"id": event_id, "lead_id": lead_id, "user_id": user_id},
+            {"lead_id": lead_id, "user_id": user_id},
         )
 
     with pytest.raises(DBAPIError, match="append-only"):
