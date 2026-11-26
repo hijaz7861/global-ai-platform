@@ -272,9 +272,39 @@ def unsubscribe_engagement(
     db: Annotated[Session, Depends(get_db)],
 ) -> Response:
     digest = hashlib.sha256(payload.token.encode("utf-8")).hexdigest()
+    # Lock the lead before the token, matching update_engagement_consent().
+    # Locking the token first here can deadlock with a concurrent consent revocation
+    # that already holds the lead row and is waiting to suppress its tokens.
+    token_preview = db.scalar(
+        select(CustomerEngagementUnsubscribeToken).where(
+            CustomerEngagementUnsubscribeToken.token_hash == digest
+        )
+    )
+    now = utc_now()
+    if token_preview is None or token_preview.suppressed_at is not None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    preview_expiry = token_preview.expires_at
+    if preview_expiry.tzinfo is None:
+        preview_expiry = preview_expiry.replace(tzinfo=timezone.utc)
+    if preview_expiry <= now:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    lead = db.scalar(
+        select(CustomerEngagementLead)
+        .where(CustomerEngagementLead.id == token_preview.lead_id)
+        .with_for_update()
+    )
+    if lead is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # Re-read and lock the token only after the lead lock. Its suppression and
+    # expiry state may have changed since the non-locking preview read.
     token = db.scalar(
         select(CustomerEngagementUnsubscribeToken)
-        .where(CustomerEngagementUnsubscribeToken.token_hash == digest)
+        .where(
+            CustomerEngagementUnsubscribeToken.token_hash == digest,
+            CustomerEngagementUnsubscribeToken.lead_id == lead.id,
+        )
         .with_for_update()
     )
     now = utc_now()
@@ -284,14 +314,6 @@ def unsubscribe_engagement(
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at <= now:
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    lead = db.scalar(
-        select(CustomerEngagementLead)
-        .where(CustomerEngagementLead.id == token.lead_id)
-        .with_for_update()
-    )
-    if lead is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     for channel in CONSENT_CHANNELS:
