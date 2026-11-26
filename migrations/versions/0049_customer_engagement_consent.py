@@ -46,7 +46,7 @@ def upgrade() -> None:
 
     op.create_table(
         "customer_engagement_consent_events",
-        sa.Column("id", sa.String(36), primary_key=True),
+        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("lead_id", sa.String(36), sa.ForeignKey("customer_engagement_leads.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("user_id", sa.String(36), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("channel", sa.String(16), nullable=False),
@@ -62,7 +62,7 @@ def upgrade() -> None:
     op.create_index(
         "ix_customer_engagement_consent_lead_channel_created",
         "customer_engagement_consent_events",
-        ["lead_id", "channel", "created_at"],
+        ["lead_id", "channel", "created_at", "id"],
     )
     op.create_index(
         "ix_customer_engagement_consent_user_created",
