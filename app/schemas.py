@@ -1347,3 +1347,73 @@ class PropertyListingReviewRequest(BaseModel):
 
 class PropertySaleConfirmRequest(BaseModel):
     final_sale_price_minor: int = Field(gt=0, le=9_000_000_000_000_000)
+
+
+class ConstructionLabourEntryCreate(BaseModel):
+    worker_name: str = Field(min_length=1, max_length=140)
+    work_date: date | None = None
+    worker_count: int = Field(default=1, ge=1, le=10000, strict=True)
+    days: Decimal = Field(default=Decimal("1"), gt=0, max_digits=8, decimal_places=2)
+    daily_rate_minor: int = Field(default=0, ge=0, le=9_000_000_000_000_000, strict=True)
+    notes: str | None = Field(default=None, max_length=500)
+
+    @field_validator("worker_name", "notes")
+    @classmethod
+    def normalize_labour_text(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value is not None else None
+        if value is not None and not normalized:
+            raise ValueError("Labour text fields must not be blank")
+        return normalized
+
+
+class ConstructionLabourEntryResponse(BaseModel):
+    id: str
+    organization_id: str
+    project_id: str
+    created_by_user_id: str
+    worker_name: str
+    work_date: date
+    worker_count: int
+    days: Decimal
+    daily_rate_minor: int
+    total_amount_minor: int
+    currency: str
+    notes: str | None
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ConstructionMaterialEntryCreate(BaseModel):
+    item_name: str = Field(min_length=1, max_length=160)
+    quantity: Decimal = Field(gt=0, max_digits=12, decimal_places=3)
+    unit: str = Field(min_length=1, max_length=30)
+    unit_price_minor: int = Field(default=0, ge=0, le=9_000_000_000_000_000, strict=True)
+    supplier: str | None = Field(default=None, max_length=160)
+    entry_date: date | None = None
+    notes: str | None = Field(default=None, max_length=500)
+
+    @field_validator("item_name", "unit", "supplier", "notes")
+    @classmethod
+    def normalize_material_text(cls, value: str | None) -> str | None:
+        normalized = value.strip() if value is not None else None
+        if value is not None and not normalized:
+            raise ValueError("Material text fields must not be blank")
+        return normalized
+
+
+class ConstructionMaterialEntryResponse(BaseModel):
+    id: str
+    organization_id: str
+    project_id: str
+    created_by_user_id: str
+    item_name: str
+    quantity: Decimal
+    unit: str
+    unit_price_minor: int
+    total_amount_minor: int
+    supplier: str | None
+    entry_date: date
+    currency: str
+    notes: str | None
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)

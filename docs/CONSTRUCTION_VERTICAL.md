@@ -75,3 +75,44 @@ This is a project cashbook posting slice, not bank integration, payment collecti
 ## Concurrency hardening in the refreshed integration
 
 Project-row locks serialize BOQ writes, project lifecycle transitions, quote snapshot creation and quote send/decision against concurrent project changes. Quote send/decision also lock the tenant- and project-scoped quote row. Cashbook posting locks the project, selected accounts and configured accounting-period rows. Read-only project/quote queries do not request write locks. PostgreSQL-dialect regression tests verify tenant predicates and `FOR UPDATE`; SQLite intentionally does not emulate PostgreSQL row-lock semantics.
+
+
+## Draft PR #79 — Project labour and material registers
+
+### Verified Version 40 source contract
+
+Read-only inspection of the live HIJAZ ONE Version 40 PostgreSQL schema and source files confirms:
+
+- labour_entries: project_id, worker_name, work_date, worker_count, days NUMERIC(8,2), daily_rate NUMERIC(14,2), total_amount NUMERIC(14,2), notes, created_at.
+- material_entries: project_id, item_name, quantity NUMERIC(12,3), unit, unit_price NUMERIC(14,2), total_amount NUMERIC(14,2), supplier, entry_date, notes, created_at.
+- The source api/management.js is admin-only. GET lists the two registers; POST creates them. It has no labour/material update or delete action. The source tables are global and do not enforce organization ownership.
+- The source uses JavaScript Number arithmetic and stores decimal PKR amounts. Those semantics are not copied.
+
+### Portable implementation
+
+The Draft implementation adds organization/project-scoped construction_labour_entries and construction_material_entries under migration 0048_construction_labour_mat, following the PR #78 chain at 0047_workforce_message_appeals.
+
+- Source worker/date/count/days/rate and material/item/quantity/unit/rate/supplier/date fields are mapped into typed tenant-owned models.
+- Money is stored as integer PKR minor units; quantity and days use Python Decimal and ROUND_HALF_UP. Totals are calculated server-side, never accepted from the request.
+- Composite (project_id, organization_id) foreign keys prevent cross-tenant references.
+- All routes require organization membership and an active construction-provider entitlement. Because worker names and supplier labels are private project records, create/list access is further restricted to the project creator or organization owner/admin.
+- The source exposes no edit/delete action; the portable register is append-only with PostgreSQL and SQLite update/delete triggers. Corrections are not silently overwritten.
+- Audit events record project/date/count/quantity/amount metadata but intentionally omit worker names and supplier labels.
+- No automatic journal posting is performed: the source labour/material tables are operational registers, separate from the source transactions table. Automatic accounting treatment remains a separately reviewed workflow.
+- No identity documents, worker phone numbers, attachments, or live source rows are copied.
+
+### Tests and release boundary
+
+Regression coverage includes Decimal rounding, server-computed totals, invalid/overflow numeric values, missing role/tenant isolation, project-creator/owner/admin access, audit PII minimization, composite tenant foreign keys, append-only enforcement, SQLite migration from empty database and PostgreSQL schema/integration.
+
+This PR is stacked on Draft PR #78 and must be reconciled after the role/vertical dependency chain is reviewed. It does not complete the construction vertical: tenant rate-book governance, supplier settlement, labour attendance/payroll, procurement integration, tax/FX, export/import reconciliation and production migration remain open. The live Hatchable Version 40 application remains untouched.
+
+
+### CI correction after Run #964
+
+The first exact-head CI exposed two independent portability defects before any data was touched:
+
+- PostgreSQL's standard Alembic version table uses VARCHAR(32); the initial revision identifier exceeded that limit. The migration file name remains descriptive, but the revision ID is now the 28-character `0048_construction_labour_mat`.
+- The SQLite migration test registered its foreign-key pragma listener after the first connection had already been opened. The listener is now registered immediately after engine creation, before schema inspection, so the composite tenant foreign keys are actually exercised rather than silently skipped.
+
+Run #964 is recorded as failed: PostgreSQL migration stopped at the Alembic revision-length check, and Python 3.11/3.13 exposed the SQLite foreign-key test-order defect. The corrected commit must receive its own exact-head CI; Run #964 is not a pass.

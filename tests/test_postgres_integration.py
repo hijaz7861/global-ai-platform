@@ -2128,3 +2128,115 @@ def test_postgres_workforce_message_appeal_schema_has_constraints():
         "ck_workforce_message_appeal_status",
         "ck_workforce_message_appeal_reviewed_at",
     } <= {item["name"] for item in checks}
+
+
+
+def test_postgres_construction_labour_material_registers_enforce_tenant_keys_and_append_only():
+    from decimal import Decimal
+    from sqlalchemy import inspect
+    from sqlalchemy.orm import sessionmaker
+
+    from app.models import (
+        ConstructionClient, ConstructionLabourEntry, ConstructionMaterialEntry,
+        ConstructionProject, Organization, User, utc_now,
+    )
+
+    suffix = uuid4().hex
+    engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    try:
+        with factory() as db:
+            user = User(email=f"postgres-construction-register-{suffix}@example.com", password_hash="test-hash")
+            org_a = Organization(name=f"Construction Register A {suffix[:8]}")
+            org_b = Organization(name=f"Construction Register B {suffix[:8]}")
+            db.add_all([user, org_a, org_b])
+            db.flush()
+            client_a = ConstructionClient(
+                organization_id=org_a.id, created_by_user_id=user.id, display_name="Register A"
+            )
+            db.add(client_a)
+            db.flush()
+            project_a = ConstructionProject(
+                organization_id=org_a.id, client_id=client_a.id, created_by_user_id=user.id,
+                title="Register project A", work_type="grey_structure", contract_type="labour_material",
+                contract_amount_minor=100000, currency="PKR", status="approved",
+            )
+            db.add(project_a)
+            db.flush()
+            labour = ConstructionLabourEntry(
+                organization_id=org_a.id, project_id=project_a.id, created_by_user_id=user.id,
+                worker_name="PostgreSQL test crew", work_date=utc_now().date(), worker_count=2,
+                days=Decimal("1.50"), daily_rate_minor=12000, total_amount_minor=36000, currency="PKR",
+            )
+            material = ConstructionMaterialEntry(
+                organization_id=org_a.id, project_id=project_a.id, created_by_user_id=user.id,
+                item_name="Cement", quantity=Decimal("1.250"), unit="bag",
+                unit_price_minor=500, total_amount_minor=625, entry_date=utc_now().date(), currency="PKR",
+            )
+            db.add_all([labour, material])
+            db.commit()
+            labour_id, material_id = labour.id, material.id
+            project_a_id, user_id, org_b_id = project_a.id, user.id, org_b.id
+
+        with factory() as db:
+            db.add(ConstructionLabourEntry(
+                organization_id=org_b_id, project_id=project_a_id, created_by_user_id=user_id,
+                worker_name="Cross tenant", work_date=utc_now().date(), worker_count=1,
+                days=Decimal("1.00"), daily_rate_minor=10, total_amount_minor=10, currency="PKR",
+            ))
+            with pytest.raises(DBAPIError):
+                db.flush()
+            db.rollback()
+            db.add(ConstructionMaterialEntry(
+                organization_id=org_b_id, project_id=project_a_id, created_by_user_id=user_id,
+                item_name="Cross tenant", quantity=Decimal("1.000"), unit="bag",
+                unit_price_minor=10, total_amount_minor=10, entry_date=utc_now().date(), currency="PKR",
+            ))
+            with pytest.raises(DBAPIError):
+                db.flush()
+            db.rollback()
+
+        with pytest.raises(DBAPIError, match="construction_labour_entries are append-only"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("UPDATE construction_labour_entries SET worker_name = 'tampered' WHERE id = :id"),
+                    {"id": labour_id},
+                )
+        with pytest.raises(DBAPIError, match="construction_labour_entries are append-only"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("DELETE FROM construction_labour_entries WHERE id = :id"),
+                    {"id": labour_id},
+                )
+        with pytest.raises(DBAPIError, match="construction_material_entries are append-only"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("UPDATE construction_material_entries SET item_name = 'tampered' WHERE id = :id"),
+                    {"id": material_id},
+                )
+        with pytest.raises(DBAPIError, match="construction_material_entries are append-only"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("DELETE FROM construction_material_entries WHERE id = :id"),
+                    {"id": material_id},
+                )
+
+        inspector = inspect(engine)
+        for table in ("construction_labour_entries", "construction_material_entries"):
+            foreign_keys = inspector.get_foreign_keys(table)
+            assert any(
+                item["constrained_columns"] == ["project_id", "organization_id"]
+                for item in foreign_keys
+            )
+        with engine.connect() as connection:
+            trigger_names = set(connection.execute(text(
+                "SELECT tgname FROM pg_trigger WHERE NOT tgisinternal "
+                "AND tgrelid IN ('construction_labour_entries'::regclass, "
+                "'construction_material_entries'::regclass)"
+            )).scalars())
+        assert {
+            "trg_construction_labour_no_update", "trg_construction_labour_no_delete",
+            "trg_construction_material_no_update", "trg_construction_material_no_delete",
+        } <= trigger_names
+    finally:
+        engine.dispose()
