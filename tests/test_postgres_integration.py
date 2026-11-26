@@ -2240,3 +2240,51 @@ def test_postgres_construction_labour_material_registers_enforce_tenant_keys_and
         } <= trigger_names
     finally:
         engine.dispose()
+
+
+def test_customer_engagement_consent_events_are_append_only_on_postgres():
+    from app.db import engine
+
+    suffix = uuid4().hex
+    user_id, lead_id, event_id = str(uuid4()), str(uuid4()), str(uuid4())
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO users (id, email, password_hash) "
+                "VALUES (:id, :email, 'test-hash')"
+            ),
+            {"id": user_id, "email": f"postgres-engagement-{suffix}@example.com"},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO customer_engagement_leads (id, user_id, interest_text) "
+                "VALUES (:id, :user_id, 'PostgreSQL consent regression')"
+            ),
+            {"id": lead_id, "user_id": user_id},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO customer_engagement_consent_events "
+                "(id, lead_id, user_id, channel, consent, policy_version, source) "
+                "VALUES (:id, :lead_id, :user_id, 'marketing', true, 'test-v1', 'test')"
+            ),
+            {"id": event_id, "lead_id": lead_id, "user_id": user_id},
+        )
+
+    with pytest.raises(DBAPIError, match="append-only"):
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE customer_engagement_consent_events SET consent = false WHERE id = :id"),
+                {"id": event_id},
+            )
+    with pytest.raises(DBAPIError, match="append-only"):
+        with engine.begin() as connection:
+            connection.execute(
+                text("DELETE FROM customer_engagement_consent_events WHERE id = :id"),
+                {"id": event_id},
+            )
+    with engine.connect() as connection:
+        assert connection.scalar(
+            text("SELECT consent FROM customer_engagement_consent_events WHERE id = :id"),
+            {"id": event_id},
+        ) is True
