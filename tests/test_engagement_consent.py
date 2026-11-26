@@ -32,13 +32,17 @@ def _seed_phone(sessions, email: str, *, verified_at=None, phone="+923001234567"
     with sessions() as db:
         user = db.scalar(select(User).where(User.email == email))
         assert user is not None
-        db.add(
-            UserPhoneVerification(
+        verification = db.get(UserPhoneVerification, user.id)
+        if verification is None:
+            verification = UserPhoneVerification(
                 user_id=user.id,
                 phone_e164=phone,
                 verified_at=verified_at or utc_now(),
             )
-        )
+            db.add(verification)
+        else:
+            verification.phone_e164 = phone
+            verification.verified_at = verified_at or utc_now()
         db.commit()
 
 
