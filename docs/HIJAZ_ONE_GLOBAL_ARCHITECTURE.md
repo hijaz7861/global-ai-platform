@@ -1124,3 +1124,37 @@ This snapshot supersedes earlier PR #77 status notes where they conflict. It rec
 - Master remains 11ad7da84e73126a450cb0d194e4859b90263a4a with migration head 0034_postgres_approval_nonces; the new 0049 migration exists only on the Draft stack.
 - No PR was merged, no deployment or secret change occurred, no external provider was enabled, no paid service or domain was purchased, no live Hatchable file/schema/row was changed, and no production data was exported or deleted.
 - The full HIJAZ ONE Definition of Done remains NOT SATISFIED.
+
+## 31. Dependency and migration reconciliation audit — 2026-11-26
+
+### Canonical master and migration graph
+
+- Repository default branch is master at 11ad7da84e73126a450cb0d194e4859b90263a4a. The master tree contains migration 0034_postgres_approval_nonces and does not contain 0035_role_entitlements.
+- Draft PR #69 currently carries the refreshed role-entitlement foundation with migration 0035_role_entitlements. Draft PR #68 independently carries migration 0035_ai_agent_checkpoints, also directly after 0034. These two revision IDs collide. Neither branch may be merged independently as-is; the checkpoint migration must be reconciled onto the final linear platform migration head (currently 0049 on the PR80 stack) and re-tested.
+- PR #68 exact-head Run #930 passed 5/5 on 405d9abfe07af70385b70f6703cc8b92e76702dd, but that CI result does not resolve the migration collision or prove compatibility with the role/vertical chain.
+
+### Role and vertical stack ancestry
+
+- Refreshed PR #69 head is 0d65de4b80081a5096a31bf446035fbd4099383e. The older PR #70 property branch was based on 12786917b11ee8f0e5a080aecb6bf7e9ef72fb46. Comparing current PR #69 head to PR #70 head b97648dadfecb3761c4ac300c1cc0da3205ae433 reports 9 commits ahead / 2 behind. The PR #70–#80 stack therefore does not automatically include the latest PR #69 role-lock changes. Ordered ancestry reconciliation is required before any owner review or merge.
+- PR #79 construction registers passed exact-head Run #965 (5/5) on ed408707b307bbac04b03c218100ade16123ae98. PR #80 customer-engagement consent is stacked on #79 at b3fd527bb75667c86a20ff6447ae991f03329821; it remains Draft.
+- PR #80 Run #966 failed on the earlier head due to test-fixture defects (missing user timestamps and duplicate phone-verification insert). Those fixtures were corrected; exact-head Run #969 is pending. Do not count #966 as a pass or #969 as complete until all jobs finish.
+
+### Portable runtime candidates
+
+- PR #61 database-coordinated maintenance scheduler: exact-head Run #905 passed 5/5 on 61ba169515e92bad87e28431b149ca7cb0a11e0d. Relative to current master it is 30 commits ahead / 2 behind. Its code and tests require integration/revalidation on the current platform branch.
+- PR #62 local and S3-compatible object storage adapters: exact-head Run #906 passed 5/5 on 743ef9942ebfa6369b232f7825ce5684f9063b7f. Relative to current master it is 5 commits ahead / 2 behind. It remains a separate Draft and is not yet part of the current vertical stack.
+- Neither #61 nor #62 has been merged or revalidated against the new role/vertical migrations. Existing exact-head CI is evidence only for those recorded commits.
+
+### Current inventory and review state
+
+- Repository search returned 37 open PRs and 86 branches. The 20 HIJAZ ONE feature branches were enumerated; no branch was deleted.
+- Review-thread APIs returned no inline threads for PRs #61, #62, #68, #79 or #80. No owner approval was observed for the new customer-engagement slice.
+- PR #20 remains Draft; its exact-head CI does not replace authenticated Streamable HTTP POST initialize/tools/list/tools/call verification.
+- PR #23 remains stale/unmergeable. PR #22 remains Draft/unmerged and this architecture documentation branch is still diverged from current master.
+
+### Release gates and safety
+
+- Master branch metadata remains unprotected; no protection setting was changed.
+- Hatchable Version 40 was inventoried read-only only. No live files, schema, rows, credentials, media objects or backup were changed or copied.
+- No PR was merged, no deployment occurred, no secret was changed, no provider was enabled, no paid service or domain was purchased, and no production data was deleted.
+- The full HIJAZ ONE Definition of Done remains NOT SATISFIED. The role/vertical stack, migration collision, portable runtime integration, global commerce, AI controls, export/import reconciliation, backup/restore, independent-host rehearsal, security review, branch governance and owner approval remain open.
