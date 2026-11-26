@@ -1642,3 +1642,235 @@ def test_postgres_construction_cashbook_enforces_project_and_journal_tenant_keys
                 )
     finally:
         engine.dispose()
+
+
+
+def test_postgres_property_listing_and_bilateral_sale_workflow(
+    monkeypatch, verified_user_factory
+):
+    """Exercise property migrations and row-lock state transitions on PostgreSQL."""
+    from sqlalchemy import select
+
+    from app.core.config import settings
+    from app.db import SessionLocal
+    from app.models import PropertyPayment, PropertyTransaction, User, UserPhoneVerification, utc_now
+
+    suffix = uuid4().hex[:10]
+    seller_email = f"property-seller-{suffix}@example.com"
+    buyer_email = f"property-buyer-{suffix}@example.com"
+    admin_email = f"property-admin-{suffix}@example.com"
+    monkeypatch.setattr(settings, "platform_admin_emails", admin_email)
+
+    with TestClient(app) as client:
+        seller_token = verified_user_factory(client, seller_email)
+        buyer_token = verified_user_factory(client, buyer_email)
+        admin_token = verified_user_factory(client, admin_email)
+        seller_headers = {"Authorization": f"Bearer {seller_token}"}
+        buyer_headers = {"Authorization": f"Bearer {buyer_token}"}
+        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+        with SessionLocal() as db:
+            seller = db.scalar(select(User).where(User.email == seller_email))
+            assert seller is not None
+            db.add(UserPhoneVerification(
+                user_id=seller.id, phone_e164="+923001234567", verified_at=utc_now()
+            ))
+            db.commit()
+
+        created = client.post(
+            "/api/v1/me/property-listings",
+            headers=seller_headers,
+            json={
+                "property_type": "plot", "title": "PostgreSQL Test Plot",
+                "city": "Lahore", "country": "Pakistan", "area_value": "5.00",
+                "area_unit": "marla", "asking_price_minor": 5000000,
+                "dispute_status": "unknown",
+            },
+        )
+        assert created.status_code == 201, created.text
+        listing_id = created.json()["listing"]["id"]
+        listing_payment_id = created.json()["listing_fee_payment"]["id"]
+        submitted = client.post(
+            f"/api/v1/me/property-payments/{listing_payment_id}/submit",
+            headers=seller_headers,
+            json={"payment_method": "bank_transfer", "payment_reference": "PG-PROPERTY-LISTING-01"},
+        )
+        assert submitted.status_code == 200, submitted.text
+        reviewed = client.post(
+            f"/api/v1/platform/property-payments/{listing_payment_id}/review",
+            headers=admin_headers,
+            json={"decision": "verify", "evidence_checked": True, "notes": "PostgreSQL manual review"},
+        )
+        assert reviewed.status_code == 200, reviewed.text
+        published = client.post(
+            f"/api/v1/platform/property-listings/{listing_id}/review",
+            headers=admin_headers,
+            json={"decision": "publish", "evidence_checked": True, "notes": "PostgreSQL moderation"},
+        )
+        assert published.status_code == 200, published.text
+
+        interest = client.post(f"/api/v1/properties/{listing_id}/interest", headers=buyer_headers)
+        assert interest.status_code == 201, interest.text
+        transaction_id = interest.json()["id"]
+        buyer_confirmed = client.post(
+            f"/api/v1/me/property-transactions/{transaction_id}/confirm-sale",
+            headers=buyer_headers, json={"final_sale_price_minor": 5000000},
+        )
+        seller_confirmed = client.post(
+            f"/api/v1/me/property-transactions/{transaction_id}/confirm-sale",
+            headers=seller_headers, json={"final_sale_price_minor": 5000000},
+        )
+        assert buyer_confirmed.status_code == 200
+        assert seller_confirmed.status_code == 200
+        with SessionLocal() as db:
+            transaction = db.get(PropertyTransaction, transaction_id)
+            assert transaction is not None
+            assert transaction.status == "sale_confirmed"
+            assert transaction.buyer_commission_minor == 50000
+            assert transaction.seller_commission_minor == 50000
+            commission_payments = db.scalars(
+                select(PropertyPayment).where(PropertyPayment.transaction_id == transaction_id)
+            ).all()
+            assert len(commission_payments) == 2
+
+        for payment in commission_payments:
+            payer_headers = buyer_headers if payment.payer_role == "buyer" else seller_headers
+            submitted = client.post(
+                f"/api/v1/me/property-payments/{payment.id}/submit",
+                headers=payer_headers,
+                json={
+                    "payment_method": "bank_transfer",
+                    "payment_reference": f"PG-{payment.payment_type}-01",
+                },
+            )
+            assert submitted.status_code == 200, submitted.text
+            reviewed = client.post(
+                f"/api/v1/platform/property-payments/{payment.id}/review",
+                headers=admin_headers,
+                json={
+                    "decision": "verify", "evidence_checked": True,
+                    "notes": f"PostgreSQL {payment.payment_type} evidence checked",
+                },
+            )
+            assert reviewed.status_code == 200, reviewed.text
+
+        with SessionLocal() as db:
+            transaction = db.get(PropertyTransaction, transaction_id)
+            assert transaction is not None and transaction.status == "commission_settled"
+
+
+def test_postgres_concurrent_property_commission_reviews_serialize_settlement():
+    """Two simultaneous evidence reviews must not miss the final settlement transition."""
+    from threading import Barrier
+
+    from sqlalchemy import select
+
+    from app.api.routes.property import _settle_property_commissions_if_complete
+    from app.db import SessionLocal
+    from app.models import PropertyListing, PropertyPayment, PropertyTransaction, User, utc_now
+
+    suffix = uuid4().hex[:10]
+    with SessionLocal() as db:
+        seller = User(email=f"property-race-seller-{suffix}@example.com", password_hash="test-hash")
+        buyer = User(email=f"property-race-buyer-{suffix}@example.com", password_hash="test-hash")
+        db.add_all([seller, buyer])
+        db.flush()
+        listing = PropertyListing(
+            listing_code=f"HJZ-RACE-{suffix.upper()}",
+            seller_user_id=seller.id,
+            seller_phone="+923001234567",
+            property_type="plot",
+            title="Concurrent commission settlement test",
+            description="",
+            city="Lahore",
+            country="Pakistan",
+            area_value=5,
+            area_unit="marla",
+            asking_price_minor=1_000_000,
+            currency="PKR",
+            dispute_status="unknown",
+            seller_declaration="Seller has not confirmed dispute status.",
+            title_verification_status="not_verified",
+            listing_fee_minor=50_000,
+            listing_fee_status="paid",
+            listing_status="sold",
+        )
+        db.add(listing)
+        db.flush()
+        transaction = PropertyTransaction(
+            transaction_code=f"HJZ-PT-RACE-{suffix.upper()}",
+            listing_id=listing.id,
+            buyer_user_id=buyer.id,
+            seller_user_id=seller.id,
+            final_sale_price_minor=1_000_000,
+            buyer_confirmed=True,
+            seller_confirmed=True,
+            buyer_commission_minor=10_000,
+            seller_commission_minor=10_000,
+            currency="PKR",
+            status="sale_confirmed",
+        )
+        db.add(transaction)
+        db.flush()
+        payments = [
+            PropertyPayment(
+                listing_id=listing.id,
+                transaction_id=transaction.id,
+                payer_user_id=buyer.id,
+                payer_role="buyer",
+                payment_type="buyer_commission",
+                amount_minor=10_000,
+                currency="PKR",
+                status="submitted",
+                payment_method="bank_transfer",
+                payment_reference=f"RACE-{suffix}-BUYER",
+            ),
+            PropertyPayment(
+                listing_id=listing.id,
+                transaction_id=transaction.id,
+                payer_user_id=seller.id,
+                payer_role="seller",
+                payment_type="seller_commission",
+                amount_minor=10_000,
+                currency="PKR",
+                status="submitted",
+                payment_method="bank_transfer",
+                payment_reference=f"RACE-{suffix}-SELLER",
+            ),
+        ]
+        db.add_all(payments)
+        db.commit()
+        payment_ids = [item.id for item in payments]
+        transaction_id = transaction.id
+
+    barrier = Barrier(2)
+
+    def verify_payment(payment_id: str) -> None:
+        with SessionLocal() as db:
+            payment = db.scalar(
+                select(PropertyPayment)
+                .where(PropertyPayment.id == payment_id)
+                .with_for_update()
+            )
+            assert payment is not None and payment.status == "submitted"
+            payment.status = "verified"
+            payment.verified_at = utc_now()
+            db.flush()
+            # Both payment updates are uncommitted before either settlement check starts.
+            barrier.wait(timeout=10)
+            _settle_property_commissions_if_complete(db, transaction_id)
+            db.commit()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(verify_payment, payment_ids))
+
+    with SessionLocal() as db:
+        transaction = db.get(PropertyTransaction, transaction_id)
+        assert transaction is not None and transaction.status == "commission_settled"
+        verified_count = db.scalar(
+            select(__import__("sqlalchemy").func.count(PropertyPayment.id)).where(
+                PropertyPayment.transaction_id == transaction_id,
+                PropertyPayment.status == "verified",
+            )
+        )
+        assert verified_count == 2

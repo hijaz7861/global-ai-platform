@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -23,6 +23,13 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
     command.upgrade(config, "head")
 
     engine = create_engine(database_url)
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0040_property_marketplace"
+    table_names = set(inspect(engine).get_table_names())
+    assert {"user_phone_verifications", "property_listings", "property_transactions", "property_payments"} <= table_names
+    payment_indexes = inspect(engine).get_indexes("property_payments")
+    assert any(item["name"] == "uq_property_listing_fee_payment" and item["unique"] for item in payment_indexes)
+    assert any(item["name"] == "uq_property_transaction_payment" and item["unique"] for item in payment_indexes)
 
     @event.listens_for(engine, "connect")
     def enable_foreign_keys(connection, _record):

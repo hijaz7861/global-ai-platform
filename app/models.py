@@ -1295,3 +1295,222 @@ class ConstructionCashbookEntry(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )
+
+
+class UserPhoneVerification(Base):
+    """Trusted provider-issued phone verification snapshot; no user self-verification API exists."""
+    __tablename__ = "user_phone_verifications"
+    __table_args__ = (Index("ix_user_phone_verifications_phone", "phone_e164"),)
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    phone_e164: Mapped[str] = mapped_column(String(16), nullable=False)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class PropertyListing(Base):
+    """User-owned property listing; moderation never implies legal-title verification."""
+    __tablename__ = "property_listings"
+    __table_args__ = (
+        CheckConstraint(
+            "property_type IN ('plot','house','apartment','commercial','agricultural','other')",
+            name="ck_property_listings_type",
+        ),
+        CheckConstraint("area_value > 0", name="ck_property_listings_area_positive"),
+        CheckConstraint(
+            "asking_price_minor > 0 AND asking_price_minor <= 9000000000000000",
+            name="ck_property_listings_price",
+        ),
+        CheckConstraint(
+            "listing_fee_minor > 0 AND listing_fee_minor <= 9000000000000000",
+            name="ck_property_listings_fee",
+        ),
+        CheckConstraint("currency = 'PKR'", name="ck_property_listings_currency_pkr"),
+        CheckConstraint(
+            "dispute_status IN ('seller_declared_non_disputed','disputed','unknown')",
+            name="ck_property_listings_dispute_status",
+        ),
+        CheckConstraint(
+            "title_verification_status IN ('not_verified','under_review','rejected')",
+            name="ck_property_listings_title_status",
+        ),
+        CheckConstraint(
+            "listing_fee_status IN ('pending','paid','rejected')",
+            name="ck_property_listings_fee_status",
+        ),
+        CheckConstraint(
+            "listing_status IN ('pending_fee','pending_review','published','rejected','sold','withdrawn')",
+            name="ck_property_listings_status",
+        ),
+        CheckConstraint(
+            "(latitude IS NULL AND longitude IS NULL) OR "
+            "(latitude IS NOT NULL AND longitude IS NOT NULL)",
+            name="ck_property_listings_coordinate_pair",
+        ),
+        CheckConstraint(
+            "latitude IS NULL OR (latitude >= -90 AND latitude <= 90)",
+            name="ck_property_listings_latitude",
+        ),
+        CheckConstraint(
+            "longitude IS NULL OR (longitude >= -180 AND longitude <= 180)",
+            name="ck_property_listings_longitude",
+        ),
+        Index(
+            "ix_property_listings_public_search",
+            "listing_status", "country", "state_region", "city", "property_type", "created_at",
+        ),
+        Index("ix_property_listings_seller_created", "seller_user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    listing_code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    seller_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    seller_phone: Mapped[str] = mapped_column(String(16), nullable=False)
+    property_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    title: Mapped[str] = mapped_column(String(140), nullable=False)
+    description: Mapped[str] = mapped_column(String(3000), default="", nullable=False)
+    city: Mapped[str] = mapped_column(String(100), nullable=False)
+    state_region: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country: Mapped[str] = mapped_column(String(100), default="Pakistan", nullable=False)
+    locality: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    address_private: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7), nullable=True)
+    longitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7), nullable=True)
+    area_value: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    area_unit: Mapped[str] = mapped_column(String(24), nullable=False)
+    asking_price_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    dispute_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    seller_declaration: Mapped[str] = mapped_column(String(500), nullable=False)
+    title_verification_status: Mapped[str] = mapped_column(
+        String(24), default="not_verified", nullable=False
+    )
+    listing_fee_minor: Mapped[int] = mapped_column(BigInteger, default=50_000, nullable=False)
+    listing_fee_status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    listing_status: Mapped[str] = mapped_column(String(24), default="pending_fee", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class PropertyTransaction(Base):
+    """Bilateral property-sale confirmation; payment verification is a separate lifecycle."""
+    __tablename__ = "property_transactions"
+    __table_args__ = (
+        UniqueConstraint("listing_id", "buyer_user_id", name="uq_property_transactions_listing_buyer"),
+        CheckConstraint("buyer_user_id <> seller_user_id", name="ck_property_transactions_distinct_parties"),
+        CheckConstraint(
+            "status IN ('interest','awaiting_confirmation','sale_confirmed','commission_settled','cancelled','disputed')",
+            name="ck_property_transactions_status",
+        ),
+        CheckConstraint(
+            "final_sale_price_minor IS NULL OR "
+            "(final_sale_price_minor > 0 AND final_sale_price_minor <= 9000000000000000)",
+            name="ck_property_transactions_price",
+        ),
+        CheckConstraint(
+            "buyer_commission_minor IS NULL OR buyer_commission_minor >= 0",
+            name="ck_property_transactions_buyer_commission",
+        ),
+        CheckConstraint(
+            "seller_commission_minor IS NULL OR seller_commission_minor >= 0",
+            name="ck_property_transactions_seller_commission",
+        ),
+        CheckConstraint("currency = 'PKR'", name="ck_property_transactions_currency_pkr"),
+        Index("ix_property_transactions_buyer_status", "buyer_user_id", "status", "created_at"),
+        Index("ix_property_transactions_seller_status", "seller_user_id", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    transaction_code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    listing_id: Mapped[str] = mapped_column(
+        ForeignKey("property_listings.id", ondelete="RESTRICT"), nullable=False
+    )
+    buyer_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    seller_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    final_sale_price_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    buyer_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    seller_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    buyer_commission_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    seller_commission_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="interest", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+
+class PropertyPayment(Base):
+    """Manual-review payment evidence; a submitted reference never marks payment verified."""
+    __tablename__ = "property_payments"
+    __table_args__ = (
+        CheckConstraint(
+            "payer_role IN ('seller','buyer')",
+            name="ck_property_payments_payer_role",
+        ),
+        CheckConstraint(
+            "payment_type IN ('listing_fee','buyer_commission','seller_commission')",
+            name="ck_property_payments_type",
+        ),
+        CheckConstraint(
+            "status IN ('pending','submitted','verified','rejected')",
+            name="ck_property_payments_status",
+        ),
+        CheckConstraint("amount_minor > 0 AND amount_minor <= 9000000000000000",
+                        name="ck_property_payments_amount"),
+        CheckConstraint("currency = 'PKR'", name="ck_property_payments_currency_pkr"),
+        CheckConstraint(
+            "(payment_type = 'listing_fee' AND transaction_id IS NULL AND payer_role = 'seller') OR "
+            "(payment_type = 'buyer_commission' AND transaction_id IS NOT NULL AND payer_role = 'buyer') OR "
+            "(payment_type = 'seller_commission' AND transaction_id IS NOT NULL AND payer_role = 'seller')",
+            name="ck_property_payments_type_party",
+        ),
+        Index("ix_property_payments_payer_status", "payer_user_id", "status", "created_at"),
+        Index("ix_property_payments_status_created", "status", "created_at"),
+        Index(
+            "uq_property_listing_fee_payment", "listing_id", unique=True,
+            sqlite_where=text("payment_type = 'listing_fee'"),
+            postgresql_where=text("payment_type = 'listing_fee'"),
+        ),
+        Index(
+            "uq_property_transaction_payment", "transaction_id", "payment_type", unique=True,
+            sqlite_where=text("transaction_id IS NOT NULL"),
+            postgresql_where=text("transaction_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    listing_id: Mapped[str] = mapped_column(
+        ForeignKey("property_listings.id", ondelete="RESTRICT"), nullable=False
+    )
+    transaction_id: Mapped[str | None] = mapped_column(
+        ForeignKey("property_transactions.id", ondelete="RESTRICT"), nullable=True
+    )
+    payer_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    payer_role: Mapped[str] = mapped_column(String(8), nullable=False)
+    payment_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="PKR", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    payment_method: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    payment_reference: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    reviewer_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewer_notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

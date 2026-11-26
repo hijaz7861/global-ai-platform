@@ -15,6 +15,7 @@ from app.api.routes.listings import router as listings_router
 from app.api.routes.memberships import router as memberships_router
 from app.api.routes.organizations import router as organizations_router
 from app.api.routes.platform_operations import router as platform_operations_router
+from app.api.routes.property import router as property_router
 from app.api.routes.procurement import router as procurement_router
 from app.api.routes.reconciliation import router as reconciliation_router
 from app.api.routes.orders import router as orders_router
@@ -38,6 +39,7 @@ api_router.include_router(seller_router)
 api_router.include_router(role_entitlements_router)
 api_router.include_router(suppliers_router)
 api_router.include_router(transport_router)
+api_router.include_router(property_router)
 api_router.include_router(platform_operations_router)
 api_router.include_router(procurement_router)
 api_router.include_router(ai_router)
