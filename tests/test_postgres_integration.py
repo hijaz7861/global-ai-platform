@@ -2280,8 +2280,8 @@ def test_customer_engagement_consent_events_are_append_only_on_postgres():
     with pytest.raises(DBAPIError, match="append-only"):
         with engine.begin() as connection:
             connection.execute(
-                text("DELETE FROM customer_engagement_consent_events WHERE id = :id"),
-                {"id": event_id},
+                text("DELETE FROM customer_engagement_consent_events WHERE lead_id = :lead_id"),
+                {"lead_id": lead_id},
             )
     with engine.connect() as connection:
         assert connection.scalar(
