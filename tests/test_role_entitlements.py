@@ -579,3 +579,51 @@ def test_role_admin_mutations_use_postgresql_row_locks():
     db = StatementCapture()
     assert _get_role_for_update(db, "teacher") is not None
     assert _get_entitlement_for_update(db, "entitlement-lock-test") is not None
+
+
+def test_global_and_organization_role_entitlements_have_independent_uniqueness(client):
+    applicant_token = register(client, "role-scope-owner@example.com")
+    headers = {"Authorization": f"Bearer {applicant_token}"}
+
+    first_org = client.post(
+        "/api/v1/organizations",
+        headers=headers,
+        json={"name": "Role Scope One"},
+    )
+    second_org = client.post(
+        "/api/v1/organizations",
+        headers=headers,
+        json={"name": "Role Scope Two"},
+    )
+    assert first_org.status_code == 201, first_org.text
+    assert second_org.status_code == 201, second_org.text
+
+    # The same role can be held globally and independently in two organizations.
+    scopes = [
+        {"role_key": "student"},
+        {"role_key": "student", "organization_id": first_org.json()["id"]},
+        {"role_key": "student", "organization_id": second_org.json()["id"]},
+    ]
+    created = [
+        client.post("/api/v1/me/role-entitlements", headers=headers, json=payload)
+        for payload in scopes
+    ]
+    assert [response.status_code for response in created] == [201, 201, 201]
+    assert len({response.json()["id"] for response in created}) == 3
+
+    # A duplicate in the same scope is denied, while another organization remains independent.
+    duplicates = [
+        client.post("/api/v1/me/role-entitlements", headers=headers, json=payload)
+        for payload in scopes
+    ]
+    assert [response.status_code for response in duplicates] == [409, 409, 409]
+
+    # Knowing an organization ID does not let a non-member apply in that tenant.
+    outsider_token = register(client, "role-scope-outsider@example.com")
+    outsider = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {outsider_token}"},
+        json={"role_key": "student", "organization_id": first_org.json()["id"]},
+    )
+    assert outsider.status_code == 404
+    assert outsider.json()["detail"] == "Organization not found"
