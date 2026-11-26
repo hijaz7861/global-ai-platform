@@ -350,3 +350,60 @@ def test_workforce_message_encryption_migration_encrypts_existing_rows(tmp_path,
     assert plaintext not in stored
     token = stored[len("fernet:v1:"):].encode("ascii")
     assert Fernet(key.encode("ascii")).decrypt(token).decode("utf-8") == plaintext
+
+
+def test_sqlite_customer_engagement_consent_events_are_append_only(tmp_path, monkeypatch):
+    database_url = f"sqlite:///{tmp_path / 'engagement-consent.db'}"
+    monkeypatch.setattr(settings, "database_url", database_url)
+    repository_root = Path(__file__).resolve().parents[1]
+    config = Config(str(repository_root / "alembic.ini"))
+    config.set_main_option("script_location", str(repository_root / "migrations"))
+    config.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection, _record):
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    user_id, lead_id, event_id = str(uuid4()), str(uuid4()), str(uuid4())
+    with engine.begin() as connection:
+        connection.execute(
+            text("INSERT INTO users (id, email, password_hash) VALUES (:id, :email, 'test-hash')"),
+            {"id": user_id, "email": f"consent-{user_id}@example.com"},
+        )
+        connection.execute(
+            text("INSERT INTO customer_engagement_leads (id, user_id, interest_text) VALUES (:id, :user_id, 'Construction quote')"),
+            {"id": lead_id, "user_id": user_id},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO customer_engagement_consent_events "
+                "(id, lead_id, user_id, channel, consent, policy_version, source) "
+                "VALUES (:id, :lead_id, :user_id, 'marketing', 1, 'test-v1', 'test')"
+            ),
+            {"id": event_id, "lead_id": lead_id, "user_id": user_id},
+        )
+
+    with pytest.raises(IntegrityError, match="append-only"):
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE customer_engagement_consent_events SET consent = 0 WHERE id = :id"),
+                {"id": event_id},
+            )
+    with pytest.raises(IntegrityError, match="append-only"):
+        with engine.begin() as connection:
+            connection.execute(
+                text("DELETE FROM customer_engagement_consent_events WHERE id = :id"),
+                {"id": event_id},
+            )
+
+    with engine.connect() as connection:
+        assert connection.scalar(
+            text("SELECT consent FROM customer_engagement_consent_events WHERE id = :id"),
+            {"id": event_id},
+        ) is True
+    engine.dispose()
