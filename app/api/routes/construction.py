@@ -16,10 +16,13 @@ from app.api.deps import require_active_role, require_membership
 from app.audit import record_audit_event
 from app.db import get_db
 from app.models import (Account, AccountingPeriod, ConstructionBoqItem, ConstructionCashbookEntry,
-                        ConstructionClient, ConstructionProject, ConstructionQuote, ConstructionQuoteLine,
+                        ConstructionClient, ConstructionLabourEntry, ConstructionMaterialEntry,
+                        ConstructionProject, ConstructionQuote, ConstructionQuoteLine,
                         JournalEntry, JournalLine, Membership, Organization, UserRoleEntitlement, utc_now)
 from app.schemas import (
     ConstructionCashbookCreate, ConstructionCashbookResponse,
+    ConstructionLabourEntryCreate, ConstructionLabourEntryResponse,
+    ConstructionMaterialEntryCreate, ConstructionMaterialEntryResponse,
     ConstructionBoqItemCreate, ConstructionBoqItemResponse, ConstructionClientCreate,
     ConstructionClientResponse, ConstructionProjectCreate, ConstructionProjectDetailResponse,
     ConstructionProjectResponse, ConstructionProjectUpdate, ConstructionQuoteCreate,
@@ -698,3 +701,184 @@ def list_construction_cashbook_entries(
         .limit(limit)
     ).all()
     return [ConstructionCashbookResponse.model_validate(item) for item in rows]
+
+
+
+@router.post(
+    "/organizations/{organization_id}/construction/projects/{project_id}/labour-entries",
+    response_model=ConstructionLabourEntryResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_construction_labour_entry(
+    project_id: str,
+    payload: ConstructionLabourEntryCreate,
+    membership: Annotated[Membership, Depends(require_membership)],
+    entitlement: Annotated[UserRoleEntitlement, Depends(
+        require_active_role("construction_provider", organization_scoped=True)
+    )],
+    db: Annotated[Session, Depends(get_db)],
+) -> ConstructionLabourEntryResponse:
+    project = _get_project(db, membership.organization_id, project_id, for_update=True)
+    if not _can_manage_project(membership, project):
+        raise HTTPException(status_code=403, detail="Project creator or organization owner/admin required")
+    total_minor = int(
+        (
+            Decimal(payload.worker_count)
+            * payload.days
+            * Decimal(payload.daily_rate_minor)
+        ).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    )
+    if total_minor > _MAX_MINOR:
+        raise HTTPException(status_code=422, detail="Labour total exceeds the supported PKR amount")
+    item = ConstructionLabourEntry(
+        id=str(uuid4()),
+        organization_id=membership.organization_id,
+        project_id=project.id,
+        created_by_user_id=membership.user_id,
+        worker_name=payload.worker_name,
+        work_date=payload.work_date or utc_now().date(),
+        worker_count=payload.worker_count,
+        days=payload.days,
+        daily_rate_minor=payload.daily_rate_minor,
+        total_amount_minor=total_minor,
+        currency=project.currency,
+        notes=payload.notes,
+    )
+    db.add(item)
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="construction_labour.created",
+        entity_type="construction_labour_entry",
+        entity_id=item.id,
+        details={
+            "project_id": project.id,
+            "work_date": item.work_date.isoformat(),
+            "worker_count": item.worker_count,
+            "days": str(item.days),
+            "total_amount_minor": item.total_amount_minor,
+            "currency": item.currency,
+        },
+    )
+    db.commit()
+    db.refresh(item)
+    return ConstructionLabourEntryResponse.model_validate(item)
+
+
+@router.get(
+    "/organizations/{organization_id}/construction/projects/{project_id}/labour-entries",
+    response_model=list[ConstructionLabourEntryResponse],
+)
+def list_construction_labour_entries(
+    project_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    entitlement: Annotated[UserRoleEntitlement, Depends(
+        require_active_role("construction_provider", organization_scoped=True)
+    )],
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> list[ConstructionLabourEntryResponse]:
+    project = _get_project(db, membership.organization_id, project_id)
+    if not _can_manage_project(membership, project):
+        raise HTTPException(status_code=403, detail="Project creator or organization owner/admin required")
+    rows = db.scalars(
+        select(ConstructionLabourEntry)
+        .where(
+            ConstructionLabourEntry.organization_id == membership.organization_id,
+            ConstructionLabourEntry.project_id == project_id,
+        )
+        .order_by(ConstructionLabourEntry.work_date.desc(), ConstructionLabourEntry.id)
+        .limit(limit)
+    ).all()
+    return [ConstructionLabourEntryResponse.model_validate(item) for item in rows]
+
+
+@router.post(
+    "/organizations/{organization_id}/construction/projects/{project_id}/material-entries",
+    response_model=ConstructionMaterialEntryResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_construction_material_entry(
+    project_id: str,
+    payload: ConstructionMaterialEntryCreate,
+    membership: Annotated[Membership, Depends(require_membership)],
+    entitlement: Annotated[UserRoleEntitlement, Depends(
+        require_active_role("construction_provider", organization_scoped=True)
+    )],
+    db: Annotated[Session, Depends(get_db)],
+) -> ConstructionMaterialEntryResponse:
+    project = _get_project(db, membership.organization_id, project_id, for_update=True)
+    if not _can_manage_project(membership, project):
+        raise HTTPException(status_code=403, detail="Project creator or organization owner/admin required")
+    total_minor = int(
+        (payload.quantity * Decimal(payload.unit_price_minor)).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP
+        )
+    )
+    if total_minor > _MAX_MINOR:
+        raise HTTPException(status_code=422, detail="Material total exceeds the supported PKR amount")
+    item = ConstructionMaterialEntry(
+        id=str(uuid4()),
+        organization_id=membership.organization_id,
+        project_id=project.id,
+        created_by_user_id=membership.user_id,
+        item_name=payload.item_name,
+        quantity=payload.quantity,
+        unit=payload.unit,
+        unit_price_minor=payload.unit_price_minor,
+        total_amount_minor=total_minor,
+        supplier=payload.supplier,
+        entry_date=payload.entry_date or utc_now().date(),
+        currency=project.currency,
+        notes=payload.notes,
+    )
+    db.add(item)
+    record_audit_event(
+        db,
+        actor_user_id=membership.user_id,
+        organization_id=membership.organization_id,
+        action="construction_material.created",
+        entity_type="construction_material_entry",
+        entity_id=item.id,
+        details={
+            "project_id": project.id,
+            "entry_date": item.entry_date.isoformat(),
+            "item_name": item.item_name,
+            "quantity": str(item.quantity),
+            "unit": item.unit,
+            "total_amount_minor": item.total_amount_minor,
+            "currency": item.currency,
+        },
+    )
+    db.commit()
+    db.refresh(item)
+    return ConstructionMaterialEntryResponse.model_validate(item)
+
+
+@router.get(
+    "/organizations/{organization_id}/construction/projects/{project_id}/material-entries",
+    response_model=list[ConstructionMaterialEntryResponse],
+)
+def list_construction_material_entries(
+    project_id: str,
+    membership: Annotated[Membership, Depends(require_membership)],
+    entitlement: Annotated[UserRoleEntitlement, Depends(
+        require_active_role("construction_provider", organization_scoped=True)
+    )],
+    db: Annotated[Session, Depends(get_db)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> list[ConstructionMaterialEntryResponse]:
+    project = _get_project(db, membership.organization_id, project_id)
+    if not _can_manage_project(membership, project):
+        raise HTTPException(status_code=403, detail="Project creator or organization owner/admin required")
+    rows = db.scalars(
+        select(ConstructionMaterialEntry)
+        .where(
+            ConstructionMaterialEntry.organization_id == membership.organization_id,
+            ConstructionMaterialEntry.project_id == project_id,
+        )
+        .order_by(ConstructionMaterialEntry.entry_date.desc(), ConstructionMaterialEntry.id)
+        .limit(limit)
+    ).all()
+    return [ConstructionMaterialEntryResponse.model_validate(item) for item in rows]

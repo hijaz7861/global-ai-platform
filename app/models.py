@@ -1297,6 +1297,113 @@ class ConstructionCashbookEntry(Base):
     )
 
 
+class ConstructionLabourEntry(Base):
+    """Append-only, tenant-scoped labour register; worker names stay project-private."""
+    __tablename__ = "construction_labour_entries"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "organization_id"],
+            ["construction_projects.id", "construction_projects.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_construction_labour_project_org",
+        ),
+        CheckConstraint("length(trim(worker_name)) > 0", name="ck_construction_labour_worker_name"),
+        CheckConstraint("worker_count BETWEEN 1 AND 10000", name="ck_construction_labour_worker_count"),
+        CheckConstraint("days > 0 AND days <= 999999.99", name="ck_construction_labour_days"),
+        CheckConstraint(
+            "daily_rate_minor BETWEEN 0 AND 9000000000000000",
+            name="ck_construction_labour_daily_rate",
+        ),
+        CheckConstraint(
+            "total_amount_minor BETWEEN 0 AND 9000000000000000",
+            name="ck_construction_labour_total",
+        ),
+        CheckConstraint("currency = 'PKR'", name="ck_construction_labour_currency_pkr"),
+        Index(
+            "ix_construction_labour_org_project_date",
+            "organization_id", "project_id", "work_date",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    project_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    worker_name: Mapped[str] = mapped_column(String(140), nullable=False)
+    work_date: Mapped[date] = mapped_column(Date, nullable=False)
+    worker_count: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    days: Mapped[Decimal] = mapped_column(
+        Numeric(8, 2), default=Decimal("1"), server_default="1", nullable=False
+    )
+    daily_rate_minor: Mapped[int] = mapped_column(
+        BigInteger, default=0, server_default="0", nullable=False
+    )
+    total_amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3), default="PKR", server_default="PKR", nullable=False
+    )
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
+class ConstructionMaterialEntry(Base):
+    """Append-only, tenant-scoped material register using Decimal quantity and PKR minor units."""
+    __tablename__ = "construction_material_entries"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "organization_id"],
+            ["construction_projects.id", "construction_projects.organization_id"],
+            ondelete="RESTRICT",
+            name="fk_construction_material_project_org",
+        ),
+        CheckConstraint("length(trim(item_name)) > 0", name="ck_construction_material_item_name"),
+        CheckConstraint("length(trim(unit)) > 0", name="ck_construction_material_unit"),
+        CheckConstraint("quantity > 0", name="ck_construction_material_quantity"),
+        CheckConstraint(
+            "unit_price_minor BETWEEN 0 AND 9000000000000000",
+            name="ck_construction_material_unit_price",
+        ),
+        CheckConstraint(
+            "total_amount_minor BETWEEN 0 AND 9000000000000000",
+            name="ck_construction_material_total",
+        ),
+        CheckConstraint("currency = 'PKR'", name="ck_construction_material_currency_pkr"),
+        Index(
+            "ix_construction_material_org_project_date",
+            "organization_id", "project_id", "entry_date",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    project_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    item_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    unit: Mapped[str] = mapped_column(String(30), nullable=False)
+    unit_price_minor: Mapped[int] = mapped_column(
+        BigInteger, default=0, server_default="0", nullable=False
+    )
+    total_amount_minor: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    supplier: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    entry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3), default="PKR", server_default="PKR", nullable=False
+    )
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+
 class UserPhoneVerification(Base):
     """Trusted provider-issued phone verification snapshot; no user self-verification API exists."""
     __tablename__ = "user_phone_verifications"

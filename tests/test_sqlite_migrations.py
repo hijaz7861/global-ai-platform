@@ -1,6 +1,7 @@
 """SQLite migration regression coverage for the project cashbook."""
 
 from pathlib import Path
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -24,7 +25,7 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
 
     engine = create_engine(database_url)
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0047_workforce_message_appeals"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0048_construction_labour_material_registers"
     table_names = set(inspect(engine).get_table_names())
     assert {
         "user_phone_verifications", "property_listings", "property_transactions", "property_payments",
@@ -32,6 +33,7 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
         "education_teacher_profiles", "education_courses", "education_course_enrollments",
         "education_course_materials", "workforce_profiles", "workforce_service_requests", "workforce_service_payments",
         "workforce_service_messages", "workforce_message_reports", "workforce_message_appeals",
+        "construction_labour_entries", "construction_material_entries",
     } <= table_names
     course_columns = {column["name"] for column in inspect(engine).get_columns("education_courses")}
     assert {"country_code", "city", "price_minor", "commission_bps"} <= course_columns
@@ -43,6 +45,32 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
     assert any(item["name"] == "ix_workforce_service_message_request_created" for item in message_indexes)
     message_checks = inspect(engine).get_check_constraints("workforce_service_messages")
     assert any("16384" in item["sqltext"] for item in message_checks)
+
+    labour_columns = {column["name"] for column in inspect(engine).get_columns("construction_labour_entries")}
+    assert {
+        "organization_id", "project_id", "created_by_user_id", "worker_name", "work_date",
+        "worker_count", "days", "daily_rate_minor", "total_amount_minor", "currency",
+    } <= labour_columns
+    material_columns = {column["name"] for column in inspect(engine).get_columns("construction_material_entries")}
+    assert {
+        "organization_id", "project_id", "created_by_user_id", "item_name", "quantity", "unit",
+        "unit_price_minor", "total_amount_minor", "supplier", "entry_date", "currency",
+    } <= material_columns
+    labour_foreign_keys = inspect(engine).get_foreign_keys("construction_labour_entries")
+    material_foreign_keys = inspect(engine).get_foreign_keys("construction_material_entries")
+    assert any(item["constrained_columns"] == ["project_id", "organization_id"] for item in labour_foreign_keys)
+    assert any(item["constrained_columns"] == ["project_id", "organization_id"] for item in material_foreign_keys)
+    with engine.connect() as connection:
+        trigger_names = {
+            row[0] for row in connection.execute(
+                text("SELECT name FROM sqlite_master WHERE type = 'trigger'")
+            )
+        }
+    assert {
+        "trg_construction_labour_no_update", "trg_construction_labour_no_delete",
+        "trg_construction_material_no_update", "trg_construction_material_no_delete",
+    } <= trigger_names
+
     service_payment_indexes = inspect(engine).get_indexes("workforce_service_payments")
     assert any(item["name"] == "uq_workforce_service_payment_active" and item["unique"] for item in service_payment_indexes)
 
@@ -66,8 +94,8 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
         cursor.close()
 
     from app.models import (
-        Account, ConstructionCashbookEntry, ConstructionClient, ConstructionProject,
-        JournalEntry, JournalLine, Organization, User,
+        Account, ConstructionCashbookEntry, ConstructionClient, ConstructionLabourEntry,
+        ConstructionMaterialEntry, ConstructionProject, JournalEntry, JournalLine, Organization, User, utc_now,
     )
 
     suffix = uuid4().hex
@@ -119,6 +147,21 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
                 JournalLine(journal_entry_id=journal.id, account_id=cash.id, debit_minor=1000, credit_minor=0),
                 JournalLine(journal_entry_id=journal.id, account_id=revenue.id, debit_minor=0, credit_minor=1000),
             ])
+            labour = ConstructionLabourEntry(
+                organization_id=org_a.id, project_id=project_a.id, created_by_user_id=user.id,
+                worker_name="Migration test crew", work_date=utc_now().date(), worker_count=2,
+                days=Decimal("1.50"), daily_rate_minor=12000, total_amount_minor=36000, currency="PKR",
+            )
+            material = ConstructionMaterialEntry(
+                organization_id=org_a.id, project_id=project_a.id, created_by_user_id=user.id,
+                item_name="Cement", quantity=Decimal("1.250"), unit="bag",
+                unit_price_minor=500, total_amount_minor=625, supplier="Local supplier",
+                entry_date=utc_now().date(), currency="PKR",
+            )
+            db.add_all([labour, material])
+            db.flush()
+            labour_id, material_id = labour.id, material.id
+            project_a_id = project_a.id
             cashbook = ConstructionCashbookEntry(
                 organization_id=org_a.id, project_id=project_a.id, journal_entry_id=journal.id,
                 created_by_user_id=user.id, direction="income", category="Advance",
@@ -151,6 +194,50 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
                     text("DELETE FROM construction_cashbook_entries WHERE id = :id"),
                     {"id": cashbook_id},
                 )
+
+        with factory() as db:
+            db.add(ConstructionLabourEntry(
+                organization_id=org_b_id, project_id=project_a_id, created_by_user_id=user_id,
+                worker_name="Cross tenant", work_date=utc_now().date(), worker_count=1,
+                days=Decimal("1.00"), daily_rate_minor=10, total_amount_minor=10, currency="PKR",
+            ))
+            with pytest.raises(IntegrityError):
+                db.flush()
+            db.rollback()
+            db.add(ConstructionMaterialEntry(
+                organization_id=org_b_id, project_id=project_a_id, created_by_user_id=user_id,
+                item_name="Cross tenant", quantity=Decimal("1.000"), unit="bag",
+                unit_price_minor=10, total_amount_minor=10, entry_date=utc_now().date(), currency="PKR",
+            ))
+            with pytest.raises(IntegrityError):
+                db.flush()
+            db.rollback()
+
+        with pytest.raises(IntegrityError, match="construction_labour_entries are append-only"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("UPDATE construction_labour_entries SET worker_name = 'tampered' WHERE id = :id"),
+                    {"id": labour_id},
+                )
+        with pytest.raises(IntegrityError, match="construction_labour_entries are append-only"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("DELETE FROM construction_labour_entries WHERE id = :id"),
+                    {"id": labour_id},
+                )
+        with pytest.raises(IntegrityError, match="construction_material_entries are append-only"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("UPDATE construction_material_entries SET item_name = 'tampered' WHERE id = :id"),
+                    {"id": material_id},
+                )
+        with pytest.raises(IntegrityError, match="construction_material_entries are append-only"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("DELETE FROM construction_material_entries WHERE id = :id"),
+                    {"id": material_id},
+                )
+
     finally:
         engine.dispose()
 
@@ -228,7 +315,7 @@ def test_workforce_message_encryption_migration_encrypts_existing_rows(tmp_path,
         version = connection.scalar(text("SELECT version_num FROM alembic_version"))
     engine.dispose()
 
-    assert version == "0047_workforce_message_appeals"
+    assert version == "0048_construction_labour_material_registers"
     assert stored.startswith("fernet:v1:")
     with engine.connect() as connection:
         moderation_status = connection.scalar(

@@ -681,3 +681,142 @@ def test_construction_mutation_queries_lock_tenant_project_and_quote_on_postgres
     assert "ORGANIZATION_ID" in quote_write.upper()
     assert "PROJECT_ID" in quote_write.upper()
     assert "FOR UPDATE" not in quote_read.upper()
+
+
+
+def test_construction_labour_and_material_registers_are_decimal_safe_and_private(client):
+    token, org_id, project_id, _accounts, email = _create_cashbook_fixture(
+        client, "construction-register-owner@example.com"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    base = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}"
+    labour_endpoint = f"{base}/labour-entries"
+    material_endpoint = f"{base}/material-entries"
+
+    labour = client.post(
+        labour_endpoint,
+        headers=headers,
+        json={
+            "worker_name": "Crew A",
+            "work_date": "2026-11-26",
+            "worker_count": 3,
+            "days": "1.25",
+            "daily_rate_minor": 1250,
+            "notes": "Foundation work",
+        },
+    )
+    assert labour.status_code == 201, labour.text
+    assert labour.json()["total_amount_minor"] == 4688
+    assert labour.json()["currency"] == "PKR"
+
+    material = client.post(
+        material_endpoint,
+        headers=headers,
+        json={
+            "item_name": "Cement",
+            "quantity": "1.333",
+            "unit": "bag",
+            "unit_price_minor": 500,
+            "supplier": "Local supplier",
+            "entry_date": "2026-11-26",
+        },
+    )
+    assert material.status_code == 201, material.text
+    assert material.json()["total_amount_minor"] == 667
+    assert material.json()["currency"] == "PKR"
+
+    labour_list = client.get(labour_endpoint, headers=headers)
+    material_list = client.get(material_endpoint, headers=headers)
+    assert labour_list.status_code == 200
+    assert [row["id"] for row in labour_list.json()] == [labour.json()["id"]]
+    assert material_list.status_code == 200
+    assert [row["id"] for row in material_list.json()] == [material.json()["id"]]
+
+    with _TEST_SESSION_FACTORY() as db:
+        labour_event = db.scalar(select(AuditEvent).where(
+            AuditEvent.entity_type == "construction_labour_entry",
+            AuditEvent.entity_id == labour.json()["id"],
+        ))
+        material_event = db.scalar(select(AuditEvent).where(
+            AuditEvent.entity_type == "construction_material_entry",
+            AuditEvent.entity_id == material.json()["id"],
+        ))
+        assert labour_event is not None and "worker_name" not in str(labour_event.details)
+        assert material_event is not None and "supplier" not in str(material_event.details)
+        owner = db.scalar(select(User).where(User.email == email))
+        second_org = Organization(name="Construction register tenant B")
+        db.add(second_org)
+        db.flush()
+        db.add(Membership(user_id=owner.id, organization_id=second_org.id, role="owner"))
+        db.add(UserRoleEntitlement(
+            user_id=owner.id,
+            role_key="construction_provider",
+            organization_id=second_org.id,
+            status="active",
+            payment_status="verified",
+            fee_amount_minor=1000,
+            fee_currency="PKR",
+            age_verified=True,
+            activated_at=utc_now(),
+        ))
+        db.commit()
+        second_org_id = second_org.id
+
+    cross_tenant = client.get(
+        f"/api/v1/organizations/{second_org_id}/construction/projects/{project_id}/labour-entries",
+        headers=headers,
+    )
+    assert cross_tenant.status_code == 404
+
+    member_token = register(client, "construction-register-member@example.com")
+    with _TEST_SESSION_FACTORY() as db:
+        member = db.scalar(select(User).where(User.email == "construction-register-member@example.com"))
+        db.add(Membership(user_id=member.id, organization_id=org_id, role="member"))
+        db.add(UserRoleEntitlement(
+            user_id=member.id,
+            role_key="construction_provider",
+            organization_id=org_id,
+            status="active",
+            payment_status="verified",
+            fee_amount_minor=1000,
+            fee_currency="PKR",
+            age_verified=True,
+            activated_at=utc_now(),
+        ))
+        db.commit()
+    member_headers = {"Authorization": f"Bearer {member_token}"}
+    assert client.get(labour_endpoint, headers=member_headers).status_code == 403
+    denied_write = client.post(
+        material_endpoint,
+        headers=member_headers,
+        json={"item_name": "Steel", "quantity": "1.000", "unit": "kg", "unit_price_minor": 10},
+    )
+    assert denied_write.status_code == 403
+
+
+def test_construction_labour_and_material_registers_reject_invalid_values(client):
+    token, org_id, project_id, _accounts, _email = _create_cashbook_fixture(
+        client, "construction-register-validation@example.com"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    base = f"/api/v1/organizations/{org_id}/construction/projects/{project_id}"
+    labour_endpoint = f"{base}/labour-entries"
+    material_endpoint = f"{base}/material-entries"
+
+    for payload in [
+        {"worker_name": "Crew", "worker_count": 0, "days": "1.00", "daily_rate_minor": 10},
+        {"worker_name": "Crew", "worker_count": 1, "days": "0", "daily_rate_minor": 10},
+        {"worker_name": "Crew", "worker_count": 1, "days": "1.001", "daily_rate_minor": 10},
+        {"worker_name": "Crew", "worker_count": 1, "days": "1.00", "daily_rate_minor": -1},
+        {"worker_name": "Crew", "worker_count": 10000, "days": "999999.99", "daily_rate_minor": 9_000_000_000_000_000},
+    ]:
+        assert client.post(labour_endpoint, headers=headers, json=payload).status_code == 422
+
+    for payload in [
+        {"item_name": "Cement", "quantity": "0", "unit": "bag", "unit_price_minor": 10},
+        {"item_name": "Cement", "quantity": "1.000", "unit": " ", "unit_price_minor": 10},
+        {"item_name": "Cement", "quantity": "1.0001", "unit": "bag", "unit_price_minor": 10},
+        {"item_name": "Cement", "quantity": "1.000", "unit": "bag", "unit_price_minor": -1},
+        {"item_name": "Cement", "quantity": "999999999.999", "unit": "bag", "unit_price_minor": 9_000_000_000_000_000},
+    ]:
+        assert client.post(material_endpoint, headers=headers, json=payload).status_code == 422
