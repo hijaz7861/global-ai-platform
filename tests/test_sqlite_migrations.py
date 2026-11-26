@@ -372,7 +372,7 @@ def test_sqlite_customer_engagement_consent_events_are_append_only(tmp_path, mon
     user_id, lead_id = str(uuid4()), str(uuid4())
     with engine.begin() as connection:
         connection.execute(
-            text("INSERT INTO users (id, email, password_hash, created_at, updated_at) VALUES (:id, :email, 'test-hash', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"),
+            text("INSERT INTO users (id, email, password_hash, created_at) VALUES (:id, :email, 'test-hash', CURRENT_TIMESTAMP)"),
             {"id": user_id, "email": f"consent-{user_id}@example.com"},
         )
         connection.execute(
