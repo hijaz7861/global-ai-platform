@@ -2250,8 +2250,8 @@ def test_customer_engagement_consent_events_are_append_only_on_postgres():
     with engine.begin() as connection:
         connection.execute(
             text(
-                "INSERT INTO users (id, email, password_hash) "
-                "VALUES (:id, :email, 'test-hash')"
+                "INSERT INTO users (id, email, password_hash, created_at, updated_at) "
+                "VALUES (:id, :email, 'test-hash', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
             ),
             {"id": user_id, "email": f"postgres-engagement-{suffix}@example.com"},
         )
