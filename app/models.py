@@ -2209,12 +2209,12 @@ class CustomerEngagementConsentEvent(Base):
         ),
         Index(
             "ix_customer_engagement_consent_lead_channel_created",
-            "lead_id", "channel", "created_at",
+            "lead_id", "channel", "created_at", "id",
         ),
         Index("ix_customer_engagement_consent_user_created", "user_id", "created_at"),
     )
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     lead_id: Mapped[str] = mapped_column(
         ForeignKey("customer_engagement_leads.id", ondelete="RESTRICT"), nullable=False
     )
