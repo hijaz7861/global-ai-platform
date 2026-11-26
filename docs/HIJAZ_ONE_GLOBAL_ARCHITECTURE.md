@@ -1092,3 +1092,35 @@ This snapshot supersedes earlier PR #77 status notes where they conflict. It rec
 - No PR was merged, no production deployment or secret change occurred, no external payment/communication provider was enabled, and no domain or paid service was purchased.
 - Remaining release gates include full role/tenant/ownership review; construction labour/material registers and rate-book governance; supplier/provider settlement, refunds and disputes; complete remaining verticals; portable durable worker/scheduler and object storage; global commerce/webhooks; AI approval/checkpoint/DLP/evaluation; authenticated MCP POST verification; complete export/import manifest and reconciliation; backup/restore; independent-host rehearsal; security review; branch protection; and owner approval.
 - The full HIJAZ ONE Definition of Done remains **NOT SATISFIED**. Do not merge, deploy, change the live Hatchable application, migrate production data or rename the repository before every gate is demonstrated and the owner approves.
+
+## 30. Customer engagement consent foundation — 2026-11-26
+
+### Hatchable Version 40 source inventory (read-only)
+
+- The existing project is confirmed active at Version 40. Its file manifest includes api/engagement.js, api/engagement-admin.js, api/jobs/follow-up.js, api/unsubscribe.js, the matching engagement/admin UI, and SQL migration 0009_customer_engagement_automation.sql.
+- The schema inventory confirms engagement_leads, engagement_messages, engagement_conversations, engagement_chat_messages, engagement_unsubscribe_tokens, engagement_agent_events, membership_plans and user_memberships.
+- The source uses Urdu/English preference, separate marketing/email/WhatsApp/SMS consent, hashed unsubscribe tokens, owner reply suppression, an admin-only lead queue and a follow-up job capped at three follow-ups and five due leads per invocation.
+- No source user rows, email addresses, phone numbers, conversations, messages, memberships, unsubscribe tokens or object bytes were exported or copied. The live Version 40 application was not modified.
+
+### Construction registers — PR #79
+
+- PR #79 remains Draft/open/unmerged and is stacked on PR #78. Exact-head Actions Run #965 passed 5/5 jobs on ed408707b307bbac04b03c218100ade16123ae98.
+- Python 3.11/3.12/3.13 each reported 462 passed / 29 skipped; PostgreSQL integration reported 29 passed. Ruff, compilation, SQLite/PostgreSQL migration upgrades, Alembic checks, dependency audit and Bandit passed.
+- Migration 0048_construction_labour_mat adds tenant-scoped append-only labour and material registers. The records are PKR minor-unit based and do not auto-post accounting journals. No source rows were copied.
+
+### Customer engagement consent — PR #80
+
+- Draft PR #80 is stacked on PR #79, with exact head 7d5389ec4fed621b5da229a6ee839a20aaf4e9b7. It adds migration 0049_customer_engagement, user-owned Urdu/English leads, an append-only consent event ledger, hashed unsubscribe tokens and a verified platform-admin lead queue.
+- Marketing consent is separate from email/SMS/WhatsApp consent. Channel opt-in requires marketing opt-in; email requires verified email; SMS/WhatsApp require a provider-verified E.164 phone record no older than 30 days.
+- No email or phone is duplicated into engagement lead/consent records. Unsubscribe tokens are stored only as SHA-256 digests; unknown, expired and replayed tokens return the same 204 response and valid opt-out suppresses all channels.
+- No email, SMS, WhatsApp or AI provider is called. No follow-up is scheduled until the portable independent worker/scheduler is implemented.
+- Exact-head Actions Run #966 is still in progress at the time of this documentation update. Python lint/compile/migration steps and the dependency-audit job have completed successfully; the test matrix and PostgreSQL integration are not yet complete. Do not treat this as a passing run.
+
+### Remaining gaps and safety
+
+- Durable worker/scheduler with atomic follow-up claiming, in-app message history, bilingual proposal generation, provider-neutral adapters, signed webhooks, delivery reconciliation and channel-specific retention remain incomplete.
+- The customer engagement consent policy text/version archive, jurisdiction-specific lawful-basis review, export/deletion and retention workflows remain release gates.
+- The role/vertical PR stack still requires ordered ancestry reconciliation and owner review. PR #20 authenticated MCP POST verification, branch protection, full Hatchable export/import, object checksums, restore, independent-host rehearsal and all other release gates remain incomplete.
+- Master remains 11ad7da84e73126a450cb0d194e4859b90263a4a with migration head 0034_postgres_approval_nonces; the new 0049 migration exists only on the Draft stack.
+- No PR was merged, no deployment or secret change occurred, no external provider was enabled, no paid service or domain was purchased, no live Hatchable file/schema/row was changed, and no production data was exported or deleted.
+- The full HIJAZ ONE Definition of Done remains NOT SATISFIED.
