@@ -68,7 +68,6 @@ def _record_consent(
 ) -> None:
     db.add(
         CustomerEngagementConsentEvent(
-            id=str(uuid4()),
             lead_id=lead.id,
             user_id=lead.user_id,
             channel=channel,
