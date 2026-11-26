@@ -2,6 +2,7 @@
 
 import hashlib
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import models  # noqa: F401
+from app.api.routes.engagement import unsubscribe_engagement
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
@@ -22,6 +24,7 @@ from app.models import (
     UserPhoneVerification,
     utc_now,
 )
+from app.schemas import CustomerEngagementUnsubscribeRequest
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -231,3 +234,66 @@ def test_consent_updates_are_owner_scoped_and_channel_specific(
 def test_unknown_unsubscribe_token_does_not_disclose_token_existence(engagement_client):
     response = engagement_client.post("/api/v1/engagement/unsubscribe", json={"token": "x" * 48})
     assert response.status_code == 204
+
+
+def test_unsubscribe_locks_lead_before_token_to_match_consent_revocation_order(monkeypatch):
+    raw_token = "lock-order-regression-token"
+    now = utc_now()
+    token_preview = SimpleNamespace(
+        token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
+        lead_id="lead-lock-order",
+        suppressed_at=None,
+        expires_at=now + timedelta(days=1),
+    )
+    lead = SimpleNamespace(
+        id="lead-lock-order",
+        user_id="user-lock-order",
+        status="new",
+        next_followup_at=now,
+        updated_at=now,
+    )
+    token_locked = SimpleNamespace(
+        token_hash=token_preview.token_hash,
+        lead_id=lead.id,
+        suppressed_at=None,
+        expires_at=token_preview.expires_at,
+    )
+
+    class RecordingSession:
+        def __init__(self):
+            self.statements = []
+            self.added = []
+            self.committed = False
+
+        def scalar(self, statement):
+            self.statements.append(statement)
+            return (token_preview, lead, token_locked)[len(self.statements) - 1]
+
+        def add(self, value):
+            self.added.append(value)
+
+        def commit(self):
+            self.committed = True
+
+    db = RecordingSession()
+    monkeypatch.setattr(
+        "app.api.routes.engagement.record_audit_event",
+        lambda *_args, **_kwargs: None,
+    )
+
+    response = unsubscribe_engagement(
+        CustomerEngagementUnsubscribeRequest(token=raw_token),
+        db,
+    )
+
+    assert response.status_code == 204
+    assert len(db.statements) == 3
+    assert [
+        getattr(statement, "_for_update_arg", None) is not None
+        for statement in db.statements
+    ] == [False, True, True]
+    assert lead.status == "opted_out"
+    assert lead.next_followup_at is None
+    assert token_locked.suppressed_at is not None
+    assert db.committed
+    assert len(db.added) == 4
