@@ -3,6 +3,7 @@
 import hashlib
 from datetime import timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
@@ -51,8 +52,6 @@ def _create_lead(client, token: str, **overrides):
     payload.update(overrides)
     return client.post("/api/v1/me/engagement/leads", headers=_headers(token), json=payload)
 
-
-import pytest
 
 
 @pytest.fixture
