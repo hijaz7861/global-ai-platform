@@ -2164,3 +2164,83 @@ class WorkforceServicePayment(Base):
 
 # Register the workforce contact-relay model for Alembic metadata and create_all.
 import app.workforce_contact_models  # noqa: F401,E402
+
+
+class CustomerEngagementLead(Base):
+    """User-owned bilingual interest record; contact details are not duplicated."""
+    __tablename__ = "customer_engagement_leads"
+    __table_args__ = (
+        CheckConstraint("length(trim(interest_text)) > 0", name="ck_customer_engagement_interest_text"),
+        CheckConstraint("preferred_language IN ('ur','en')", name="ck_customer_engagement_language"),
+        CheckConstraint(
+            "status IN ('new','proposal_sent','negotiating','won','lost','opted_out','closed')",
+            name="ck_customer_engagement_status",
+        ),
+        CheckConstraint("followup_count BETWEEN 0 AND 3", name="ck_customer_engagement_followup_count"),
+        Index("ix_customer_engagement_user_created", "user_id", "created_at"),
+        Index("ix_customer_engagement_followup_due", "next_followup_at", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    source: Mapped[str] = mapped_column(String(40), default="account", server_default="account", nullable=False)
+    interest_category: Mapped[str] = mapped_column(String(80), default="general", server_default="general", nullable=False)
+    interest_text: Mapped[str] = mapped_column(String(3000), nullable=False)
+    preferred_language: Mapped[str] = mapped_column(String(2), default="ur", server_default="ur", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="new", server_default="new", nullable=False)
+    followup_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    next_followup_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, server_default=text("CURRENT_TIMESTAMP"), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"), nullable=False
+    )
+
+
+class CustomerEngagementConsentEvent(Base):
+    """Append-only record of a user's marketing and channel-specific consent choice."""
+    __tablename__ = "customer_engagement_consent_events"
+    __table_args__ = (
+        CheckConstraint(
+            "channel IN ('marketing','email','sms','whatsapp')",
+            name="ck_customer_engagement_consent_channel",
+        ),
+        Index(
+            "ix_customer_engagement_consent_lead_channel_created",
+            "lead_id", "channel", "created_at",
+        ),
+        Index("ix_customer_engagement_consent_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    lead_id: Mapped[str] = mapped_column(
+        ForeignKey("customer_engagement_leads.id", ondelete="RESTRICT"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    consent: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, server_default=text("CURRENT_TIMESTAMP"), nullable=False
+    )
+
+
+class CustomerEngagementUnsubscribeToken(Base):
+    """One-time public opt-out token; only its SHA-256 digest is stored."""
+    __tablename__ = "customer_engagement_unsubscribe_tokens"
+    __table_args__ = (
+        Index("ix_customer_engagement_unsubscribe_lead", "lead_id", "created_at"),
+    )
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    lead_id: Mapped[str] = mapped_column(
+        ForeignKey("customer_engagement_leads.id", ondelete="RESTRICT"), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    suppressed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, server_default=text("CURRENT_TIMESTAMP"), nullable=False
+    )
