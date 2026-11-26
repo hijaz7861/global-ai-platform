@@ -237,7 +237,7 @@ def test_unknown_unsubscribe_token_does_not_disclose_token_existence(engagement_
 
 
 def test_unsubscribe_locks_lead_before_token_to_match_consent_revocation_order(monkeypatch):
-    raw_token = "lock-order-regression-token"
+    raw_token = "l" * 48
     now = utc_now()
     token_preview = SimpleNamespace(
         token_hash=hashlib.sha256(raw_token.encode("utf-8")).hexdigest(),
