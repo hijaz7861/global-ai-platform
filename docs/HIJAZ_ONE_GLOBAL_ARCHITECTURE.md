@@ -1158,3 +1158,11 @@ This snapshot supersedes earlier PR #77 status notes where they conflict. It rec
 - Hatchable Version 40 was inventoried read-only only. No live files, schema, rows, credentials, media objects or backup were changed or copied.
 - No PR was merged, no deployment occurred, no secret was changed, no provider was enabled, no paid service or domain was purchased, and no production data was deleted.
 - The full HIJAZ ONE Definition of Done remains NOT SATISFIED. The role/vertical stack, migration collision, portable runtime integration, global commerce, AI controls, export/import reconciliation, backup/restore, independent-host rehearsal, security review, branch governance and owner approval remain open.
+
+
+## Exact-head verification update — 2026-11-26 (customer engagement)
+
+- PR #80 head `378add3923895eb82bc0b5ec7a5cb1fb1ade6d1f` completed GitHub Actions Run [#972](https://github.com/hijaz7861/global-ai-platform/actions/runs/45862226147) successfully: **5/5 jobs**. Python 3.11/3.12/3.13 each reported 468 passed / 30 skipped; PostgreSQL integration reported 30 passed; Alembic applied through `0049_customer_engagement` and `alembic check` reported no new upgrade operations; dependency audit and Bandit succeeded. This supersedes the stale Run #969 pending statement in the earlier addendum.
+- PR #80 remains Draft/unmerged, based on PR #79's labour/material register branch. Its exact head is 186 commits ahead and 0 behind canonical master; the migration chain is linear through `0049_customer_engagement` on that candidate stack. This does not resolve PR #68's separate `0035_ai_agent_checkpoints` collision on its independent branch.
+- A new Draft PR #81 is stacked directly on PR #80 and fixes inconsistent PostgreSQL row-lock order between unsubscribe and consent revocation. It adds a regression assertion for the token-preview → lead-lock → token-lock sequence. Exact-head Run #974 is in progress on `02cb258f32592f690615f7692897e83901738e2e`; no pass is claimed yet.
+- No PR was merged, no live Hatchable data was changed or copied, and no external communication provider was enabled. The full Definition of Done remains **NOT SATISFIED**.
