@@ -108,9 +108,22 @@ def require_active_role(role_key: str, *, organization_scoped: bool = False):
             statement = statement.where(UserRoleEntitlement.organization_id == organization_id)
         else:
             statement = statement.where(UserRoleEntitlement.organization_id.is_(None))
-        entitlement = db.scalar(statement.order_by(UserRoleEntitlement.activated_at.desc()))
-        role = db.get(RoleDefinition, role_key)
-        if entitlement is None or role is None or not role.is_active:
+        # Keep the entitlement valid for the duration of the protected request.
+        # Lock order matches admin lifecycle transitions: entitlement, then role.
+        entitlement = db.scalar(
+            statement.order_by(UserRoleEntitlement.activated_at.desc())
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if entitlement is None:
+            raise HTTPException(status_code=403, detail=detail)
+        role = db.scalar(
+            select(RoleDefinition)
+            .where(RoleDefinition.role_key == role_key)
+            .with_for_update(read=True)
+            .execution_options(populate_existing=True)
+        )
+        if role is None or not role.is_active:
             raise HTTPException(status_code=403, detail=detail)
         if entitlement.fee_amount_minor > 0 and entitlement.payment_status != "verified":
             raise HTTPException(status_code=403, detail=detail)

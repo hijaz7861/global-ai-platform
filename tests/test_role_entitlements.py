@@ -1,5 +1,6 @@
 """Tests for independent user role applications and approval gates."""
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api.deps import require_active_role
 from app.api.routes import identity as identity_routes
 from app.api.routes.role_entitlements import _get_entitlement_for_update, _get_role_for_update
 from app.core.config import settings
@@ -627,3 +629,53 @@ def test_global_and_organization_role_entitlements_have_independent_uniqueness(c
     )
     assert outsider.status_code == 404
     assert outsider.json()["detail"] == "Organization not found"
+
+
+@pytest.mark.parametrize(
+    ("organization_scoped", "organization_id"),
+    [(False, None), (True, "role-scope-lock-organization")],
+)
+def test_active_role_dependency_locks_entitlement_and_role_rows(
+    organization_scoped, organization_id
+):
+    class StatementCapture:
+        def __init__(self):
+            self.statements = []
+            self.entitlement = SimpleNamespace(
+                fee_amount_minor=50_000,
+                payment_status="verified",
+                age_verified=True,
+                expires_at=None,
+            )
+            self.role = SimpleNamespace(is_active=True, min_age=18)
+
+        def scalar(self, statement):
+            self.statements.append(statement)
+            entity = statement.column_descriptions[0]["entity"]
+            if entity is UserRoleEntitlement:
+                return self.entitlement
+            if entity is RoleDefinition:
+                return self.role
+            raise AssertionError(f"Unexpected role dependency query: {entity}")
+
+    db = StatementCapture()
+    dependency = require_active_role("contractor", organization_scoped=organization_scoped)
+    result = dependency(
+        user=SimpleNamespace(id="role-scope-lock-user", email_verified=True),
+        db=db,
+        organization_id=organization_id,
+    )
+
+    assert result is db.entitlement
+    assert len(db.statements) == 2
+    compiled = [
+        str(statement.compile(dialect=postgresql.dialect()))
+        for statement in db.statements
+    ]
+    assert all("FOR UPDATE" in sql or "FOR SHARE" in sql for sql in compiled)
+    assert "FOR UPDATE" in compiled[0]
+    assert "FOR SHARE" in compiled[1]
+    if organization_scoped:
+        assert "organization_id =" in compiled[0]
+    else:
+        assert "organization_id IS NULL" in compiled[0]
