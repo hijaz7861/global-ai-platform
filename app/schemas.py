@@ -1417,3 +1417,37 @@ class ConstructionMaterialEntryResponse(BaseModel):
     notes: str | None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class CustomerEngagementLeadCreate(BaseModel):
+    interest_category: str = Field(default="general", min_length=1, max_length=80)
+    interest_text: str = Field(min_length=1, max_length=3000)
+    preferred_language: Literal["ur", "en"] = "ur"
+    source: str = Field(default="account", min_length=1, max_length=40)
+    marketing_consent: bool = False
+    email_consent: bool = False
+    sms_consent: bool = False
+    whatsapp_consent: bool = False
+
+    @field_validator("interest_category", "interest_text", "source")
+    @classmethod
+    def normalize_engagement_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Engagement text fields must not be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def channel_consent_requires_marketing(self):
+        if any((self.email_consent, self.sms_consent, self.whatsapp_consent)) and not self.marketing_consent:
+            raise ValueError("Channel consent requires explicit marketing consent")
+        return self
+
+
+class CustomerEngagementConsentUpdate(BaseModel):
+    channel: Literal["marketing", "email", "sms", "whatsapp"]
+    consent: bool
+
+
+class CustomerEngagementUnsubscribeRequest(BaseModel):
+    token: str = Field(min_length=40, max_length=100)
