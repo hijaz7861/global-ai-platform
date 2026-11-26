@@ -8,6 +8,7 @@ from app.api.routes.ai_memory import router as ai_memory_router
 from app.api.routes.ai_skills import router as ai_skills_router
 from app.api.routes.ai_tools import router as ai_tools_router
 from app.api.routes.audit import router as audit_router
+from app.api.routes.construction import router as construction_router
 from app.api.routes.health import router as health_router
 from app.api.routes.identity import router as identity_router
 from app.api.routes.listings import router as listings_router
@@ -18,7 +19,9 @@ from app.api.routes.procurement import router as procurement_router
 from app.api.routes.reconciliation import router as reconciliation_router
 from app.api.routes.orders import router as orders_router
 from app.api.routes.seller import router as seller_router
+from app.api.routes.role_entitlements import router as role_entitlements_router
 from app.api.routes.suppliers import router as suppliers_router
+from app.api.routes.transport import router as transport_router
 
 api_router = APIRouter()
 api_router.include_router(health_router, tags=["health"])
@@ -29,9 +32,12 @@ api_router.include_router(listings_router)
 api_router.include_router(orders_router)
 api_router.include_router(audit_router)
 api_router.include_router(accounting_router)
+api_router.include_router(construction_router)
 api_router.include_router(reconciliation_router)
 api_router.include_router(seller_router)
+api_router.include_router(role_entitlements_router)
 api_router.include_router(suppliers_router)
+api_router.include_router(transport_router)
 api_router.include_router(platform_operations_router)
 api_router.include_router(procurement_router)
 api_router.include_router(ai_router)

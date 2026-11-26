@@ -6,9 +6,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app import models  # noqa: F401
+from app.api.routes import identity as identity_routes
 from app.core.config import settings
 from app.db import Base, get_db
 from app.main import app
+from app.models import RoleDefinition
+
+_EMAIL_TOKENS: dict[str, str] = {}
 
 
 @pytest.fixture
@@ -18,6 +22,20 @@ def client(monkeypatch):
     Base.metadata.create_all(bind=engine)
     monkeypatch.setattr(settings, "secret_key", "test-only-signing-key-not-for-production")
     monkeypatch.setattr(settings, "platform_admin_emails", "platform-admin@example.com")
+    monkeypatch.setattr(settings, "require_email_verification", True)
+    _EMAIL_TOKENS.clear()
+    monkeypatch.setattr(
+        identity_routes,
+        "send_email_verification",
+        lambda email, token: _EMAIL_TOKENS.__setitem__(email, token),
+    )
+    with sessions() as db:
+        db.add(RoleDefinition(
+            role_key="supplier", display_name="Supplier", description="Supplier profile",
+            min_age=18, fee_amount_minor=None, fee_currency="PKR",
+            requires_review=True, is_active=True,
+        ))
+        db.commit()
 
     def override_get_db():
         db = sessions()
@@ -38,6 +56,9 @@ def register(client: TestClient, email: str) -> str:
     password = "correct-horse-battery-12"
     created = client.post("/api/v1/auth/register", json={"email": email, "password": password})
     assert created.status_code == 201, created.text
+    raw_token = _EMAIL_TOKENS.pop(email)
+    verified = client.post("/api/v1/auth/email-verification/confirm", json={"token": raw_token})
+    assert verified.status_code == 204, verified.text
     login = client.post("/api/v1/auth/token", json={"email": email, "password": password})
     assert login.status_code == 200, login.text
     return login.json()["access_token"]
@@ -80,6 +101,36 @@ def approve_supplier(client: TestClient, token: str, org_id: str, legal_name: st
     assert reviewed.status_code == 200, reviewed.text
 
 
+
+def configure_supplier_role(client: TestClient, admin_headers: dict[str, str]) -> None:
+    response = client.patch(
+        "/api/v1/platform/role-definitions/supplier",
+        headers=admin_headers,
+        json={"fee_amount_minor": 100, "fee_currency": "PKR", "min_age": 18, "is_active": True},
+    )
+    assert response.status_code == 200, response.text
+
+
+def apply_supplier_role(client: TestClient, token: str, org_id: str) -> str:
+    response = client.post(
+        "/api/v1/me/role-entitlements",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"role_key": "supplier", "organization_id": org_id},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["status"] == "pending_payment"
+    return response.json()["id"]
+
+
+def review_supplier_role(client: TestClient, entitlement_id: str, admin_headers: dict[str, str]) -> None:
+    response = client.post(
+        f"/api/v1/platform/role-entitlements/{entitlement_id}/review",
+        headers=admin_headers,
+        json={"decision": "approve", "payment_verified": True, "age_verified": True},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "active"
+
 def test_procurement_quote_award_is_tenant_scoped_and_single_winner(client):
     admin_token = register(client, "platform-admin@example.com")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
@@ -111,8 +162,35 @@ def test_procurement_quote_award_is_tenant_scoped_and_single_winner(client):
     assert created.json()["currency"] == "PKR"
     assert created.json()["status"] == "open"
 
+    quote_url_one = f"/api/v1/organizations/{supplier_one_org}/procurement-requests/{request_id}/quotes"
+    missing_role = client.post(
+        quote_url_one,
+        headers={"Authorization": f"Bearer {supplier_one_token}"},
+        json={"unit_price_minor": 100, "currency": "PKR", "lead_time_days": 5},
+    )
+    assert missing_role.status_code == 403
+    supplier_one_other_org = create_org(client, supplier_one_token, "Supplier One Other Organization")
+    other_scope_quote = client.post(
+        f"/api/v1/organizations/{supplier_one_other_org}/procurement-requests/{request_id}/quotes",
+        headers={"Authorization": f"Bearer {supplier_one_token}"},
+        json={"unit_price_minor": 100, "currency": "PKR", "lead_time_days": 5},
+    )
+    assert other_scope_quote.status_code == 403
+
+    configure_supplier_role(client, admin_headers)
+    supplier_one_entitlement = apply_supplier_role(client, supplier_one_token, supplier_one_org)
+    supplier_two_entitlement = apply_supplier_role(client, supplier_two_token, supplier_two_org)
+    pending_role = client.post(
+        quote_url_one,
+        headers={"Authorization": f"Bearer {supplier_one_token}"},
+        json={"unit_price_minor": 100, "currency": "PKR", "lead_time_days": 5},
+    )
+    assert pending_role.status_code == 403
+    review_supplier_role(client, supplier_one_entitlement, admin_headers)
+    review_supplier_role(client, supplier_two_entitlement, admin_headers)
+
     quote_one = client.post(
-        f"/api/v1/organizations/{supplier_one_org}/procurement-requests/{request_id}/quotes",
+        quote_url_one,
         headers={"Authorization": f"Bearer {supplier_one_token}"},
         json={"unit_price_minor": 100, "currency": "PKR", "lead_time_days": 5, "notes": "First offer"},
     )
@@ -283,13 +361,30 @@ def test_procurement_requires_approved_supplier_and_matching_currency(client):
     assert unapproved.status_code == 403
 
     admin_token = register(client, "platform-admin@example.com")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
     approve_supplier(
         client,
         supplier_token,
         supplier_org,
         "Unapproved Supplier Ltd",
-        {"Authorization": f"Bearer {admin_token}"},
+        admin_headers,
     )
+    approved_profile_without_role = client.post(
+        quote_url,
+        headers={"Authorization": f"Bearer {supplier_token}"},
+        json={"unit_price_minor": 500, "currency": "PKR", "lead_time_days": 4},
+    )
+    assert approved_profile_without_role.status_code == 403
+    configure_supplier_role(client, admin_headers)
+    entitlement_id = apply_supplier_role(client, supplier_token, supplier_org)
+    pending_role = client.post(
+        quote_url,
+        headers={"Authorization": f"Bearer {supplier_token}"},
+        json={"unit_price_minor": 500, "currency": "PKR", "lead_time_days": 4},
+    )
+    assert pending_role.status_code == 403
+    review_supplier_role(client, entitlement_id, admin_headers)
+
     wrong_currency = client.post(
         quote_url,
         headers={"Authorization": f"Bearer {supplier_token}"},

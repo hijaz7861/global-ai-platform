@@ -56,25 +56,17 @@ def test_concurrent_refresh_replay_revokes_session_family():
 
 
 
-def test_concurrent_orders_cannot_oversell_single_inventory_unit():
+def test_concurrent_orders_cannot_oversell_single_inventory_unit(
+    monkeypatch, verified_user_factory, active_supplier_role_factory
+):
     suffix = uuid4().hex
-    password = "correct-horse-battery-12"
     seller_email = f"postgres-seller-{suffix}@example.com"
+    role_admin_email = f"postgres-role-admin-{suffix}@example.com"
     buyer_one_email = f"postgres-buyer-one-{suffix}@example.com"
     buyer_two_email = f"postgres-buyer-two-{suffix}@example.com"
 
     def register_and_login(client, email):
-        registered = client.post(
-            "/api/v1/auth/register",
-            json={"email": email, "password": password},
-        )
-        assert registered.status_code == 201, registered.text
-        logged_in = client.post(
-            "/api/v1/auth/token",
-            json={"email": email, "password": password},
-        )
-        assert logged_in.status_code == 200, logged_in.text
-        return logged_in.json()["access_token"]
+        return verified_user_factory(client, email)
 
     with TestClient(app) as client:
         seller_token = register_and_login(client, seller_email)
@@ -85,6 +77,9 @@ def test_concurrent_orders_cannot_oversell_single_inventory_unit():
         )
         assert organization.status_code == 201, organization.text
         organization_id = organization.json()["id"]
+        active_supplier_role_factory(
+            client, seller_token, organization_id, admin_email=role_admin_email
+        )
         listing = client.post(
             f"/api/v1/organizations/{organization_id}/listings",
             headers={"Authorization": f"Bearer {seller_token}"},
@@ -331,24 +326,16 @@ def test_accounting_period_overlap_is_rejected_by_database_trigger():
         engine.dispose()
 
 
-def test_concurrent_order_cancellation_releases_inventory_exactly_once():
+def test_concurrent_order_cancellation_releases_inventory_exactly_once(
+    monkeypatch, verified_user_factory, active_supplier_role_factory
+):
     suffix = uuid4().hex
-    password = "correct-horse-battery-12"
     seller_email = f"postgres-cancel-seller-{suffix}@example.com"
+    role_admin_email = f"postgres-cancel-role-admin-{suffix}@example.com"
     buyer_email = f"postgres-cancel-buyer-{suffix}@example.com"
 
     def register_and_login(client, email):
-        registered = client.post(
-            "/api/v1/auth/register",
-            json={"email": email, "password": password},
-        )
-        assert registered.status_code == 201, registered.text
-        login = client.post(
-            "/api/v1/auth/token",
-            json={"email": email, "password": password},
-        )
-        assert login.status_code == 200, login.text
-        return login.json()["access_token"]
+        return verified_user_factory(client, email)
 
     with TestClient(app) as client:
         seller_token = register_and_login(client, seller_email)
@@ -359,6 +346,9 @@ def test_concurrent_order_cancellation_releases_inventory_exactly_once():
         )
         assert organization.status_code == 201, organization.text
         organization_id = organization.json()["id"]
+        active_supplier_role_factory(
+            client, seller_token, organization_id, admin_email=role_admin_email
+        )
         listing = client.post(
             f"/api/v1/organizations/{organization_id}/listings",
             headers={"Authorization": f"Bearer {seller_token}"},
@@ -413,30 +403,21 @@ def test_concurrent_order_cancellation_releases_inventory_exactly_once():
     assert inventory["inventory_quantity"] == 1, "Concurrent cancellation must not double-release inventory"
 
 
-def test_concurrent_cancel_and_expiry_release_inventory_exactly_once(monkeypatch):
+def test_concurrent_cancel_and_expiry_release_inventory_exactly_once(
+    monkeypatch, verified_user_factory, active_supplier_role_factory
+):
     from datetime import datetime, timedelta, timezone
 
     from app.core.config import settings
 
     suffix = uuid4().hex
-    password = "correct-horse-battery-12"
     admin_email = f"postgres-expiry-admin-{suffix}@example.com"
     seller_email = f"postgres-expiry-seller-{suffix}@example.com"
     buyer_email = f"postgres-expiry-buyer-{suffix}@example.com"
     monkeypatch.setattr(settings, "platform_admin_emails", admin_email)
 
     def register_and_login(client, email):
-        registered = client.post(
-            "/api/v1/auth/register",
-            json={"email": email, "password": password},
-        )
-        assert registered.status_code == 201, registered.text
-        login = client.post(
-            "/api/v1/auth/token",
-            json={"email": email, "password": password},
-        )
-        assert login.status_code == 200, login.text
-        return login.json()["access_token"]
+        return verified_user_factory(client, email)
 
     with TestClient(app) as client:
         admin_token = register_and_login(client, admin_email)
@@ -448,6 +429,11 @@ def test_concurrent_cancel_and_expiry_release_inventory_exactly_once(monkeypatch
         )
         assert organization.status_code == 201, organization.text
         organization_id = organization.json()["id"]
+        role_admin_email = f"postgres-expiry-role-admin-{suffix}@example.com"
+        active_supplier_role_factory(
+            client, seller_token, organization_id, admin_email=role_admin_email
+        )
+        monkeypatch.setattr(settings, "platform_admin_emails", admin_email)
         listing = client.post(
             f"/api/v1/organizations/{organization_id}/listings",
             headers={"Authorization": f"Bearer {seller_token}"},
@@ -844,7 +830,14 @@ def test_journal_posting_serializes_with_period_closure_and_trigger_blocks_close
 
 def test_concurrent_procurement_awards_accept_exactly_one_supplier_quote(monkeypatch):
     from app.core.config import settings
+    from app.api.routes import identity as identity_routes
 
+    verification_tokens: dict[str, str] = {}
+    monkeypatch.setattr(
+        identity_routes,
+        "send_email_verification",
+        lambda email, token: verification_tokens.__setitem__(email, token),
+    )
     suffix = uuid4().hex
     password = "correct-horse-battery-12"
     admin_email = f"postgres-proc-admin-{suffix}@example.com"
@@ -861,6 +854,12 @@ def test_concurrent_procurement_awards_accept_exactly_one_supplier_quote(monkeyp
             json={"email": email, "password": password},
         )
         assert registered.status_code == 201, registered.text
+        raw_token = verification_tokens.pop(email)
+        verified = client.post(
+            "/api/v1/auth/email-verification/confirm",
+            json={"token": raw_token},
+        )
+        assert verified.status_code == 204, verified.text
         login = client.post(
             "/api/v1/auth/token",
             json={"email": email, "password": password},
@@ -871,6 +870,12 @@ def test_concurrent_procurement_awards_accept_exactly_one_supplier_quote(monkeyp
     with TestClient(app) as client:
         admin_token = register_and_login(client, admin_email)
         admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        configured_role = client.patch(
+            "/api/v1/platform/role-definitions/supplier",
+            headers=admin_headers,
+            json={"fee_amount_minor": 100, "fee_currency": "PKR", "min_age": 18, "is_active": True},
+        )
+        assert configured_role.status_code == 200, configured_role.text
         buyer_token = register_and_login(client, buyer_email)
         buyer_org = client.post(
             "/api/v1/organizations",
@@ -917,6 +922,19 @@ def test_concurrent_procurement_awards_accept_exactly_one_supplier_quote(monkeyp
                 json={"decision": "approved", "notes": "CI test approval"},
             )
             assert reviewed.status_code == 200, reviewed.text
+            entitlement = client.post(
+                "/api/v1/me/role-entitlements",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"role_key": "supplier", "organization_id": supplier_org_id},
+            )
+            assert entitlement.status_code == 201, entitlement.text
+            role_review = client.post(
+                f"/api/v1/platform/role-entitlements/{entitlement.json()['id']}/review",
+                headers=admin_headers,
+                json={"decision": "approve", "payment_verified": True, "age_verified": True},
+            )
+            assert role_review.status_code == 200, role_review.text
+            assert role_review.json()["status"] == "active"
 
         request = client.post(
             f"/api/v1/organizations/{buyer_org_id}/procurement-requests",
@@ -974,9 +992,6 @@ def test_concurrent_procurement_awards_accept_exactly_one_supplier_quote(monkeyp
     assert statuses.count("rejected") == 1
     awarded = [item for item in requests.json() if item["id"] == request_id]
     assert len(awarded) == 1 and awarded[0]["status"] == "awarded"
-
-
-
 def test_concurrent_ai_task_claim_is_granted_to_exactly_one_worker():
     from sqlalchemy.orm import sessionmaker
 
@@ -1280,5 +1295,350 @@ def test_provider_circuit_breaker_allows_only_one_concurrent_half_open_probe():
             results = list(pool.map(claim_probe, range(8)))
 
         assert sum(results) == 1
+    finally:
+        engine.dispose()
+
+
+def test_role_entitlement_events_are_immutable_in_postgresql(monkeypatch):
+    from app.api.routes import identity as identity_routes
+
+    verification_tokens: dict[str, str] = {}
+    monkeypatch.setattr(
+        identity_routes,
+        "send_email_verification",
+        lambda email, token: verification_tokens.__setitem__(email, token),
+    )
+    email = f"postgres-role-audit-{uuid4().hex}@example.com"
+    password = "correct-horse-battery-12"
+    with TestClient(app) as client:
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        verified = client.post(
+            "/api/v1/auth/email-verification/confirm",
+            json={"token": verification_tokens.pop(email)},
+        )
+        assert verified.status_code == 204, verified.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        application = client.post(
+            "/api/v1/me/role-entitlements",
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+            json={"role_key": "student"},
+        )
+        assert application.status_code == 201, application.text
+        entitlement_id = application.json()["id"]
+
+    engine = create_engine(os.environ["DATABASE_URL"])
+    try:
+        with engine.connect() as connection:
+            event_id = connection.execute(
+                text(
+                    "SELECT id FROM role_entitlement_events "
+                    "WHERE entitlement_id = :entitlement_id ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"entitlement_id": entitlement_id},
+            ).scalar_one()
+
+        with pytest.raises(DBAPIError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("UPDATE role_entitlement_events SET event_type = 'tampered' WHERE id = :event_id"),
+                    {"event_id": event_id},
+                )
+
+        with pytest.raises(DBAPIError):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("DELETE FROM role_entitlement_events WHERE id = :event_id"),
+                    {"event_id": event_id},
+                )
+    finally:
+        engine.dispose()
+
+
+def test_postgres_maintenance_expires_due_role_entitlements_and_is_idempotent():
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy.orm import sessionmaker
+
+    from app.maintenance import run_maintenance_once
+    from app.models import RoleEntitlementEvent, User, UserRoleEntitlement
+
+    suffix = uuid4().hex
+    now = datetime.now(timezone.utc)
+    engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    try:
+        with factory() as db:
+            users = [
+                User(email=f"postgres-role-expiry-{index}-{suffix}@example.com", password_hash="test-hash")
+                for index in range(2)
+            ]
+            db.add_all(users)
+            db.flush()
+            entitlements = [
+                UserRoleEntitlement(
+                    user_id=users[0].id,
+                    role_key="student",
+                    status="active",
+                    payment_status="not_required",
+                    fee_amount_minor=0,
+                    fee_currency="PKR",
+                    activated_at=now - timedelta(days=30),
+                    expires_at=now - timedelta(seconds=1),
+                ),
+                UserRoleEntitlement(
+                    user_id=users[1].id,
+                    role_key="student",
+                    status="suspended",
+                    payment_status="not_required",
+                    fee_amount_minor=0,
+                    fee_currency="PKR",
+                    activated_at=now - timedelta(days=30),
+                    expires_at=now - timedelta(seconds=1),
+                ),
+            ]
+            db.add_all(entitlements)
+            db.commit()
+            entitlement_ids = {item.id for item in entitlements}
+
+        first = run_maintenance_once(factory, role_entitlement_limit=10, now=now)
+        assert first["expired_role_entitlements"] == 2
+        assert set(first["expired_role_entitlement_ids"]) == entitlement_ids
+
+        second = run_maintenance_once(factory, role_entitlement_limit=10, now=now)
+        assert second["expired_role_entitlements"] == 0
+        assert second["expired_role_entitlement_ids"] == []
+
+        with factory() as db:
+            statuses = {
+                item.id: item.status
+                for item in db.query(UserRoleEntitlement).filter(
+                    UserRoleEntitlement.id.in_(entitlement_ids)
+                ).all()
+            }
+            assert statuses == {item_id: "expired" for item_id in entitlement_ids}
+            events = db.query(RoleEntitlementEvent).filter(
+                RoleEntitlementEvent.entitlement_id.in_(entitlement_ids),
+                RoleEntitlementEvent.event_type == "expired",
+            ).all()
+            assert len(events) == 2
+            assert {event.details["previous_status"] for event in events} == {"active", "suspended"}
+    finally:
+        engine.dispose()
+
+
+def test_postgres_role_entitlement_uniqueness_is_isolated_by_global_and_org_scope(monkeypatch):
+    from app.api.routes import identity as identity_routes
+
+    verification_tokens: dict[str, str] = {}
+    monkeypatch.setattr(
+        identity_routes,
+        "send_email_verification",
+        lambda email, token: verification_tokens.__setitem__(email, token),
+    )
+    email = f"postgres-role-unique-{uuid4().hex}@example.com"
+    password = "correct-horse-battery-12"
+    with TestClient(app) as client:
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password},
+        )
+        assert registered.status_code == 201, registered.text
+        verified = client.post(
+            "/api/v1/auth/email-verification/confirm",
+            json={"token": verification_tokens.pop(email)},
+        )
+        assert verified.status_code == 204, verified.text
+        login = client.post(
+            "/api/v1/auth/token",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["access_token"]
+        organization = client.post(
+            "/api/v1/organizations",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": f"Role uniqueness {uuid4().hex[:8]}"},
+        )
+        assert organization.status_code == 201, organization.text
+        organization_id = organization.json()["id"]
+
+    def apply(scope: str):
+        payload = {"role_key": "student"}
+        if scope == "organization":
+            payload["organization_id"] = organization_id
+        with TestClient(app) as client:
+            return client.post(
+                "/api/v1/me/role-entitlements",
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+            )
+
+    for scope in ("global", "organization"):
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(lambda _: apply(scope), range(2)))
+        assert sorted(response.status_code for response in responses) == [201, 409], [
+            (response.status_code, response.text) for response in responses
+        ]
+
+    with TestClient(app) as client:
+        rows = client.get(
+            "/api/v1/me/role-entitlements",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert rows.status_code == 200, rows.text
+    assert {
+        row["organization_id"] for row in rows.json() if row["role_key"] == "student"
+    } == {None, organization_id}
+
+
+
+def test_postgres_construction_composite_tenant_keys_and_decimal_boq():
+    from decimal import Decimal
+    from sqlalchemy.orm import sessionmaker
+    from app.models import ConstructionBoqItem, ConstructionClient, ConstructionProject, Organization, User
+
+    suffix = uuid4().hex
+    engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    try:
+        with factory() as db:
+            user = User(email=f"postgres-construction-{suffix}@example.com", password_hash="test-hash")
+            org_a = Organization(name=f"Construction A {suffix[:8]}")
+            org_b = Organization(name=f"Construction B {suffix[:8]}")
+            db.add_all([user, org_a, org_b])
+            db.flush()
+            user_id, org_b_id = user.id, org_b.id
+            client = ConstructionClient(organization_id=org_a.id, created_by_user_id=user.id,
+                display_name="Construction Client", city="Lahore")
+            db.add(client)
+            db.flush()
+            project = ConstructionProject(organization_id=org_a.id, client_id=client.id,
+                created_by_user_id=user.id, title="Composite tenant test", work_type="grey_structure",
+                contract_type="labour_material", contract_amount_minor=250000, currency="PKR")
+            db.add(project)
+            db.flush()
+            item = ConstructionBoqItem(organization_id=org_a.id, project_id=project.id,
+                created_by_user_id=user.id, line_number=1, item_name="Cement", unit="bag",
+                quantity=Decimal("0.001"), unit_rate_minor=500, line_total_minor=1)
+            db.add(item)
+            db.commit()
+            project_id, client_id = project.id, client.id
+            assert item.line_total_minor == 1
+
+        with factory() as db:
+            db.add(ConstructionProject(organization_id=org_b_id, client_id=client_id,
+                created_by_user_id=user_id, title="Cross-tenant client reference",
+                work_type="grey_structure", contract_type="labour_material"))
+            with pytest.raises(DBAPIError):
+                db.flush()
+            db.rollback()
+            db.add(ConstructionBoqItem(organization_id=org_b_id, project_id=project_id,
+                created_by_user_id=user_id, line_number=2, item_name="Cross-tenant BOQ",
+                unit="bag", quantity=Decimal("1.000"), unit_rate_minor=100, line_total_minor=100))
+            with pytest.raises(DBAPIError):
+                db.flush()
+            db.rollback()
+
+    finally:
+        engine.dispose()
+
+
+
+def test_postgres_construction_cashbook_enforces_project_and_journal_tenant_keys():
+    from sqlalchemy.orm import sessionmaker
+    from app.models import (
+        Account, ConstructionCashbookEntry, ConstructionClient, ConstructionProject,
+        JournalEntry, JournalLine, Organization, User,
+    )
+
+    suffix = uuid4().hex
+    engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
+    factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    try:
+        with factory() as db:
+            user = User(email=f"postgres-cashbook-{suffix}@example.com", password_hash="test-hash")
+            org_a = Organization(name=f"Cashbook A {suffix[:8]}")
+            org_b = Organization(name=f"Cashbook B {suffix[:8]}")
+            db.add_all([user, org_a, org_b])
+            db.flush()
+            client_a = ConstructionClient(
+                organization_id=org_a.id, created_by_user_id=user.id, display_name="Cashbook A"
+            )
+            client_b = ConstructionClient(
+                organization_id=org_b.id, created_by_user_id=user.id, display_name="Cashbook B"
+            )
+            db.add_all([client_a, client_b])
+            db.flush()
+            project_a = ConstructionProject(
+                organization_id=org_a.id, client_id=client_a.id, created_by_user_id=user.id,
+                title="Cashbook project A", work_type="grey_structure", contract_type="labour_material",
+                contract_amount_minor=100000, currency="PKR", status="approved",
+            )
+            project_b = ConstructionProject(
+                organization_id=org_b.id, client_id=client_b.id, created_by_user_id=user.id,
+                title="Cashbook project B", work_type="grey_structure", contract_type="labour_material",
+                contract_amount_minor=100000, currency="PKR", status="approved",
+            )
+            db.add_all([project_a, project_b])
+            cash = Account(
+                organization_id=org_a.id, code="1000", name="Cash",
+                account_type="asset", currency="PKR", is_active=True,
+            )
+            revenue = Account(
+                organization_id=org_a.id, code="4000", name="Revenue",
+                account_type="revenue", currency="PKR", is_active=True,
+            )
+            db.add_all([cash, revenue])
+            db.flush()
+            journal = JournalEntry(
+                organization_id=org_a.id, created_by_user_id=user.id,
+                idempotency_key=f"pg-cashbook-{suffix}", request_fingerprint="a" * 64,
+                description="Cashbook integration test", currency="PKR", total_minor=1000, status="posted",
+            )
+            db.add(journal)
+            db.flush()
+            db.add_all([
+                JournalLine(journal_entry_id=journal.id, account_id=cash.id, debit_minor=1000, credit_minor=0),
+                JournalLine(journal_entry_id=journal.id, account_id=revenue.id, debit_minor=0, credit_minor=1000),
+            ])
+            valid = ConstructionCashbookEntry(
+                organization_id=org_a.id, project_id=project_a.id, journal_entry_id=journal.id,
+                created_by_user_id=user.id, direction="income", category="Advance",
+                amount_minor=1000, currency="PKR",
+            )
+            db.add(valid)
+            db.commit()
+            cashbook_id = valid.id
+            project_b_id, journal_id, user_id, org_b_id = project_b.id, journal.id, user.id, org_b.id
+
+        with factory() as db:
+            db.add(ConstructionCashbookEntry(
+                organization_id=org_b_id, project_id=project_b_id, journal_entry_id=journal_id,
+                created_by_user_id=user_id, direction="income", category="Cross-tenant journal",
+                amount_minor=1000, currency="PKR",
+            ))
+            with pytest.raises(DBAPIError):
+                db.flush()
+            db.rollback()
+        with pytest.raises(DBAPIError, match="construction_cashbook_entries are append-only"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("UPDATE construction_cashbook_entries SET category = 'tampered' WHERE id = :id"),
+                    {"id": cashbook_id},
+                )
+        with pytest.raises(DBAPIError, match="construction_cashbook_entries are append-only"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("DELETE FROM construction_cashbook_entries WHERE id = :id"),
+                    {"id": cashbook_id},
+                )
     finally:
         engine.dispose()
