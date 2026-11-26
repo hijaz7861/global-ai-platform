@@ -1166,3 +1166,14 @@ This snapshot supersedes earlier PR #77 status notes where they conflict. It rec
 - PR #80 remains Draft/unmerged, based on PR #79's labour/material register branch. Its exact head is 186 commits ahead and 0 behind canonical master; the migration chain is linear through `0049_customer_engagement` on that candidate stack. This does not resolve PR #68's separate `0035_ai_agent_checkpoints` collision on its independent branch.
 - A new Draft PR #81 is stacked directly on PR #80 and fixes inconsistent PostgreSQL row-lock order between unsubscribe and consent revocation. It adds a regression assertion for the token-preview → lead-lock → token-lock sequence. Exact-head Run #974 is in progress on `02cb258f32592f690615f7692897e83901738e2e`; no pass is claimed yet.
 - No PR was merged, no live Hatchable data was changed or copied, and no external communication provider was enabled. The full Definition of Done remains **NOT SATISFIED**.
+
+
+## Exact-head CI confirmation — PR #81, 2026-11-26
+
+- PR #81 fixes the customer-engagement unsubscribe/consent PostgreSQL lock-order inversion by taking a non-locking token preview, then locking the lead, then re-reading and locking the token. This matches the lead → token order already used by consent revocation and removes the identified deadlock cycle.
+- The initial Run #974 was cancelled after its test fixture used a token shorter than the schema's 40-character minimum. The fixture was corrected to 48 characters; no failed test result is hidden.
+- Exact-head GitHub Actions Run [#975](https://github.com/hijaz7861/global-ai-platform/actions/runs/45863611956) completed **SUCCESS (5/5 jobs)** on `5c3a6c66e161a136ff34dc03facc7daee516e314`: Python 3.11/3.12/3.13 each reported 469 passed / 30 skipped; PostgreSQL integration reported 30 passed; Alembic upgrade/check, dependency audit and Bandit succeeded.
+- PR #81 remains Draft/open/unmerged, stacked on PR #80. It has no submitted review or inline review thread. The exact-head result verifies CI, not owner approval or production readiness.
+- Current inventory: 38 open PRs and 87 branches. Canonical master remains `11ad7da84e73126a450cb0d194e4859b90263a4a`, migration head `0034_postgres_approval_nonces`, and GitHub reports master `protected=false` with required status checks disabled.
+- The PR #80 stack contains a linear candidate migration chain through `0049_customer_engagement`; master still has only 34 migrations through `0034`. PR #68's independent `0035_ai_agent_checkpoints` branch still collides with the role branch's `0035_role_entitlements` and must be renumbered/rebased before integration.
+- The full HIJAZ ONE Definition of Done remains **NOT SATISFIED**. No PR was merged; no live Hatchable data was changed or copied; no deployment, external provider activation, paid service, domain purchase or production data deletion occurred.
