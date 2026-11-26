@@ -2246,7 +2246,7 @@ def test_customer_engagement_consent_events_are_append_only_on_postgres():
     from app.db import engine
 
     suffix = uuid4().hex
-    user_id, lead_id, event_id = str(uuid4()), str(uuid4()), str(uuid4())
+    user_id, lead_id = str(uuid4()), str(uuid4())
     with engine.begin() as connection:
         connection.execute(
             text(
@@ -2274,8 +2274,8 @@ def test_customer_engagement_consent_events_are_append_only_on_postgres():
     with pytest.raises(DBAPIError, match="append-only"):
         with engine.begin() as connection:
             connection.execute(
-                text("UPDATE customer_engagement_consent_events SET consent = false WHERE id = :id"),
-                {"id": event_id},
+                text("UPDATE customer_engagement_consent_events SET consent = false WHERE lead_id = :lead_id"),
+                {"lead_id": lead_id},
             )
     with pytest.raises(DBAPIError, match="append-only"):
         with engine.begin() as connection:
@@ -2285,6 +2285,6 @@ def test_customer_engagement_consent_events_are_append_only_on_postgres():
             )
     with engine.connect() as connection:
         assert connection.scalar(
-            text("SELECT consent FROM customer_engagement_consent_events WHERE id = :id"),
-            {"id": event_id},
+            text("SELECT consent FROM customer_engagement_consent_events WHERE lead_id = :lead_id"),
+            {"lead_id": lead_id},
         ) is True
