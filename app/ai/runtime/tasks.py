@@ -13,7 +13,7 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import AIOutboxEvent, AITask, AITaskEvent, AITaskStep
+from app.models import AIAgentCheckpoint, AIOutboxEvent, AITask, AITaskEvent, AITaskStep
 
 _WORKER_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
@@ -229,6 +229,44 @@ def claim_next_task(db: Session, *, worker_id: str, lease_seconds: int = 60) -> 
     for expired_task in expired_cancelled:
         _mark_task_cancelled(db, expired_task, now)
     if expired_cancelled:
+        db.commit()
+
+    # A provider call may have been charged even if its worker died before saving
+    # the response. Never replay that ambiguous call automatically.
+    expired_agents = db.scalars(select(AITask).where(
+        AITask.status == "running",
+        AITask.task_type == "agent.run",
+        AITask.lease_expires_at <= now,
+        AITask.cancel_requested_at.is_(None),
+    ).with_for_update(skip_locked=True)).all()
+    ambiguous_failed = False
+    for expired_task in expired_agents:
+        checkpoint = db.scalar(select(AIAgentCheckpoint).where(
+            AIAgentCheckpoint.task_id == expired_task.id,
+        ))
+        if checkpoint is None or checkpoint.phase != "model_call_started":
+            continue
+        expired_task.status = "failed"
+        expired_task.claimed_by = None
+        expired_task.lease_expires_at = None
+        expired_task.heartbeat_at = None
+        expired_task.error_code = "agent_call_outcome_unknown"
+        expired_task.completed_at = now
+        expired_task.updated_at = now
+        db.execute(update(AITaskStep).where(
+            AITaskStep.task_id == expired_task.id,
+            AITaskStep.status == "running",
+        ).values(
+            status="failed",
+            error_code="agent_call_outcome_unknown",
+            completed_at=now,
+        ))
+        _event(db, expired_task, "failed", {
+            "attempt": expired_task.attempt_count,
+            "error_code": "agent_call_outcome_unknown",
+        })
+        ambiguous_failed = True
+    if ambiguous_failed:
         db.commit()
 
     # Expired tasks that exhausted their attempts are terminal, never left running forever.
