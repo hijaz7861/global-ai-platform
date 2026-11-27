@@ -2,7 +2,7 @@
 
 ## Current scope
 
-This public `master` branch is the reviewable foundation for the **Global AI Platform**. Latest inspected main commit: `21480c93f105052ad35f343b84a6f7858de5631d` (`feat: integrate governed AI agent operating layer`). Its merge commit message records that exact-head CI run #737 passed; per-job counts were not present in the fetched commit metadata. Project owner and maintainer: Muhammad Naeem Khan (`hijaz7861`). Hosting and deployment are intentionally deferred while implementation and test coverage are improved.
+This public `master` branch is the reviewable foundation for the **Global AI Platform**. Latest inspected `master` commit at this branch base: `11ad7da84e73126a450cb0d194e4859b90263a4a` (`docs: record merged CI evidence and current implementation status`); the AI operating layer was merged earlier as `21480c93f105052ad35f343b84a6f7858de5631d`. Its merge commit message records that exact-head CI run #737 passed; per-job counts were not present in the fetched commit metadata. Project owner and maintainer: Muhammad Naeem Khan (`hijaz7861`). Hosting and deployment are intentionally deferred while implementation and test coverage are improved.
 
 ## Implemented foundation
 
@@ -27,6 +27,14 @@ This public `master` branch is the reviewable foundation for the **Global AI Pla
 - Non-fatal warnings remain: Starlette/httpx TestClient deprecation, SQLAlchemy `Session.flush(objects=...)` deprecation, and test warnings. CI is successful but not warning-free and is not a production-readiness certification.
 - Dependency audit reported **No known vulnerabilities found**; Bandit completed successfully. The workflow does not replace an independent security review.
 - No live deployment, live payment processing, paid AI-provider call, or real-host Docker isolation test has been performed. Hosting remains deferred.
+## Current checkpointing change under review
+
+- Branch `feat/durable-agent-checkpoints` adds migration `0050_ai_agent_checkpoints`, AES-GCM encrypted checkpoint state bound to task/organization/revision, `SECRET_KEY` plus `PREVIOUS_SECRET_KEYS` decryption support, and lease-validated checkpoint writes.
+- Agent progress is persisted before and after each model turn. Recovery resumes only from `ready`, `decision_saved`, `tool_started`, or `final_saved` phases. If a worker lease expires while the checkpoint is `model_call_started`, the task is failed with `agent_call_outcome_unknown`; the provider call is not replayed because the provider may already have charged it.
+- Tool execution remains limited to the static read-only registry. A crash after a read-only tool executes but before its result checkpoint may repeat the read and its audit event; it cannot repeat a write.
+- Checkpoint state is encrypted at rest and authenticated with AES-GCM; its context digest binds the resumed run to the same currently approved memory/skill context. A key rotation must retain the previous signing key until all checkpoints encrypted with it are no longer needed.
+- This change is not merged or CI-verified yet.
+
 ## Remaining implementation work
 
 ### Highest-priority coding and tests
@@ -53,3 +61,8 @@ A feature is not complete merely because a route or document exists. Mark it com
 - A dedicated purge endpoint physically deletes a caller-owned private memory record; organization-shared records require the organization owner. The existing DELETE endpoint remains archive-only.
 - The one-shot maintenance runner now purges only records with an explicit, elapsed `expires_at`, in a bounded batch. It preserves metadata-only audit events and never copies memory content into the audit log.
 - No default TTL is imposed on records without `expires_at`; a complete retention schedule and self-service memory export remain release gaps. Expiry cleanup is invoked by the one-shot maintenance command and is not proof that a portable durable scheduler is deployed.
+
+
+## Integrated checkpoint candidate — 2026-11-27
+
+The encrypted resumable checkpoint implementation from the independent Draft PR #68 branch has been ported onto the current HIJAZ ONE role/vertical/workforce/customer-engagement stack. Its migration is renumbered to `0050_ai_agent_checkpoints` with `down_revision = 0049_customer_engagement`; PR #68's original `0035` revision must not be merged independently. The integrated candidate remains Draft and requires exact-head CI, migration verification, security review and owner approval. No checkpoint is deployed or enabled in production.
