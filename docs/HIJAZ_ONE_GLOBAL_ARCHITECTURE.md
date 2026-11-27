@@ -1177,3 +1177,38 @@ This snapshot supersedes earlier PR #77 status notes where they conflict. It rec
 - Current inventory: 38 open PRs and 87 branches. Canonical master remains `11ad7da84e73126a450cb0d194e4859b90263a4a`, migration head `0034_postgres_approval_nonces`, and GitHub reports master `protected=false` with required status checks disabled.
 - The PR #80 stack contains a linear candidate migration chain through `0049_customer_engagement`; master still has only 34 migrations through `0034`. PR #68's independent `0035_ai_agent_checkpoints` branch still collides with the role branch's `0035_role_entitlements` and must be renumbered/rebased before integration.
 - The full HIJAZ ONE Definition of Done remains **NOT SATISFIED**. No PR was merged; no live Hatchable data was changed or copied; no deployment, external provider activation, paid service, domain purchase or production data deletion occurred.
+
+
+## Verified continuation — 2026-11-27 (AI checkpoint migration integration)
+
+### Canonical repository state
+
+- Canonical default branch remains `master` at `11ad7da84e73126a450cb0d194e4859b90263a4a`; its migration head remains `0034_postgres_approval_nonces` (34 migration revisions on master).
+- Current repository inventory: **39 open PRs** and **89 branches**. GitHub branch metadata reports `master protected=false` and required status checks disabled. The branch-protection endpoint itself returned 403 to this integration, so no protection settings were changed.
+- PR #22 remains Draft/open/unmerged. This documentation update is on its branch only and uses `[skip ci]`; it is not a new application CI result.
+
+### Checkpoint migration collision resolved on a candidate stack
+
+- Original Draft PR #68 adds `0035_ai_agent_checkpoints`, which collides with the role stack's `0035_role_entitlements`. PR #68 has been explicitly marked as superseded for integration purposes; do not merge its original migration independently.
+- The first integrated Draft PR #82 stacked on PR #81 and renumbered the checkpoint migration after customer engagement. Its exact-head Run #978 failed in all three Python matrix jobs because two SQLite migration tests still expected the former head `0049_customer_engagement`. PostgreSQL integration and dependency audit passed. PR #82 was closed **unmerged** after the correction was prepared.
+- Active replacement Draft PR #83 is stacked on PR #81 at head `eb13f83d1929b30b922bc2e117fa2eb661e81320`. It uses migration `0050_ai_agent_checkpoints` with `down_revision = 0049_customer_engagement`, creating a linear candidate chain from master migration 0034 through 0050.
+- Exact-head Run [#979](https://github.com/hijaz7861/global-ai-platform/actions/runs/46029767865) passed **5/5 jobs** on this exact commit. Duplicate exact-head Run [#980](https://github.com/hijaz7861/global-ai-platform/actions/runs/46029870353) also passed 5/5. Python 3.11/3.12/3.13 each reported **476 passed / 30 skipped**; PostgreSQL integration reported **30 passed**; SQLite/PostgreSQL migration upgrade and Alembic checks succeeded.
+- Dependency audit passed. Bandit completed with 16 low-severity findings and zero medium/high findings. Test logs retain 111–112 warnings, so CI is successful but not warning-free.
+- PR #83 remains Draft/unmerged with no submitted review or inline review threads. Exact-head CI does not replace security review or owner approval.
+
+### Checkpoint controls and limitations
+
+- AES-GCM encrypted state is bound to task, organization and revision; the checkpoint envelope has a SHA-256 integrity digest. Previous secret keys can be used for key rotation.
+- Checkpoint writes require the current task lease and worker identity; cancellation is checked before persistence.
+- Recovery resumes only from saved safe phases. A lease expiry in `model_call_started` fails closed as `agent_call_outcome_unknown` and does not replay a potentially billable provider call.
+- Approved memory/skill context is digest-bound. Only static read-only tools remain available. Result memory is opt-in and expires after 30 days.
+- This does not guarantee exactly-once provider execution; a read-only tool may repeat if the worker dies after execution but before its result checkpoint commits.
+
+### Other release blockers and safety
+
+- PR #20's authenticated Streamable HTTP POST `initialize`, `tools/list`, and `tools/call` remain unverified; its historical exact-head Run #931 passed CI only.
+- PR #23 remains stale/unmergeable; the refreshed role/vertical foundation is in PR #69. PRs #79–#81 remain Draft dependencies for the current construction/customer-engagement slice.
+- Durable scheduler and object-storage candidates #61/#62 still require ordered integration/revalidation on the current migration chain.
+- Portable runtime, global commerce/settlement, remaining verticals, complete AI governance, full Hatchable export/import reconciliation, backup/restore, independent-host rehearsal, security review, branch protection and owner approval remain incomplete.
+- No PR was merged. No production deployment, live Hatchable modification, data export/import, secret change, external provider activation, paid service/domain purchase or production data deletion occurred.
+- The complete HIJAZ ONE Definition of Done remains **NOT SATISFIED**.
