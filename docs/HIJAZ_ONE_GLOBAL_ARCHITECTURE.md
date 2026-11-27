@@ -1212,3 +1212,8 @@ This snapshot supersedes earlier PR #77 status notes where they conflict. It rec
 - Portable runtime, global commerce/settlement, remaining verticals, complete AI governance, full Hatchable export/import reconciliation, backup/restore, independent-host rehearsal, security review, branch protection and owner approval remain incomplete.
 - No PR was merged. No production deployment, live Hatchable modification, data export/import, secret change, external provider activation, paid service/domain purchase or production data deletion occurred.
 - The complete HIJAZ ONE Definition of Done remains **NOT SATISFIED**.
+
+
+## Documentation-head clarification — 2026-11-27
+
+PR #83's latest branch tip is now `db6b5327833719267660a8fbf09944cd4297b8d9`, a documentation-only update to `docs/IMPLEMENTATION_STATUS.md` marked `[skip ci]`. The tested application-code head remains `eb13f83d1929b30b922bc2e117fa2eb661e81320`; exact-head Runs #979 and #980 both passed 5/5 jobs on that code head. No CI run is claimed for the later documentation-only branch tip. PR #83 remains Draft/unmerged; no source code changed after the successful code-head runs.
