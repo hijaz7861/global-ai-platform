@@ -159,3 +159,16 @@ The durable agent worker can use an append-only, PostgreSQL-serialized provider 
 Configuration: `AI_PROVIDER_CIRCUIT_BREAKER_ENABLED=false`, `AI_PROVIDER_CIRCUIT_BREAKER_FAILURE_THRESHOLD=3`, `AI_PROVIDER_CIRCUIT_BREAKER_COOLDOWN_SECONDS=60`, and `AI_PROVIDER_CIRCUIT_BREAKER_PROBE_LEASE_SECONDS=30`. Automatic primary-to-fallback retry remains separately controlled by `AI_AUTO_FAILOVER_ENABLED`; only retryable provider failures may trigger it. Request and token reservations are performed independently for each attempted provider call.
 
 This is not a provider status dashboard or a guarantee of upstream availability. It covers the durable agent-runner path; regular chat route circuit integration and a dedicated operational health API remain future work.
+
+
+## Encrypted resumable agent checkpoints
+
+Migration `0050_ai_agent_checkpoints` adds one encrypted checkpoint row per agent task. Checkpoint payloads use AES-GCM with associated data binding the task ID, organization ID, and revision; a SHA-256 digest provides an additional corruption check. The encryption key is derived with domain separation from `SECRET_KEY`. Decryption accepts configured `PREVIOUS_SECRET_KEYS` during key rotation. Keep previous keys configured until all checkpoint rows encrypted with them are no longer needed.
+
+Each completed agent decision/tool phase is committed before the next model call. The worker may resume from `ready`, `decision_saved`, `tool_started`, or `final_saved` after a lease expires. The approved memory/skill context digest must still match; otherwise the run fails closed with `agent_checkpoint_context_changed`.
+
+Before a provider request, the checkpoint moves to `model_call_started`. If the worker lease expires in this phase, recovery marks the task failed with `agent_call_outcome_unknown`; it never automatically retries that potentially billable request. This is deliberate: without provider-supported idempotency, a crash between provider response and durable checkpoint cannot be distinguished from a request that never completed.
+
+Agent tasks allow up to three worker attempts for safe checkpoint recovery. Only the static read-only tool registry can execute. If a worker dies after a read-only tool runs but before the next checkpoint commits, the read and its audit event may occur again; no write-capable tools are available in this runtime.
+
+Checkpoint persistence requires a configured `SECRET_KEY` of at least 32 characters. Checkpoint ciphertext is not exposed through the task API. Corrupt or undecryptable checkpoints fail closed. These controls provide durable progress recovery, not exactly-once provider execution or production deployment readiness.

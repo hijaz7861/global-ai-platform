@@ -2,7 +2,7 @@
 
 ## Current scope
 
-This public `master` branch is the reviewable foundation for the **Global AI Platform**. Latest inspected main commit: `21480c93f105052ad35f343b84a6f7858de5631d` (`feat: integrate governed AI agent operating layer`). Its merge commit message records that exact-head CI run #737 passed; per-job counts were not present in the fetched commit metadata. Project owner and maintainer: Muhammad Naeem Khan (`hijaz7861`). Hosting and deployment are intentionally deferred while implementation and test coverage are improved.
+This public `master` branch is the reviewable foundation for the **Global AI Platform**. Latest inspected `master` commit at this branch base: `11ad7da84e73126a450cb0d194e4859b90263a4a` (`docs: record merged CI evidence and current implementation status`); the AI operating layer was merged earlier as `21480c93f105052ad35f343b84a6f7858de5631d`. Its merge commit message records that exact-head CI run #737 passed; per-job counts were not present in the fetched commit metadata. Project owner and maintainer: Muhammad Naeem Khan (`hijaz7861`). Hosting and deployment are intentionally deferred while implementation and test coverage are improved.
 
 ## Implemented foundation
 
@@ -27,6 +27,17 @@ This public `master` branch is the reviewable foundation for the **Global AI Pla
 - Non-fatal warnings remain: Starlette/httpx TestClient deprecation, SQLAlchemy `Session.flush(objects=...)` deprecation, and test warnings. CI is successful but not warning-free and is not a production-readiness certification.
 - Dependency audit reported **No known vulnerabilities found**; Bandit completed successfully. The workflow does not replace an independent security review.
 - No live deployment, live payment processing, paid AI-provider call, or real-host Docker isolation test has been performed. Hosting remains deferred.
+## Current checkpointing change under review
+
+- Active integrated candidate: Draft PR [#83](https://github.com/hijaz7861/global-ai-platform/pull/83), branch `feat/hijaz-one-ai-checkpoints-ci-20261127`. It ports encrypted resumable checkpoints onto the current HIJAZ ONE role/vertical/workforce/customer-engagement stack.
+- Migration collision is reconciled on this candidate: `0050_ai_agent_checkpoints` follows `0049_customer_engagement`. Original PR #68's `0035_ai_agent_checkpoints` conflicts with `0035_role_entitlements`; PR #68 remains Draft for provenance and is marked superseded for integration. Do not merge it independently.
+- Exact code head `eb13f83d1929b30b922bc2e117fa2eb661e81320` passed Run [#979](https://github.com/hijaz7861/global-ai-platform/actions/runs/46029767865) and duplicate exact-head Run [#980](https://github.com/hijaz7861/global-ai-platform/actions/runs/46029870353), both **5/5 jobs successful**. Python 3.11/3.12/3.13 each reported **476 passed / 30 skipped**; PostgreSQL integration reported **30 passed**; SQLite/PostgreSQL migrations applied through 0050 and Alembic check reported no new upgrade operations.
+- The initial integrated Run #978 failed in all three Python jobs because two SQLite migration tests still expected `0049_customer_engagement`; both assertions were corrected to `0050_ai_agent_checkpoints` before the verified code head above.
+- Dependency audit passed. Bandit reported 16 low-severity findings and zero medium/high findings. Python matrix logs contained 111–112 warnings; CI is successful but not warning-free.
+- Checkpoints use AES-GCM with task/organization/revision associated-data binding and an envelope SHA-256 integrity digest. `SECRET_KEY` must be at least 32 characters; retain old keys in `PREVIOUS_SECRET_KEYS` until no checkpoint needs them.
+- Checkpoint persistence is bound to the active worker lease and cancellation state. Recovery resumes only from saved safe phases. A lease expiry during `model_call_started` fails closed as `agent_call_outcome_unknown`; the potentially billable provider call is never automatically replayed. The approved memory/skill context digest must match before resume. Static read-only tools remain the only available tools; a read may repeat if a worker dies after tool execution but before its result checkpoint commits.
+- PR #83 remains Draft/unmerged and has no owner review or inline review thread. A subsequent documentation-only `[skip ci]` commit will not be counted as a new CI run; the exact CI evidence above applies to code head `eb13f83d1929b30b922bc2e117fa2eb661e81320`. No checkpoint is deployed or enabled in production.
+
 ## Remaining implementation work
 
 ### Highest-priority coding and tests
@@ -53,3 +64,4 @@ A feature is not complete merely because a route or document exists. Mark it com
 - A dedicated purge endpoint physically deletes a caller-owned private memory record; organization-shared records require the organization owner. The existing DELETE endpoint remains archive-only.
 - The one-shot maintenance runner now purges only records with an explicit, elapsed `expires_at`, in a bounded batch. It preserves metadata-only audit events and never copies memory content into the audit log.
 - No default TTL is imposed on records without `expires_at`; a complete retention schedule and self-service memory export remain release gaps. Expiry cleanup is invoked by the one-shot maintenance command and is not proof that a portable durable scheduler is deployed.
+

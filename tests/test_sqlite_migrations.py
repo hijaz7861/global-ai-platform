@@ -31,7 +31,7 @@ def test_sqlite_upgrade_installs_cashbook_tenant_keys_and_append_only_triggers(t
         cursor.close()
 
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0049_customer_engagement"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0050_ai_agent_checkpoints"
     table_names = set(inspect(engine).get_table_names())
     assert {
         "user_phone_verifications", "property_listings", "property_transactions", "property_payments",
@@ -317,7 +317,7 @@ def test_workforce_message_encryption_migration_encrypts_existing_rows(tmp_path,
         version = connection.scalar(text("SELECT version_num FROM alembic_version"))
     engine.dispose()
 
-    assert version == "0049_customer_engagement"
+    assert version == "0050_ai_agent_checkpoints"
     assert stored.startswith("fernet:v1:")
     with engine.connect() as connection:
         moderation_status = connection.scalar(

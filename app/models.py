@@ -885,6 +885,36 @@ class AIOutboxEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
+class AIAgentCheckpoint(Base):
+    """Encrypted latest durable state for one resumable agent task."""
+    __tablename__ = "ai_agent_checkpoints"
+    __table_args__ = (
+        UniqueConstraint("task_id", name="uq_ai_agent_checkpoint_task"),
+        CheckConstraint("revision > 0", name="ck_ai_agent_checkpoint_revision"),
+        CheckConstraint("turn_number BETWEEN 1 AND 5", name="ck_ai_agent_checkpoint_turn"),
+        CheckConstraint(
+            "phase IN ('ready','model_call_started','decision_saved','tool_started','final_saved')",
+            name="ck_ai_agent_checkpoint_phase",
+        ),
+        Index("ix_ai_agent_checkpoint_org_updated", "organization_id", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    task_id: Mapped[str] = mapped_column(
+        ForeignKey("ai_tasks.id", ondelete="CASCADE"), nullable=False
+    )
+    organization_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    turn_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    phase: Mapped[str] = mapped_column(String(32), nullable=False)
+    state_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    state_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
 class AIMemoryRecord(Base):
     """Provenance-aware user-private or organization-shared AI memory."""
     __tablename__ = "ai_memory_records"
